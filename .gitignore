@@ -1,0 +1,11 @@
+node_modules/
+.turbo/
+dist/
+dist-electron/
+coverage/
+apps/*/dist/
+apps/*/dist-electron/
+packages/*/dist/
+apps/server/.data/
+apps/server/.logs/
+*.log

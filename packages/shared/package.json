@@ -1,0 +1,33 @@
+{
+  "name": "@s10n-base/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./id": {
+      "types": "./src/id.ts",
+      "import": "./src/id.ts"
+    },
+    "./json": {
+      "types": "./src/json.ts",
+      "import": "./src/json.ts"
+    },
+    "./time": {
+      "types": "./src/time.ts",
+      "import": "./src/time.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsdown src/id.ts src/json.ts src/time.ts --format esm,cjs --dts --clean",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
