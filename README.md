@@ -1,32 +1,19 @@
 # S10N Base
 
-S10N Base is a standalone Bun + Turbo monorepo scaffold extracted from the source repository's architecture, but stripped of coding-agent-specific product behavior.
+S10N Base is a Bun + Turbo monorepo scaffold for a local-first app with a typed server boundary, web client, and optional desktop host.
 
-The repo identity is `s10n-base`. The local directory is still `starter/` for now because it has not been renamed on disk.
+It was derived from [`t3code`](https://github.com/pingdotgg/t3code), keeping the overall repo shape and developer workflow while removing product-specific coding-agent behavior.
 
-## What It Includes
+## Current Stack
 
-- Bun workspace + Turbo monorepo
-- Strict TypeScript
-- `apps/server` as the application core
-- `apps/web` as a React + Vite client
-- `apps/desktop` as a thin Electron host
-- `packages/contracts` for shared schemas and typed RPC contracts
-- `packages/shared` for small reusable helpers with subpath exports
-- SQLite persistence
-- HTTP routes for `/health`, `/config`, and `/rpc`
-- WebSocket activity stream at `/ws`
-- Example domain: projects + notes + settings
-
-## What It Intentionally Does Not Include
-
-- Provider integrations
-- Agent sessions or orchestration pipelines
-- Git or worktree flows
-- Terminal emulation
-- Product-specific auth or pairing flows
-- Marketing app
-- `packages/client-runtime`
+- Bun workspaces + Turbo
+- Strict TypeScript across apps and packages
+- `apps/server`: Node HTTP server with typed RPC, WebSocket activity stream, and SQLite persistence via `better-sqlite3`
+- `apps/web`: React 19 + Vite + Tailwind CSS v4 + TanStack Router + TanStack Query
+- `apps/desktop`: thin Electron wrapper around the server and web UI
+- `packages/contracts`: shared Effect schemas and RPC contracts
+- `packages/shared`: small cross-runtime helpers
+- Oxlint + Oxfmt + Vitest
 
 ## Monorepo Layout
 
@@ -41,6 +28,11 @@ packages/
 scripts/
 ```
 
+## Requirements
+
+- Bun `>=1.3.0`
+- Node `>=24`
+
 ## Commands
 
 Install dependencies:
@@ -49,27 +41,17 @@ Install dependencies:
 bun install
 ```
 
-Run server + web in development:
+Run the server and web app in development:
 
 ```bash
 bun run dev
 ```
 
-Run only the server:
+Run individual apps:
 
 ```bash
 bun run dev:server
-```
-
-Run only the web app:
-
-```bash
 bun run dev:web
-```
-
-Run desktop against the dev server and dev web app:
-
-```bash
 bun run dev:desktop
 ```
 
@@ -79,55 +61,81 @@ Build everything:
 bun run build
 ```
 
+Start built apps:
+
+```bash
+bun run start:server
+bun run start:web
+bun run start:desktop
+```
+
 Run checks:
 
 ```bash
 bun run fmt
+bun run fmt:check
 bun run lint
 bun run typecheck
 bun run test
 ```
 
-## Default Ports
+Clean generated output:
 
-- Server: `4210`
-- Web dev server: `5173`
+```bash
+bun run clean
+```
 
-Override the server URL for web dev with `VITE_SERVER_URL`.
+## Default URLs And Ports
+
+- Server: `http://127.0.0.1:4210`
+- Web dev server: `http://127.0.0.1:5173`
+
+In development, the Vite app proxies `/health`, `/config`, `/rpc`, and `/ws` to the server.
+
+## Environment Variables
+
+- `HOST`: host for the server and Vite dev server. Default: `127.0.0.1`
+- `PORT`: fallback server port. Default: `4210`
+- `S10N_BASE_PORT`: preferred server port override
+- `S10N_BASE_HOME`: runtime directory for server data and logs. Default: `~/.s10n-base`
+- `VITE_SERVER_URL`: server URL used by the Vite dev proxy. Default: `http://127.0.0.1:4210`
+- `S10N_BASE_SERVER_URL`: server URL the desktop app should connect to. Default: `http://127.0.0.1:4210`
+- `VITE_DEV_SERVER_URL`: web dev server URL the desktop app should load in development. Default: `http://127.0.0.1:5173`
 
 ## Runtime Files
 
-The server stores runtime state under `S10N_BASE_HOME`.
-
-Default location:
+The server creates and uses this runtime layout under `S10N_BASE_HOME`:
 
 ```text
 ~/.s10n-base/
+  data/
+    app.db
+    settings.json
+  logs/
+    server.log
 ```
 
-Contents:
+## Server Surface
 
-- `data/app.db` for SQLite data
-- `data/settings.json` for persisted server settings
-- `logs/server.log` for basic server logs
+The server currently exposes:
+
+- `GET /health`
+- `GET /config`
+- `POST /rpc`
+- `GET /ws` via WebSocket upgrade
+
+When `apps/web/dist` exists, the server also serves the built web app.
 
 ## Example Domain
 
-The scaffold proves the stack with a small generic domain:
+The scaffold currently proves the stack with a small example domain:
 
-- Create, update, list, and delete projects
-- Open a project detail screen
-- Create, update, and delete notes inside a project
-- Update persisted server settings
-- Receive live activity events over WebSocket
-- Persist a few client-only preferences with Zustand
+- projects
+- notes within projects
+- server-persisted app settings
+- live activity events over WebSocket
+- a few client-only UI settings persisted with Zustand
 
-## Turning This Into Its Own Repo
+## Customizing
 
-1. Rename the current `starter/` directory to `s10n-base/` when you want the folder name to match the repo name.
-2. Run `bun install`.
-3. Rename workspace packages from `@s10n-base/*` if you want a different scope.
-4. Replace the example domain in `packages/contracts`, `apps/server/src/services`, and `apps/web/src/routes`.
-5. Update `README.md`, `CUSTOMIZATION_GUIDE.md`, and package metadata.
-
-See `CUSTOMIZATION_GUIDE.md` for the recommended order.
+If you are turning this into a new product, start with `CUSTOMIZATION_GUIDE.md`.
