@@ -1,0 +1,16 @@
+# Dependabot covers GitHub Actions only. Bun packages, bun and Node are updated by the
+# daily dependency-update workflow (.github/workflows/dependency-updates.yml), because
+# Dependabot cannot update a bun workspace catalog. Docker entries are added by the
+# changes that add Docker files.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # The same 3-day rule as bunfig.toml: a release is not proposed until it is 3 days old.
+    cooldown:
+      default-days: 3
+    groups:
+      github-actions:
+        patterns: ["*"]
