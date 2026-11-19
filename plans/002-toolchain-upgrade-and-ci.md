@@ -321,6 +321,16 @@ The workflow file itself has not run: a scheduled or dispatched workflow runs on
 6. `git grep -n 'vitest.workspace\|passWithNoTests\|ignoreDeprecations'` prints nothing outside `plans/` and `CHANGELOG.md`.
 7. The scrub check prints nothing.
 
+### Review rounds
+
+Codex reviewed the PR's head after each push. Each finding was reproduced with a failing test before the fix.
+
+- **Round 1 (a81c0e5), four findings, all fixed:**
+  - The smoke script read the `/health` body outside its error handling, so a server that sent headers and then stalled made `runSmoke` throw before stopping the server. A failed body read is now a smoke failure, and the server is stopped in a `finally`.
+  - On a same-day rerun where merging `main` into today's branch conflicted, the fresh commit did not descend from the branch and the plain push would be rejected. The push to today's branch now uses `--force-with-lease` against the fetched branch.
+  - When the run built on an open PR, the body listed only that run's changes, so a superseding PR dropped updates it still carried. The body now compares the result with the base commit (`git show` of the manifests, lockfile and `.nvmrc`), while holds are still enforced against the starting point.
+  - `--from HEAD` was resolved after the checkout had moved `HEAD`, so a dry run with an open PR merged the PR into itself. The start ref is now resolved to a commit with `git rev-parse` before any checkout.
+
 ### For later phases
 
 - **Phase 3:** the smoke script sets `HOST`, `PORT` and `S10N_BASE_PORT`; update it when config moves to Effect `Config`. It stops the server with SIGTERM and waits 5 seconds before SIGKILL, so graceful shutdown must finish within that or the smoke run gets slower (it still passes). tsdown bundles only `@s10n-base/*`; `pg` and Kysely will stay external, so the deployed server needs `node_modules` (phase 8). effect 4.1.4 needed no change for `Schema`, `Option` and `Effect`.

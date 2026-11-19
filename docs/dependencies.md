@@ -77,9 +77,9 @@ To change a hold, edit the file and run `bun run test`.
 3. Runs `bun update -r --latest`, which moves every package to its newest release at least 3 days old, across major versions, keeping exact pins exact. bun's named and negated filters (`bun update typescript`, `bun update '!typescript'`) do not rewrite catalog entries, so the script updates everything, puts held packages back to their earlier spec, and reinstalls.
 4. Moves bun and Node to their newest releases at least 3 days old (Node on its current LTS major), and keeps `@types/node` on that major. A newer Node LTS major is reported, not applied.
 5. Runs `bunx expo install --check` in `apps/mobile` when that app exists and reports drift.
-6. If no file changed, stops and leaves any open PR alone. Otherwise it commits, pushes `deps/update-YYYY-MM-DD` (UTC date) and opens a PR with the label. If the open PR is already on today's branch, it pushes there and updates the body instead; otherwise it comments on the old PR with a link to the new one, closes it and deletes its branch.
+6. If no file changed, stops and leaves any open PR alone. Otherwise it commits, pushes `deps/update-YYYY-MM-DD` (UTC date) and opens a PR with the label. If the open PR is already on today's branch, it pushes there (with a lease, since after a conflict the new commit does not descend from the old one) and updates the body instead; otherwise it comments on the old PR with a link to the new one, closes it and deletes its branch.
 
-The PR body lists direct dependency changes as major, minor and patch, indirect dependencies that moved in `bun.lock`, bun and Node changes, what was reported but not applied (held packages, a new Node LTS line, Expo drift), and the releases `bun outdated` shows as held back by the 3-day rule.
+The PR body describes everything the PR changes against `main`, including updates carried over from the PR it supersedes: direct dependency changes as major, minor and patch, indirect dependencies that moved in `bun.lock`, bun and Node changes, what was reported but not applied (held packages, a new Node LTS line, Expo drift), and the releases `bun outdated` shows as held back by the 3-day rule.
 
 **When a major update breaks CI,** fix it on the PR's branch, by hand or with an agent, and merge the PR with the fix. The next day's run starts from that branch, so the fix is kept.
 

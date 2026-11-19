@@ -130,28 +130,87 @@ async function findOpenPr(io: Io, label: string): Promise<OpenPr | undefined> {
   return prs.sort((a, b) => b.number - a.number)[0];
 }
 
-/** Checks out the starting point; returns true when a merge conflict forced a fresh start. */
+interface Start {
+  /** The base commit the PR is compared against: origin/<baseBranch>, or --from. */
+  readonly baseSha: string;
+  /** True when merging the base into the open PR conflicted and the run started from the base. */
+  readonly freshStart: boolean;
+}
+
+/** Checks out the starting point: the open PR's branch with the base merged in, or the base. */
 async function checkoutStart(
   io: Io,
   options: FlowOptions,
   openPr: OpenPr | undefined,
-): Promise<boolean> {
+): Promise<Start> {
   const fetchRefs = [options.baseBranch, ...(openPr === undefined ? [] : [openPr.headRefName])];
   await mustRun(io, "git", ["fetch", "--no-tags", "origin", ...fetchRefs]);
+  // Resolve before any checkout: a ref such as HEAD or HEAD~1 moves when HEAD does.
   const baseRef = options.startRef ?? `origin/${options.baseBranch}`;
+  const baseSha = (
+    await mustRun(io, "git", ["rev-parse", "--verify", `${baseRef}^{commit}`])
+  ).stdout.trim();
   if (openPr === undefined) {
-    await mustRun(io, "git", ["checkout", "--detach", baseRef]);
-    return false;
+    await mustRun(io, "git", ["checkout", "--detach", baseSha]);
+    return { baseSha, freshStart: false };
   }
   await mustRun(io, "git", ["checkout", "--detach", `origin/${openPr.headRefName}`]);
-  const merge = await io.run("git", [...authorArgs(options), "merge", "--no-edit", baseRef]);
-  if (merge.code === 0) return false;
+  const merge = await io.run("git", [...authorArgs(options), "merge", "--no-edit", baseSha]);
+  if (merge.code === 0) return { baseSha, freshStart: false };
   io.log(
     `Merging ${baseRef} into ${openPr.headRefName} conflicted; starting again from ${baseRef}.`,
   );
   await mustRun(io, "git", ["merge", "--abort"]);
-  await mustRun(io, "git", ["checkout", "--detach", baseRef]);
-  return true;
+  await mustRun(io, "git", ["checkout", "--detach", baseSha]);
+  return { baseSha, freshStart: true };
+}
+
+/** The repository's version files as they are at the base commit. */
+interface BaseSnapshot {
+  readonly specs: Map<string, string>;
+  readonly locked: Map<string, string>;
+  readonly node: string;
+  readonly bun: string;
+}
+
+async function readAtCommit(io: Io, sha: string, path: string): Promise<string | undefined> {
+  const result = await io.run("git", ["show", `${sha}:${path}`]);
+  return result.code === 0 ? result.stdout : undefined;
+}
+
+async function readBase(io: Io, sha: string): Promise<BaseSnapshot> {
+  const files: ManifestFile[] = [];
+  for (const { path } of await readManifests(io)) {
+    const text = await readAtCommit(io, sha, path);
+    if (text !== undefined) files.push({ path, json: JSON.parse(text) as Manifest });
+  }
+  const root = files.find((file) => file.path === "package.json")?.json;
+  return {
+    specs: collectSpecs(files),
+    locked: parseLockedVersions((await readAtCommit(io, sha, "bun.lock")) ?? ""),
+    node: ((await readAtCommit(io, sha, ".nvmrc")) ?? "").trim(),
+    bun: String(root?.packageManager ?? "").replace(/^bun@/, ""),
+  };
+}
+
+/** bun and Node changes the PR makes against the base. */
+async function runtimeChanges(io: Io, base: BaseSnapshot): Promise<RuntimeChange[]> {
+  const root = JSON.parse(await io.readFile("package.json")) as Manifest;
+  const bun = String(root.packageManager ?? "").replace(/^bun@/, "");
+  const node = (await io.readFile(".nvmrc")).trim();
+  const changes: RuntimeChange[] = [];
+  if (base.bun !== "" && bun !== base.bun) {
+    changes.push({
+      name: "bun",
+      from: base.bun,
+      to: bun,
+      files: "`packageManager` and `engines.bun`",
+    });
+  }
+  if (base.node !== "" && node !== base.node) {
+    changes.push({ name: "Node", from: base.node, to: node, files: "`.nvmrc` and `engines.node`" });
+  }
+  return changes;
 }
 
 function authorArgs(options: FlowOptions): string[] {
@@ -184,14 +243,10 @@ async function updatePackages(
   return restorations;
 }
 
-async function updateRuntimes(
-  io: Io,
-  now: Date,
-): Promise<{ runtimes: RuntimeChange[]; notApplied: string[] }> {
+async function updateRuntimes(io: Io, now: Date): Promise<string[]> {
   const root = JSON.parse(await io.readFile("package.json")) as Manifest;
   const currentNode = (await io.readFile(".nvmrc")).trim();
   const currentBun = String(root.packageManager ?? "").replace(/^bun@/, "");
-  const runtimes: RuntimeChange[] = [];
   const notApplied: string[] = [];
 
   const bun = pickBunRelease((await io.fetchJson(BUN_RELEASES_URL)) as GitHubRelease[], now);
@@ -207,21 +262,7 @@ async function updateRuntimes(
     node.version !== undefined && compareVersions(node.version, currentNode) > 0
       ? node.version
       : undefined;
-  if (newBun !== undefined) {
-    runtimes.push({
-      name: "bun",
-      from: currentBun,
-      to: newBun,
-      files: "`packageManager` and `engines.bun`",
-    });
-  }
   if (newNode !== undefined) {
-    runtimes.push({
-      name: "Node",
-      from: currentNode,
-      to: newNode,
-      files: "`.nvmrc` and `engines.node`",
-    });
     await io.writeFile(".nvmrc", `${newNode}\n`);
   }
   if (newBun !== undefined || newNode !== undefined) {
@@ -236,7 +277,7 @@ async function updateRuntimes(
       `Node ${node.newerLtsMajor} is a newer LTS line. Moving to it is a manual change: it also moves \`@types/node\` to that major and any Docker base image.`,
     );
   }
-  return { runtimes, notApplied };
+  return notApplied;
 }
 
 async function checkExpo(io: Io): Promise<string[]> {
@@ -329,15 +370,16 @@ export async function runDependencyUpdate(io: Io, options: FlowOptions): Promise
       ? "No open dependency-update PR."
       : `Open dependency-update PR: ${openPr.url}`,
   );
-  const freshStart = await checkoutStart(io, options, openPr);
+  const { baseSha, freshStart } = await checkoutStart(io, options, openPr);
+  // The PR body compares against the base, so updates carried over from the open PR's
+  // branch are listed too. Holds are enforced against the starting point instead.
+  const base = await readBase(io, baseSha);
 
   const holds = parseHolds(JSON.parse(await io.readFile("dependency-holds.json")) as unknown);
   const nodeMajor = (await io.readFile(".nvmrc")).trim().split(".")[0] ?? "";
-  const lockedBefore = parseLockedVersions(await io.readFile("bun.lock"));
-  const declaredBefore = collectSpecs(await readManifests(io));
 
   const restorations = await updatePackages(io, holds, nodeMajor);
-  const { runtimes, notApplied } = await updateRuntimes(io, options.now);
+  const notApplied = await updateRuntimes(io, options.now);
   const expoNotes = await checkExpo(io);
   const heldByAge = await packagesHeldByAge(io);
 
@@ -349,14 +391,14 @@ export async function runDependencyUpdate(io: Io, options: FlowOptions): Promise
 
   const lockedAfter = parseLockedVersions(await io.readFile("bun.lock"));
   const declaredAfter = collectSpecs(await readManifests(io));
-  const direct = new Set([...declaredBefore.keys(), ...declaredAfter.keys()]);
+  const direct = new Set([...base.specs.keys(), ...declaredAfter.keys()]);
   const body = buildPrBody({
     date,
     baseBranch: options.baseBranch,
     freshStart,
-    changes: versionChanges(direct, lockedBefore, lockedAfter),
-    indirect: indirectChanges(direct, lockedBefore, lockedAfter),
-    runtimes,
+    changes: versionChanges(direct, base.locked, lockedAfter),
+    indirect: indirectChanges(direct, base.locked, lockedAfter),
+    runtimes: await runtimeChanges(io, base),
     notApplied: [
       ...restorations.map(
         (restoration) =>
@@ -379,7 +421,14 @@ export async function runDependencyUpdate(io: Io, options: FlowOptions): Promise
 
   let outcome: FlowOutcome;
   if (openPr?.headRefName === branch) {
-    await write("git", ["push", "origin", `HEAD:refs/heads/${branch}`]);
+    // A lease rather than a plain push: after a conflict forced a fresh start, the new
+    // commit does not descend from the branch, and a plain push would be rejected.
+    await write("git", [
+      "push",
+      `--force-with-lease=refs/heads/${branch}:origin/${branch}`,
+      "origin",
+      `HEAD:refs/heads/${branch}`,
+    ]);
     await write("gh", ["pr", "edit", String(openPr.number), "--body-file", "-"], body);
     outcome = { kind: "updated", branch, url: openPr.url, body };
   } else {

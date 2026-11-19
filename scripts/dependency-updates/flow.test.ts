@@ -45,6 +45,8 @@ interface Scenario {
   readonly bunReleases?: unknown[];
   readonly nodeIndex?: unknown[];
   readonly mobileApp?: boolean;
+  /** Catalog and lockfile on the open PR's branch, when it differs from main. */
+  readonly prHead?: { catalog: Record<string, string>; lock: Record<string, string> };
 }
 
 const startCatalog = {
@@ -63,7 +65,7 @@ const startLock = {
 };
 
 class FakeIo implements Io {
-  readonly files = new Map<string, string>();
+  files = new Map<string, string>();
   readonly commands: string[] = [];
   readonly logs: string[] = [];
   readonly inputs = new Map<string, string>();
@@ -82,6 +84,13 @@ class FakeIo implements Io {
 
   /** The files as they were when the starting point was checked out. */
   private atCheckout = new Map<string, string>();
+  /** The files on main, captured when the flow starts. */
+  private atBase: Map<string, string> | undefined;
+
+  private static readonly shas: Record<string, string> = {
+    "origin/main": "base-sha",
+    HEAD: "caller-sha",
+  };
 
   run(
     command: string,
@@ -94,6 +103,24 @@ class FakeIo implements Io {
     const ok = (stdout = ""): Promise<CommandResult> =>
       Promise.resolve({ code: 0, stdout, stderr: "" });
 
+    this.atBase ??= new Map(this.files);
+    const revParse = /^git rev-parse --verify (.+)\^\{commit\}$/.exec(line);
+    if (revParse !== null) return ok(`${FakeIo.shas[revParse[1] ?? ""] ?? "unknown-sha"}\n`);
+    const show = /^git show ([^:]+):(.+)$/.exec(line);
+    if (show !== null) {
+      const text = this.atBase.get(show[2] ?? "");
+      return text === undefined
+        ? Promise.resolve({ code: 128, stdout: "", stderr: "fatal: path not in tree" })
+        : ok(text);
+    }
+    if (
+      line.startsWith("git checkout --detach origin/deps/") &&
+      this.scenario.prHead !== undefined
+    ) {
+      this.files.set("package.json", rootManifest(this.scenario.prHead.catalog));
+      this.files.set("bun.lock", lockfile(this.scenario.prHead.lock));
+    }
+    if (line === "git checkout --detach base-sha") this.files = new Map(this.atBase);
     if (line.startsWith("git checkout --detach")) this.atCheckout = new Map(this.files);
     if (line.startsWith("gh pr list")) {
       return ok(JSON.stringify(this.scenario.openPr === undefined ? [] : [this.scenario.openPr]));
@@ -226,7 +253,7 @@ describe("runDependencyUpdate", () => {
 
     const outcome = await runDependencyUpdate(io, options);
 
-    expect(io.commands).toContain("git checkout --detach origin/main");
+    expect(io.commands).toContain("git checkout --detach base-sha");
     expect(io.commands).toContain("bun install --ignore-scripts");
     const catalog = (
       JSON.parse(io.files.get("package.json") ?? "") as {
@@ -302,7 +329,7 @@ describe("runDependencyUpdate", () => {
     expect(io.commands).toContain("git fetch --no-tags origin main deps/update-2026-11-18");
     expect(io.commands).toContain("git checkout --detach origin/deps/update-2026-11-18");
     expect(io.commands).toContain(
-      "git -c user.name=deps-bot -c user.email=deps-bot@example.invalid merge --no-edit origin/main",
+      "git -c user.name=deps-bot -c user.email=deps-bot@example.invalid merge --no-edit base-sha",
     );
     expect(writes(io).slice(-2)).toEqual([
       "gh pr comment 7 --body Superseded by https://github.com/o/r/pull/9.",
@@ -326,7 +353,7 @@ describe("runDependencyUpdate", () => {
     const merge = io.commands.findIndex((line) => line.includes(" merge --no-edit "));
     expect(io.commands.slice(merge + 1, merge + 3)).toEqual([
       "git merge --abort",
-      "git checkout --detach origin/main",
+      "git checkout --detach base-sha",
     ]);
     expect(outcome.kind === "unchanged" ? "" : outcome.body).toContain(
       "conflicted, so this update starts again from `main`",
@@ -346,10 +373,62 @@ describe("runDependencyUpdate", () => {
     const outcome = await runDependencyUpdate(io, options);
 
     expect(writes(io)).toEqual([
-      "git push origin HEAD:refs/heads/deps/update-2026-11-19",
+      "git push --force-with-lease=refs/heads/deps/update-2026-11-19:origin/deps/update-2026-11-19 origin HEAD:refs/heads/deps/update-2026-11-19",
       "gh pr edit 9 --body-file -",
     ]);
     expect(outcome).toMatchObject({ kind: "updated", url: "https://github.com/o/r/pull/9" });
+  });
+
+  it("replaces today's branch with a lease when a merge conflict forced a fresh start", async () => {
+    const io = new FakeIo({
+      latest: viteMajor,
+      mergeConflicts: true,
+      openPr: {
+        number: 9,
+        headRefName: "deps/update-2026-11-19",
+        url: "https://github.com/o/r/pull/9",
+      },
+    });
+
+    await runDependencyUpdate(io, options);
+
+    expect(writes(io)).toEqual([
+      "git push --force-with-lease=refs/heads/deps/update-2026-11-19:origin/deps/update-2026-11-19 origin HEAD:refs/heads/deps/update-2026-11-19",
+      "gh pr edit 9 --body-file -",
+    ]);
+  });
+
+  it("describes everything the PR changes against main, including updates carried from the open PR", async () => {
+    const io = new FakeIo({
+      prHead: {
+        catalog: { ...startCatalog, vite: "^9.0.1" },
+        lock: { ...startLock, vite: "9.0.1" },
+      },
+      latest: {
+        catalog: { ...startCatalog, vite: "^9.0.1", effect: "4.1.5" },
+        lock: { ...startLock, vite: "9.0.1", effect: "4.1.5" },
+      },
+      bunReleases: [
+        {
+          tag_name: "bun-v1.4.5",
+          published_at: "2026-11-12T00:00:00Z",
+          prerelease: false,
+          draft: false,
+        },
+      ],
+      openPr: {
+        number: 7,
+        headRefName: "deps/update-2026-11-18",
+        url: "https://github.com/o/r/pull/7",
+      },
+    });
+
+    const outcome = await runDependencyUpdate(io, options);
+
+    const body = outcome.kind === "unchanged" ? "" : outcome.body;
+    expect(body).toContain("| vite | 8.3.8 | 9.0.1 |");
+    expect(body).toContain("| effect | 4.1.4 | 4.1.5 |");
+    expect(body).toContain("- bun 1.4.4 → 1.4.5");
   });
 
   it("stops without committing, pushing or touching PRs when nothing changed", async () => {
@@ -450,7 +529,7 @@ describe("runDependencyUpdate", () => {
 
     expect(writes(io)).toEqual([]);
     expect(io.commands).toContain(
-      "git -c user.name=deps-bot -c user.email=deps-bot@example.invalid merge --no-edit HEAD",
+      "git -c user.name=deps-bot -c user.email=deps-bot@example.invalid merge --no-edit caller-sha",
     );
     expect(io.logs).toContain(
       "Would run: git push --force origin HEAD:refs/heads/deps/update-2026-11-19",
@@ -458,6 +537,24 @@ describe("runDependencyUpdate", () => {
     expect(io.logs).toContain("Would run: gh pr close 7 --delete-branch");
     expect(outcome).toMatchObject({ kind: "opened", url: "(dry run: no PR opened)" });
     expect(io.logs.some((line) => line.includes("## Major"))).toBe(true);
+  });
+
+  it("resolves --from to a commit before checking anything out", async () => {
+    const io = new FakeIo({
+      latest: viteMajor,
+      openPr: {
+        number: 7,
+        headRefName: "deps/update-2026-11-18",
+        url: "https://github.com/o/r/pull/7",
+      },
+    });
+
+    await runDependencyUpdate(io, { ...options, dryRun: true, startRef: "HEAD" });
+
+    const resolved = io.commands.indexOf("git rev-parse --verify HEAD^{commit}");
+    const firstCheckout = io.commands.findIndex((line) => line.startsWith("git checkout"));
+    expect(resolved).toBeGreaterThanOrEqual(0);
+    expect(resolved).toBeLessThan(firstCheckout);
   });
 
   it("fails loudly when bun update fails", async () => {
