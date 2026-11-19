@@ -174,6 +174,18 @@ describe("signRequest", () => {
     expect(signed.canonicalRequest.split("\n")[1]).toBe("/a%2520b");
   });
 
+  it("signs an empty path as /", () => {
+    const signed = signRequest({ ...request, path: "" }, options);
+
+    expect(signed.canonicalRequest.split("\n")[1]).toBe("/");
+  });
+
+  it("decodes and encodes each query parameter once, keeps bad escapes as text, and sorts", () => {
+    const signed = signRequest({ ...request, query: "b&a=1&a=0&%zz=1" }, options);
+
+    expect(signed.canonicalRequest.split("\n")[2]).toBe("%25zz=1&a=0&a=1&b=");
+  });
+
   it("refuses a request without a host header", () => {
     expect(() => signRequest({ ...request, headers: [] }, options)).toThrow(/host/);
   });
@@ -249,6 +261,47 @@ describe("verifySignature", () => {
       >,
     };
     expect(verifySignature(malformed, { credentials, now })).toEqual({
+      ok: false,
+      reason: "malformed_authorization",
+    });
+  });
+
+  it("rejects a request whose X-Amz-Date is not the day its credential names", () => {
+    const signed = signedRequest();
+    const nextDay = {
+      ...signed,
+      headers: signed.headers.map(([name, value]): [string, string] =>
+        name === "x-amz-date" ? [name, value.replace("20261119", "20261120")] : [name, value],
+      ),
+    };
+
+    expect(verifySignature(nextDay, { credentials, now })).toEqual({
+      ok: false,
+      reason: "malformed_authorization",
+    });
+  });
+
+  it("rejects a request without an X-Amz-Date header", () => {
+    const signed = signedRequest();
+    const withoutDate = {
+      ...signed,
+      headers: signed.headers.filter(([name]) => name !== "x-amz-date"),
+    };
+
+    expect(verifySignature(withoutDate, { credentials, now })).toEqual({
+      ok: false,
+      reason: "malformed_authorization",
+    });
+  });
+
+  it("rejects a request that lacks a header its signature names", () => {
+    const signed = signedRequest();
+    const withoutType = {
+      ...signed,
+      headers: signed.headers.filter(([name]) => name !== "content-type"),
+    };
+
+    expect(verifySignature(withoutType, { credentials, now })).toEqual({
       ok: false,
       reason: "malformed_authorization",
     });

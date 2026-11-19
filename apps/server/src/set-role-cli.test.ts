@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import type { DB } from "./infra/postgres/generated/db";
 import { parseSetRoleArgs, runSetRoleCli } from "./set-role-cli";
+import { scriptedDb } from "./test/scripted-db";
 
 describe("parseSetRoleArgs", () => {
   it("reads an email and a known role", () => {
@@ -48,5 +50,65 @@ describe("runSetRoleCli", () => {
 
     expect(code).toBe(1);
     expect(lines.join("")).toContain("DATABASE_URL");
+  });
+});
+
+function capture() {
+  const lines: Array<Record<string, unknown>> = [];
+  return {
+    lines,
+    write: (line: string) => lines.push(JSON.parse(line) as Record<string, unknown>),
+  };
+}
+
+describe("runSetRoleCli with a database", () => {
+  const env = { DATABASE_URL: "postgres://app:secret@127.0.0.1:9/app" };
+
+  it("sets the role of the user with that email, whatever its case, and exits 0", async () => {
+    const { db, queries } = scriptedDb<DB>(() => [{ id: "u1" }]);
+    const output = capture();
+
+    const code = await runSetRoleCli({
+      args: ["Sam@Example.com", "admin"],
+      env,
+      write: output.write,
+      db,
+    });
+
+    expect(code).toBe(0);
+    expect(output.lines).toMatchObject([{ message: "role_set", userId: "u1", role: "admin" }]);
+    expect(queries[0]?.sql).toContain("lower(email) = lower($");
+    expect(queries[0]?.parameters).toContain("Sam@Example.com");
+  });
+
+  it("exits 1 when no user has the email", async () => {
+    const { db } = scriptedDb<DB>(() => []);
+    const output = capture();
+
+    const code = await runSetRoleCli({
+      args: ["nobody@example.com", "admin"],
+      env,
+      write: output.write,
+      db,
+    });
+
+    expect(code).toBe(1);
+    expect(output.lines).toMatchObject([
+      { message: "set_role_failed", error: { message: "No user has that email address." } },
+    ]);
+  });
+
+  it("exits 1 when the database cannot be reached", async () => {
+    const output = capture();
+
+    const code = await runSetRoleCli({
+      args: ["sam@example.com", "admin"],
+      env,
+      write: output.write,
+    });
+
+    expect(code).toBe(1);
+    expect(output.lines).toMatchObject([{ message: "set_role_failed" }]);
+    expect(JSON.stringify(output.lines)).not.toContain("secret");
   });
 });

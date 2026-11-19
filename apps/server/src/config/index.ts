@@ -324,10 +324,7 @@ function parseAll<const T extends ReadonlyArray<Variable<unknown>>>(
         values.push(result.success);
         continue;
       }
-      const raw = yield* Effect.orElseSucceed(
-        Config.option(Config.String(entry.name)).parse(provider),
-        () => Option.none<string>(),
-      );
+      const raw = yield* rawOf(entry.name, provider);
       problems.push({
         variable: entry.name,
         problem: Option.isNone(raw) ? `is required: it must ${entry.rule}` : `must ${entry.rule}`,
@@ -354,9 +351,9 @@ function rawOf(
   name: string,
   provider: ConfigProvider.ConfigProvider,
 ): Effect.Effect<Option.Option<string>> {
-  return Effect.orElseSucceed(Config.option(Config.String(name)).parse(provider), () =>
-    Option.none<string>(),
-  );
+  // Reading a variable as plain text fails only if the provider itself breaks, which the
+  // environment's never does; that would be a defect, not a missing variable.
+  return Effect.orDie(Config.option(Config.String(name)).parse(provider));
 }
 
 interface ProductionRule {
@@ -426,13 +423,8 @@ function crossVariableProblems(
 
 function inVariableOrder(problems: Array<ConfigProblem>): Array<ConfigProblem> {
   const order = serverVariables.map((entry) => entry.name);
-  return problems
-    .map((problem, index) => ({ problem, index }))
-    .toSorted(
-      (a, b) =>
-        order.indexOf(a.problem.variable) - order.indexOf(b.problem.variable) || a.index - b.index,
-    )
-    .map(({ problem }) => problem);
+  // A stable sort: problems with one variable keep the order they were found in.
+  return problems.toSorted((a, b) => order.indexOf(a.variable) - order.indexOf(b.variable));
 }
 
 /** Reads the server config from the current `ConfigProvider` (the environment by default). */

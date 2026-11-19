@@ -4,14 +4,12 @@
  * role the app does not know and an email no user has. The change applies to the user's next
  * request: the role is read from the database on every session lookup.
  */
-import { Effect, Exit, Redacted } from "effect";
 import { type Kysely, sql } from "kysely";
 
 import { Role } from "@s10n-base/contracts";
 
-import { databaseConfigFromEnv, ServerConfigError } from "./config";
+import { openCliDatabase, readDatabaseConfig } from "./database-cli";
 import type { DB } from "./infra/postgres/generated/db";
-import { createDb, createPool } from "./infra/postgres/pool";
 import { createLogger, type LogWriter } from "./observability/logger";
 
 const USAGE = `usage: auth:set-role <email> <${Role.literals.join("|")}>`;
@@ -60,14 +58,13 @@ export interface SetRoleCliOptions {
   readonly write?: LogWriter;
   /** For tests: the schema the tables are in. */
   readonly schema?: string;
+  /** For tests: a database to use instead of connecting to `DATABASE_URL`. */
+  readonly db?: Kysely<DB>;
 }
 
 /** Runs the command and returns the exit code. Output is JSON lines on stdout. */
 export async function runSetRoleCli(options: SetRoleCliOptions): Promise<number> {
-  const logger = createLogger({
-    level: "info",
-    ...(options.write ? { write: options.write } : {}),
-  });
+  const logger = createLogger({ level: "info", write: options.write });
   let parsed: { email: string; role: Role };
   try {
     parsed = parseSetRoleArgs(options.args);
@@ -75,25 +72,9 @@ export async function runSetRoleCli(options: SetRoleCliOptions): Promise<number>
     logger.error("set_role_usage", { usage: (error as Error).message });
     return 2;
   }
-  const configExit = Effect.runSyncExit(databaseConfigFromEnv(options.env));
-  if (Exit.isFailure(configExit)) {
-    const error = configExit.cause.reasons.find((reason) => reason._tag === "Fail")?.error;
-    logger.error("config_invalid", {
-      error:
-        error instanceof ServerConfigError ? { name: error._tag, message: error.message } : error,
-    });
-    return 1;
-  }
-  const db = createDb(
-    createPool({
-      connectionString: Redacted.value(configExit.value.databaseUrl),
-      max: 1,
-      ...(options.schema === undefined ? {} : { searchPath: options.schema }),
-      onIdleError: (error) => {
-        logger.warn("database_idle_connection_failed", { error });
-      },
-    }),
-  );
+  const config = readDatabaseConfig(options.env, logger);
+  if (config === undefined) return 1;
+  const db = options.db ?? openCliDatabase(config, logger, options.schema);
   try {
     const userId = await setUserRole(db, parsed.email, parsed.role);
     logger.info("role_set", { userId, role: parsed.role });

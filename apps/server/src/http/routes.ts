@@ -24,6 +24,7 @@ import {
 import { readJsonBody } from "./body";
 import { resolveClientIp } from "./client-ip";
 import { applyCors } from "./cors";
+import { requestLine } from "./request-line";
 import { HTML_CONTENT_SECURITY_POLICY, applySecurityHeaders } from "./security-headers";
 import { isApiPath, resolveStaticFile, sendStaticFile, wantsHtmlFallback } from "./static-files";
 
@@ -175,7 +176,7 @@ async function handledRoute(state: RequestState, context: HttpContext): Promise<
   const { request, response, url } = state;
   const methods = routes[url.pathname];
   if (methods === undefined) return false;
-  const handler = request.method === undefined ? undefined : methods[request.method];
+  const handler = methods[requestLine(request).method];
   if (handler === undefined) {
     response.setHeader("Allow", Object.keys(methods).join(", "));
     sendError(
@@ -222,7 +223,7 @@ async function route(state: RequestState, context: HttpContext): Promise<void> {
 
 function parseUrl(request: IncomingMessage): URL | undefined {
   try {
-    return new URL(request.url ?? "/", "http://localhost");
+    return new URL(requestLine(request).target, "http://localhost");
   } catch {
     return undefined;
   }

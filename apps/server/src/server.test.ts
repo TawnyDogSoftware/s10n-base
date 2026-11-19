@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { Schedule, Schema } from "effect";
+import { Redacted, Schedule, Schema } from "effect";
 import type { PostgresPool, PostgresPoolClient } from "kysely";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -10,7 +10,7 @@ import { defineRpc } from "@s10n-base/contracts";
 
 import type { ServerConfig } from "./config";
 import { defineHandler } from "./rpc/dispatcher";
-import { startServer, type StartedServer } from "./server";
+import { sesCredentials, startServer, type StartedServer } from "./server";
 import { testServerConfig } from "./test/config";
 
 const noop = () => {};
@@ -248,6 +248,13 @@ describe("startServer", () => {
     expect(events).toEqual(["pool:end"]);
   });
 
+  it("connects with a pg pool to DATABASE_URL by default, and fails to start without a database", async () => {
+    // Nothing listens on port 9 on 127.0.0.1, so the connection is refused at once.
+    await expect(
+      startServer(testConfig(), { connectSchedule: Schedule.recurs(0), write: () => {} }),
+    ).rejects.toMatchObject({ _tag: "DatabaseUnavailableError" });
+  });
+
   it("stops only once, however often stop is called", async () => {
     const events: string[] = [];
     await startWithSlowMethod(events);
@@ -279,5 +286,25 @@ describe("startServer", () => {
       }
       fs.rmSync(home, { recursive: true, force: true });
     }
+  });
+});
+
+describe("sesCredentials", () => {
+  const ses = testServerConfig().email.ses;
+
+  it("reveals the static keys for signing", () => {
+    expect(sesCredentials(ses)).toEqual({
+      accessKeyId: ses.credentials.accessKeyId,
+      secretAccessKey: Redacted.value(ses.credentials.secretAccessKey),
+    });
+  });
+
+  it("adds the session token when there is one", () => {
+    const withToken = {
+      ...ses,
+      credentials: { ...ses.credentials, sessionToken: Redacted.make("session-token") },
+    };
+
+    expect(sesCredentials(withToken).sessionToken).toBe("session-token");
   });
 });

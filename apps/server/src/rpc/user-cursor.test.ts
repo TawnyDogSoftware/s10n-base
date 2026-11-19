@@ -47,3 +47,19 @@ describe("user cursor", () => {
     expect(decodeUserCursor(cursor)).toBeNull();
   });
 });
+
+function encode(value: unknown): string {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+describe("decodeUserCursor, given the right shape with wrong values", () => {
+  const id = "6f1c2b9e-0000-4000-8000-000000000001";
+
+  it.each([
+    ["a time that is not a real date", { at: "2026-02-30T10:00:00.000000Z", id }],
+    ["an id that is not a uuid", { at: "2026-11-19T10:00:00.000000Z", id: "user-1" }],
+    ["values that are not text", { at: 1, id: 2 }],
+  ])("refuses %s", (_case, value) => {
+    expect(decodeUserCursor(encode(value))).toBeNull();
+  });
+});

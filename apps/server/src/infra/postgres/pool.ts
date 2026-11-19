@@ -18,6 +18,18 @@ export interface PoolOptions {
   readonly idleTimeoutMs?: number;
 }
 
+/**
+ * The pool's `onIdleError` for a process that logs: a warning, since the pool replaces the
+ * connection and the next query reconnects.
+ */
+export function warnOnIdleError(logger: {
+  readonly warn: (message: string, fields?: Readonly<Record<string, unknown>>) => void;
+}): (error: Error) => void {
+  return (error) => {
+    logger.warn("database_idle_connection_failed", { error });
+  };
+}
+
 const DEFAULT_CONNECT_TIMEOUT_MS = 5_000;
 const DEFAULT_STATEMENT_TIMEOUT_MS = 30_000;
 const DEFAULT_IDLE_TIMEOUT_MS = 30_000;

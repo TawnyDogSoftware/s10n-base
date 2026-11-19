@@ -3,6 +3,7 @@
  * works with.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { requestLine } from "./request-line";
 
 /** Headers that describe one connection, not the request: never passed on. */
 const HOP_BY_HOP = new Set([
@@ -52,7 +53,8 @@ export function toFetchRequest(
   request: Pick<IncomingMessage, "method" | "url" | "headers">,
   options: ToFetchRequestOptions,
 ): Request {
-  const target = new URL(request.url ?? "/", "https://placeholder.invalid");
+  const line = requestLine(request);
+  const target = new URL(line.target, "https://placeholder.invalid");
   const url = new URL(options.appOrigin);
   url.pathname = target.pathname;
   url.search = target.search;
@@ -61,7 +63,7 @@ export function toFetchRequest(
   if (options.clientIp !== undefined) headers.set(options.clientIpHeader, options.clientIp);
 
   return new Request(url, {
-    method: request.method ?? "GET",
+    method: line.method,
     headers,
     body: options.body === null ? null : new Uint8Array(options.body),
   });

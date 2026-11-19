@@ -28,14 +28,28 @@ const noEmail: AuthEmailSender = {
   sendPasswordResetEmail: () => Promise.resolve(),
 };
 
-/** Auth options for unit tests: no database, no email, no log output. */
-export function testAuthOptions(overrides: Partial<AuthOptionsConfig> = {}): AuthOptions {
-  return buildAuthOptions(
+/**
+ * Auth options for unit tests: no email, no log output, and no database unless a scripted one is
+ * passed. Better Auth's own schema check is off, since a unit test has no tables to check; the
+ * live tests run with it on.
+ */
+export function testAuthOptions(
+  overrides: Partial<AuthOptionsConfig> = {},
+  db: Kysely<DB> = unusedDb(),
+): AuthOptions {
+  const options = buildAuthOptions(
     { ...TEST_AUTH_CONFIG, ...overrides },
     {
-      db: unusedDb(),
+      db,
       emailSender: noEmail,
       logger: createLogger({ level: "error", write: () => {} }),
     },
   );
+  return {
+    ...options,
+    advanced: {
+      ...options.advanced,
+      database: { ...options.advanced.database, validateSchema: false },
+    },
+  };
 }

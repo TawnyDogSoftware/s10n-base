@@ -65,3 +65,9 @@ describe("waitForDatabase", () => {
     expect(ping).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("isTransientConnectionError with a thrown value that is not an Error", () => {
+  it("counts it as transient, like a network error without a code", () => {
+    expect(isTransientConnectionError("socket closed")).toBe(true);
+  });
+});

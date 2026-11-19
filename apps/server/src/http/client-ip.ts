@@ -28,6 +28,8 @@ export function resolveClientIp(request: ClientIpRequest, hops: number): string 
   const header = Array.isArray(raw) ? raw.join(",") : (raw as string | undefined);
   if (header === undefined || header.trim() === "") return fallback;
   const entries = header.split(",").map((entry) => entry.trim());
-  if (entries.length < hops || entries.some((entry) => isIP(entry) === 0)) return fallback;
-  return plain(entries[entries.length - hops] ?? "");
+  // The entry the outermost trusted proxy added, counting from the right.
+  const entry = entries.length < hops ? undefined : entries[entries.length - hops];
+  if (entry === undefined || entries.some((item) => isIP(item) === 0)) return fallback;
+  return plain(entry);
 }

@@ -16,7 +16,7 @@ export function adminUserHandlers(dependencies: { readonly db: Kysely<DB> }): Rp
   return [
     defineHandler(adminListUsers, async ({ limit, cursor }) => {
       const after = cursor === undefined || cursor === null ? null : decodeUserCursor(cursor);
-      if (cursor !== undefined && cursor !== null && after === null) {
+      if (after === null && typeof cursor === "string") {
         throw new RpcFailure(400, ERROR_CODES.invalidCursor, "The cursor is not valid.");
       }
       let query = db
@@ -43,7 +43,8 @@ export function adminUserHandlers(dependencies: { readonly db: Kysely<DB> }): Rp
       }
       const rows = await query.execute();
       const page = rows.slice(0, limit);
-      const last = page.at(-1);
+      // The extra row only says there is another page; the cursor is the page's last row.
+      const last = rows.length > limit ? page.at(-1) : undefined;
       return {
         users: page.map((row) => ({
           id: row.id,
@@ -55,9 +56,7 @@ export function adminUserHandlers(dependencies: { readonly db: Kysely<DB> }): Rp
           createdAt: new Date(row.created_at).toISOString(),
         })),
         nextCursor:
-          rows.length > limit && last !== undefined
-            ? encodeUserCursor({ createdAt: last.cursor_at, id: last.id })
-            : null,
+          last === undefined ? null : encodeUserCursor({ createdAt: last.cursor_at, id: last.id }),
       };
     }),
   ];

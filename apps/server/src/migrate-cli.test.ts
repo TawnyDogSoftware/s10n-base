@@ -2,6 +2,7 @@ import { Schedule } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { runMigrateCli } from "./migrate-cli";
+import { scriptedDb } from "./test/scripted-db";
 
 function capture() {
   const lines: string[] = [];
@@ -71,6 +72,7 @@ describe("runMigrateCli", () => {
       env: { DATABASE_URL: UNREACHABLE },
       write: output.write,
       schedule: Schedule.recurs(2),
+      schema: "fixture_schema",
     });
 
     expect(code).toBe(1);
@@ -82,5 +84,41 @@ describe("runMigrateCli", () => {
       "migrate_failed",
     ]);
     expect(output.text()).not.toContain("hunter2-secret");
+  });
+});
+
+describe("runMigrateCli with a database", () => {
+  const env = { DATABASE_URL: "postgres://app:secret@127.0.0.1:9/app" };
+
+  it("applies the committed migrations and exits 0", async () => {
+    const output = capture();
+    const { db, queries } = scriptedDb<unknown>(() => []);
+
+    const code = await runMigrateCli({ args: ["up"], env, write: output.write, db });
+
+    expect(code).toBe(0);
+    expect(output.entries()).toMatchObject([
+      { message: "migrations_applied", schema: "public", applied: ["001_auth"] },
+    ]);
+    expect(queries.some((query) => query.sql.startsWith('create table "ba_user"'))).toBe(true);
+  });
+
+  it("runs the given migrations in the given schema", async () => {
+    const output = capture();
+    const { db } = scriptedDb<unknown>(() => []);
+
+    const code = await runMigrateCli({
+      args: ["status"],
+      env,
+      write: output.write,
+      db,
+      schema: "fixture_schema",
+      migrations: { "001_widget": { up: () => Promise.resolve() } },
+    });
+
+    expect(code).toBe(0);
+    expect(output.entries()).toMatchObject([
+      { message: "migration_status", schema: "fixture_schema", pending: ["001_widget"] },
+    ]);
   });
 });

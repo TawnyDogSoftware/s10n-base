@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { once } from "node:events";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { Redacted, Schema } from "effect";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -52,6 +54,11 @@ beforeAll(() => {
   fs.mkdirSync(path.join(webDistDir, "assets"), { recursive: true });
   fs.writeFileSync(path.join(webDistDir, "index.html"), "<!doctype html><title>app</title>");
   fs.writeFileSync(path.join(webDistDir, "assets", "app-1a2b3c.js"), "export {};");
+  // Big enough that the response is still being sent when the client goes away.
+  fs.writeFileSync(
+    path.join(webDistDir, "assets", "big-4d5e6f.bin"),
+    Buffer.alloc(16 * 1024 * 1024),
+  );
   fs.mkdirSync(path.join(parent, "dist-evil"));
   fs.writeFileSync(path.join(parent, "dist-evil", "secret.txt"), "secret");
 });
@@ -153,6 +160,50 @@ async function rawGet(base: string, target: string) {
     request.end();
   });
 }
+
+/**
+ * Sends the start of a POST whose body never finishes, then drops the connection, and waits until
+ * the server has logged the request.
+ */
+async function abandonPost(base: string, target: string, headers: Record<string, string> = {}) {
+  const { port } = new URL(base);
+  const socket = net.connect(Number(port), "127.0.0.1");
+  await once(socket, "connect");
+  const lines = Object.entries({
+    host: `127.0.0.1:${port}`,
+    "content-type": "application/json",
+    "content-length": "100",
+    ...headers,
+  }).map(([name, value]) => `${name}: ${value}`);
+  socket.write(`POST ${target} HTTP/1.1\r\n${lines.join("\r\n")}\r\n\r\n{"method":`);
+  // Let the server parse the headers and start waiting for the rest of the body.
+  await delay(50);
+  socket.destroy();
+  await vi.waitFor(() => {
+    expect(logLines.find((line) => line.message === "request")).toBeDefined();
+  });
+  return logLines.find((line) => line.message === "request");
+}
+
+describe("a request target that is not a URL", () => {
+  it("answers 400 and logs the path as invalid", async () => {
+    const base = await start();
+
+    const response = await rawGet(base, "//[");
+
+    expect(response.status).toBe(400);
+    expect(JSON.parse(response.body)).toEqual({
+      ok: false,
+      error: { code: ERROR_CODES.invalidRequest, message: "The request URL is not valid." },
+    });
+    await vi.waitFor(() => {
+      expect(logLines.find((line) => line.message === "request")).toMatchObject({
+        path: "(invalid)",
+        status: 400,
+      });
+    });
+  });
+});
 
 describe("every response", () => {
   it("carries a fresh request id, ignoring the client's", async () => {
@@ -417,6 +468,20 @@ describe("POST /rpc", () => {
     expect(response.headers.get("connection")).toBe("close");
   });
 
+  it("sends nothing when the client goes away before the body arrives", async () => {
+    const handle = vi.fn<
+      (payload: unknown, context: RpcHandlerContext) => Promise<{ text: string }>
+    >(() => Promise.resolve({ text: "hi" }));
+    const dispatcher = createRpcDispatcher({
+      handlers: [defineHandler(echo, handle)],
+      resolveActor: anonymousActorResolver,
+    });
+    const base = await start({ dispatcher });
+
+    expect(await abandonPost(base, "/rpc")).toMatchObject({ path: "/rpc", aborted: true });
+    expect(handle).not.toHaveBeenCalled();
+  });
+
   it("answers a thrown error with the fixed 500 body and logs it with the request id and stack", async () => {
     const base = await start();
 
@@ -461,6 +526,25 @@ describe("the web app", () => {
     expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
     expect(response.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
     expect(response.headers.get("content-security-policy")).toBeNull();
+  });
+
+  it("stops sending a file and closes the connection when the client goes away part way", async () => {
+    const base = await start();
+    const { port } = new URL(base);
+    const socket = net.connect(Number(port), "127.0.0.1");
+    await once(socket, "connect");
+
+    socket.write(`GET /assets/big-4d5e6f.bin HTTP/1.1\r\nhost: 127.0.0.1:${port}\r\n\r\n`);
+    const [first] = (await once(socket, "data")) as [Buffer];
+    socket.destroy();
+
+    expect(first.toString("latin1")).toMatch(/^HTTP\/1\.1 200 OK/);
+    await vi.waitFor(() => {
+      const failed = logLines.find(
+        (line) => line.message === "request_failed" && line.path === "/assets/big-4d5e6f.bin",
+      );
+      expect(failed).toMatchObject({ error: { code: "ERR_STREAM_PREMATURE_CLOSE" } });
+    });
   });
 
   it("answers HEAD with the headers only", async () => {
@@ -711,6 +795,14 @@ describe("/api/auth", () => {
     expect(request?.url).toBe(`${APP_ORIGIN}/api/auth/sign-in/email`);
     expect(await request?.text()).toBe('{"email":"a@example.com"}');
     expect(request?.headers.get(CLIENT_IP_HEADER)).toBe("127.0.0.1");
+  });
+
+  it("calls nothing when the client goes away before the body arrives", async () => {
+    const handler = vi.fn<AppAuth["handler"]>(() => Promise.resolve(new Response("{}")));
+    const base = await start({ auth: { handler, guard: () => Promise.resolve(true) } });
+
+    expect(await abandonPost(base, "/api/auth/sign-in/email")).toMatchObject({ aborted: true });
+    expect(handler).not.toHaveBeenCalled();
   });
 
   it("refuses a body over the limit with 413, without calling Better Auth", async () => {

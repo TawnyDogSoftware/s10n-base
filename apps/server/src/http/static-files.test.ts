@@ -16,6 +16,7 @@ beforeAll(() => {
   fs.writeFileSync(path.join(root, "index.html"), "<!doctype html>");
   fs.writeFileSync(path.join(root, "assets", "index-abc123.js"), "console.log(1)");
   fs.writeFileSync(path.join(root, "favicon.svg"), "<svg/>");
+  fs.writeFileSync(path.join(root, "notes.unknownext"), "?");
   // A sibling whose name starts with the build directory's name.
   fs.mkdirSync(path.join(parent, "dist-evil"));
   fs.writeFileSync(path.join(parent, "dist-evil", "secret.txt"), "secret");
@@ -55,6 +56,12 @@ describe("resolveStaticFile", () => {
       isHtml: false,
       size: 14,
     });
+  });
+
+  it("serves a file of a type it does not know as plain bytes", async () => {
+    expect((await resolveStaticFile(root, "/notes.unknownext"))?.contentType).toBe(
+      "application/octet-stream",
+    );
   });
 
   it("revalidates other files", async () => {

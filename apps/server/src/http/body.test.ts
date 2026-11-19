@@ -1,5 +1,6 @@
 import http from "node:http";
 import net from "node:net";
+import { Readable } from "node:stream";
 import { once } from "node:events";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -16,9 +17,11 @@ const LIMIT = 1024;
 let server: http.Server | undefined;
 
 afterEach(async () => {
-  server?.closeAllConnections();
-  await new Promise((resolve) => server?.close(resolve));
+  const running = server;
   server = undefined;
+  if (running === undefined) return;
+  running.closeAllConnections();
+  await new Promise((resolve) => running.close(resolve));
 });
 
 /** A server that answers with what the reader returned, closing the connection on failure. */
@@ -136,5 +139,38 @@ describe("readJsonBody", () => {
     const response = await post(url, JSON.stringify({ text: "x".repeat(LIMIT * 4) }));
 
     expect(response.status).toBe(413);
+  });
+});
+
+/** A request whose body stream fails with `error` once read. */
+function failingRequest(error: Error): http.IncomingMessage {
+  const stream = new Readable({
+    read() {
+      this.destroy(error);
+    },
+  });
+  return Object.assign(stream, { headers: {} }) as unknown as http.IncomingMessage;
+}
+
+describe("a body stream that fails", () => {
+  it("reads as aborted when the client reset the connection", async () => {
+    const reset = Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
+
+    expect(await readRawBody(failingRequest(reset), LIMIT)).toEqual({
+      ok: false,
+      reason: "aborted",
+    });
+    expect(
+      await readJsonBody(
+        Object.assign(failingRequest(reset), { headers: { "content-type": "application/json" } }),
+        LIMIT,
+      ),
+    ).toEqual({ ok: false, status: "aborted" });
+  });
+
+  it("throws any other stream error", async () => {
+    await expect(readRawBody(failingRequest(new Error("disk on fire")), LIMIT)).rejects.toThrow(
+      "disk on fire",
+    );
   });
 });

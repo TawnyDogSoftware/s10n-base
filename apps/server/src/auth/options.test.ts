@@ -208,3 +208,14 @@ describe("trustedOrigins", () => {
     expect(trustedOrigins({ ...config, nodeEnv: "test" })).not.toContain("exp://");
   });
 });
+
+describe("Better Auth's log lines", () => {
+  it("carry no error field when Better Auth logs none", () => {
+    const { options, lines } = setup();
+
+    options.logger.log?.("warn", "something odd", { detail: 1 });
+
+    expect(lines).toMatchObject([{ level: "warn", authMessage: "something odd" }]);
+    expect(lines[0]).not.toHaveProperty("error");
+  });
+});

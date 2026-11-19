@@ -12,6 +12,7 @@ import type { AppAuth } from "../auth/instance";
 import { AUTH_BASE_PATH, CLIENT_IP_HEADER } from "../auth/options";
 import { readBody } from "./body";
 import { sendFetchResponse, toFetchHeaders, toFetchRequest } from "./fetch-bridge";
+import { requestLine } from "./request-line";
 
 const APP_AUTH_BASE_PATH = "/api/app-auth";
 
@@ -66,7 +67,7 @@ export async function handleAuthRequest(
   { request, response, url, clientIp }: AuthRequest,
   context: AuthRouteContext,
 ): Promise<void> {
-  const method = request.method ?? "GET";
+  const { method } = requestLine(request);
   const target = new URL(`${url.pathname}${url.search}`, context.appOrigin);
   if (!(await context.auth.guard(method, target))) {
     response.setHeader("Connection", "close");

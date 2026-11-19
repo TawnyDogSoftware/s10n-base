@@ -91,6 +91,27 @@ export function toAppSession(user: AuthUser): AppSession {
   };
 }
 
+/** The session of Better Auth's lookup result: none when there is none, or the user is banned. */
+export function sessionOf(result: { readonly user: unknown } | null, now: Date): AppSession | null {
+  if (result === null) return null;
+  const user = result.user as AuthUser;
+  return isBanned(user, now) ? null : toAppSession(user);
+}
+
+/**
+ * The session route's answer for Better Auth's lookup result and the cookies it set. A banned
+ * user's session is not renewed for them, so their cookies are dropped.
+ */
+export function readSessionOf(
+  result: { readonly user: unknown } | null,
+  setCookies: string[],
+  now: Date,
+): { readonly session: AppSession | null; readonly setCookies: string[] } {
+  const session = sessionOf(result, now);
+  if (result !== null && session === null) return { session: null, setCookies: [] };
+  return { session, setCookies };
+}
+
 /** Creates the Better Auth instance. Nothing touches the database until a request. */
 export function createAppAuth(options: AuthOptions, now: () => Date = () => new Date()): AppAuth {
   const auth = betterAuth(options);
@@ -110,20 +131,10 @@ export function createAppAuth(options: AuthOptions, now: () => Date = () => new 
     handler: (request) => auth.handler(request),
     guard,
     routes,
-    getSession: async (headers) => {
-      const result = await auth.api.getSession({ headers });
-      if (result === null) return null;
-      const user = result.user as AuthUser;
-      return isBanned(user, now()) ? null : toAppSession(user);
-    },
+    getSession: async (headers) => sessionOf(await auth.api.getSession({ headers }), now()),
     readSession: async (headers) => {
       const result = await auth.api.getSession({ headers, returnHeaders: true });
-      const setCookies = result.headers.getSetCookie();
-      if (result.response === null) return { session: null, setCookies };
-      const user = result.response.user as AuthUser;
-      // A banned user's session is not renewed for them.
-      if (isBanned(user, now())) return { session: null, setCookies: [] };
-      return { session: toAppSession(user), setCookies };
+      return readSessionOf(result.response, result.headers.getSetCookie(), now());
     },
     isTrustedOrigin: async (origin) => (await auth.$context).isTrustedOrigin(origin),
     updateUserName: async (userId, name) =>

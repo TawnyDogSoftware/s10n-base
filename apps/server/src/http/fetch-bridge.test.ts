@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { sendFetchResponse, toFetchRequest } from "./fetch-bridge";
+import { sendFetchResponse, toFetchHeaders, toFetchRequest } from "./fetch-bridge";
 
 const APP_ORIGIN = "https://app.example.com";
 const CLIENT_IP_HEADER = "x-test-client-ip";
@@ -161,5 +161,13 @@ describe("sendFetchResponse", () => {
     expect(received.statusCode).toBe(302);
     expect(received.headers.location).toBe("https://app.example.com/");
     expect(received.headers["cache-control"]).toBe("no-store");
+  });
+});
+
+describe("toFetchHeaders", () => {
+  it("skips a header Node reports without a value", () => {
+    const headers = toFetchHeaders({ "x-empty": undefined, accept: "text/html" }, []);
+
+    expect([...headers.keys()]).toEqual(["accept"]);
   });
 });

@@ -14,6 +14,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 
 import {
+  Cause,
   Context,
   Duration,
   Effect,
@@ -32,9 +33,10 @@ import { buildAuthOptions } from "./auth/options";
 import { createSessionActorResolver } from "./auth/session-actor";
 import { loadServerConfig, type ServerConfig } from "./config";
 import { createSesClient } from "./infra/email/ses";
+import type { AwsCredentials } from "./infra/email/sigv4";
 import type { DB } from "./infra/postgres/generated/db";
 import { pingDatabase, waitForDatabase } from "./infra/postgres/connect";
-import { createDb, createPool } from "./infra/postgres/pool";
+import { createDb, createPool, warnOnIdleError } from "./infra/postgres/pool";
 import { createRequestHandler } from "./http/routes";
 import { createLogger, type Logger, type LogWriter } from "./observability/logger";
 import { type ActorResolver, createRpcDispatcher, type RpcHandler } from "./rpc/dispatcher";
@@ -94,9 +96,7 @@ function defaultPool(config: ServerConfig, logger: Logger): PostgresPool {
   return createPool({
     connectionString: Redacted.value(config.databaseUrl),
     max: config.databasePoolMax,
-    onIdleError: (error) => {
-      logger.warn("database_idle_connection_failed", { error });
-    },
+    onIdleError: warnOnIdleError(logger),
   });
 }
 
@@ -105,10 +105,7 @@ const loggerLayer = (options: ServerLayerOptions) =>
     AppLogger,
     Effect.gen(function* () {
       const config = yield* AppConfig;
-      return createLogger({
-        level: config.logLevel,
-        ...(options.write ? { write: options.write } : {}),
-      });
+      return createLogger({ level: config.logLevel, write: options.write });
     }),
   );
 
@@ -157,18 +154,23 @@ const databaseLayer = (options: ServerLayerOptions) =>
     }),
   );
 
+/** The SES credentials from the config, revealed for signing; the session token if there is one. */
+export function sesCredentials(ses: ServerConfig["email"]["ses"]): AwsCredentials {
+  const token = ses.credentials.sessionToken;
+  return {
+    accessKeyId: ses.credentials.accessKeyId,
+    secretAccessKey: Redacted.value(ses.credentials.secretAccessKey),
+    ...(token === undefined ? {} : { sessionToken: Redacted.value(token) }),
+  };
+}
+
 function sesEmailSender(config: ServerConfig, logger: Logger): AuthEmailSender {
   const { ses } = config.email;
-  const token = ses.credentials.sessionToken;
   return createSesAuthEmailSender({
     ses: createSesClient({
       region: ses.region,
       endpoint: ses.endpoint,
-      credentials: {
-        accessKeyId: ses.credentials.accessKeyId,
-        secretAccessKey: Redacted.value(ses.credentials.secretAccessKey),
-        ...(token === undefined ? {} : { sessionToken: Redacted.value(token) }),
-      },
+      credentials: sesCredentials(ses),
     }),
     from: config.email.from,
     supportEmail: config.email.supportEmail,
@@ -325,14 +327,6 @@ export interface StartedServer {
   readonly stop: () => Promise<StopResult>;
 }
 
-function failureOf(exit: Exit.Exit<unknown, unknown>): unknown {
-  if (Exit.isSuccess(exit)) return undefined;
-  const reason = exit.cause.reasons[0];
-  if (reason?._tag === "Fail") return reason.error;
-  if (reason?._tag === "Die") return reason.defect;
-  return new Error("Server startup was interrupted.");
-}
-
 /**
  * Builds the layers in a new scope and returns once the server is listening.
  *
@@ -349,7 +343,7 @@ export async function startWithConfigLayer(
   );
   if (Exit.isFailure(built)) {
     await Effect.runPromise(Scope.close(scope, built));
-    throw failureOf(built);
+    throw Cause.squash(built.cause);
   }
   const context = built.value;
   const httpServer = Context.get(context, HttpServer);

@@ -37,15 +37,14 @@ export async function runServerProcess(options: ServerProcessOptions): Promise<v
   let running: RunningServer | undefined;
   // An object, so TypeScript does not narrow it to its first value across the await below.
   const shutdown = { requested: false };
-  let stopping = false;
 
   const removeHandlers = () => {
     for (const signal of SIGNALS) runtime.off(signal, onSignal);
   };
 
+  // Runs once: a second signal is turned away by onSignal, and the stop after startup runs only
+  // when no signal could reach a running server.
   const stop = (server: RunningServer) => {
-    if (stopping) return;
-    stopping = true;
     // Until the stop completes cleanly, an exit for any reason is a failure.
     runtime.exitCode = 1;
     const hardStop = setTimeout(

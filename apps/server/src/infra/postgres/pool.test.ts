@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createPool, withSearchPath } from "./pool";
+import { createPool, warnOnIdleError, withSearchPath } from "./pool";
 
 const URL = "postgres://app:pw@127.0.0.1:5432/app";
 
@@ -55,5 +55,16 @@ describe("createPool", () => {
       expect.objectContaining({ message: "terminating connection due to administrator command" }),
     );
     void pool.end();
+  });
+});
+
+describe("warnOnIdleError", () => {
+  it("logs an idle connection's failure as a warning", () => {
+    const warn = vi.fn<(message: string, fields?: Readonly<Record<string, unknown>>) => void>();
+    const error = new Error("terminating connection due to administrator command");
+
+    warnOnIdleError({ warn })(error);
+
+    expect(warn).toHaveBeenCalledWith("database_idle_connection_failed", { error });
   });
 });

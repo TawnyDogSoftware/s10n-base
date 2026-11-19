@@ -17,6 +17,7 @@ describe("authRouteInventory", () => {
       signIn: { path: "/sign-in/email", options: { method: "POST" } },
       hidden: { path: "/hidden", options: { method: "POST", metadata: { SERVER_ONLY: true } } },
       pathless: { options: { method: "POST" } },
+      methodless: { path: "/no-method", options: {} },
       removed: { path: "/admin/remove-user", options: { method: "POST" } },
     };
 

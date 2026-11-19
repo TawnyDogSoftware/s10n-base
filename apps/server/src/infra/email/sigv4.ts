@@ -101,12 +101,12 @@ function decodeComponent(value: string): string {
   }
 }
 
-/** The canonical query: every parameter decoded, encoded once, and sorted by key then value. */
 /** AWS sorts by code unit (byte order for ASCII), not by locale. */
 function compareCodeUnits(left: string, right: string): number {
   return left < right ? -1 : Number(left > right);
 }
 
+/** The canonical query: every parameter decoded, encoded once, and sorted by key then value. */
 function canonicalQuery(query: string): string {
   return query
     .split("&")

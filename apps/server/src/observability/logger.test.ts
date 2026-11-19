@@ -139,3 +139,12 @@ describe("createLogger", () => {
     }
   });
 });
+
+describe("serializeError", () => {
+  it("leaves out a stack the error does not have", () => {
+    const error = new Error("no stack");
+    delete error.stack;
+
+    expect(serializeError(error)).toEqual({ name: "Error", message: "no stack" });
+  });
+});

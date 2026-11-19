@@ -20,7 +20,8 @@ export type LogWriter = (line: string) => void;
 
 export interface LoggerOptions {
   readonly level: LogLevel;
-  readonly write?: LogWriter;
+  /** Defaults to stdout. */
+  readonly write?: LogWriter | undefined;
   readonly now?: () => Date;
 }
 

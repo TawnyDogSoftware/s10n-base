@@ -201,7 +201,14 @@ export type AuthOptions = Options & {
       readonly secure: boolean;
       readonly path: "/";
     };
-    readonly database: { readonly generateId: "uuid" };
+    readonly database: {
+      readonly generateId: "uuid";
+      /**
+       * Better Auth compares the database with its schema on first use, in every environment.
+       * Left unset (on) by the app; the unit tests, which have no tables, turn it off.
+       */
+      readonly validateSchema?: false;
+    };
     readonly ipAddress: { readonly ipAddressHeaders: string[] };
     readonly disableOriginCheck: false;
     readonly disableCSRFCheck: false;

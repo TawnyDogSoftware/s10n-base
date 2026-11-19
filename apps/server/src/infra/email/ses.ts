@@ -131,7 +131,8 @@ function requestBody(email: SesEmail): string {
 }
 
 function errorCode(error: unknown): string | undefined {
-  const cause = error instanceof Error ? (error as { cause?: unknown }).cause : undefined;
+  // fetch rejects with an Error; for a network failure, its cause carries Node's error code.
+  const cause = (error as Error | undefined)?.cause;
   const code = cause instanceof Error ? (cause as { code?: unknown }).code : undefined;
   return typeof code === "string" ? code : undefined;
 }

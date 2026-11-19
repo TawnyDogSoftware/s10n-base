@@ -334,3 +334,61 @@ describe("createSesClient", () => {
     }
   });
 });
+
+describe("failures it cannot place", () => {
+  it.each([
+    ["no cause", new TypeError("fetch failed")],
+    [
+      "a cause that is not an error",
+      Object.assign(new TypeError("fetch failed"), { cause: "hang up" }),
+    ],
+    [
+      "a cause whose code is not text",
+      Object.assign(new TypeError("fetch failed"), {
+        cause: Object.assign(new Error("x"), { code: 7 }),
+      }),
+    ],
+  ])(
+    "does not retry a network failure with %s: the email may have been sent",
+    async (_case, thrown) => {
+      const { ses, calls } = client(() => thrown);
+
+      const error = await failure(ses.sendEmail(email));
+
+      expect(error).toMatchObject({ kind: "unavailable", reason: "network", status: undefined });
+      expect(error.message).toBe("SES did not send the email (unavailable; network; 1 attempt).");
+      expect(calls).toHaveLength(1);
+    },
+  );
+
+  it("reports a 200 whose body is not JSON as having no message id", async () => {
+    const { ses } = client(() => new Response("OK", { status: 200 }));
+
+    expect(await failure(ses.sendEmail(email))).toMatchObject({
+      kind: "unavailable",
+      status: 200,
+      reason: "no_message_id",
+    });
+  });
+
+  it("calls MessageRejected without a message a rejection", async () => {
+    const { ses } = client(
+      () =>
+        new Response("{}", {
+          status: 400,
+          headers: { "x-amzn-errortype": "MessageRejected:http://internal/" },
+        }),
+    );
+
+    expect(await failure(ses.sendEmail(email))).toMatchObject({
+      kind: "rejected",
+      awsErrorType: "MessageRejected",
+    });
+  });
+
+  it("calls a 403 of a type it does not know a credentials problem", async () => {
+    const { ses } = client(() => awsError(403, "SomethingNew"));
+
+    expect(await failure(ses.sendEmail(email))).toMatchObject({ kind: "credentials", status: 403 });
+  });
+});

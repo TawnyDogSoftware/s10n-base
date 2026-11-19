@@ -3,11 +3,12 @@
  * one, retrying the first connection so it can start next to a database that is still booting,
  * runs one command, and returns the exit code. Output is JSON lines on stdout.
  */
-import { Effect, Exit, Redacted, type Schedule } from "effect";
+import { Effect, type Schedule } from "effect";
 import type { Kysely } from "kysely";
 import type { Migration } from "kysely/migration";
 
-import { databaseConfigFromEnv, type DatabaseConfig, ServerConfigError } from "./config";
+import type { DatabaseConfig } from "./config";
+import { openCliDatabase, readDatabaseConfig } from "./database-cli";
 import { pingDatabase, waitForDatabase } from "./infra/postgres/connect";
 import { migrations as committedMigrations } from "./infra/postgres/migrations";
 import {
@@ -16,7 +17,6 @@ import {
   parseMigrationCommand,
   runMigrationCommand,
 } from "./infra/postgres/migrator";
-import { createDb, createPool } from "./infra/postgres/pool";
 import { createLogger, type Logger, type LogWriter } from "./observability/logger";
 
 export interface MigrateCliOptions {
@@ -28,21 +28,8 @@ export interface MigrateCliOptions {
   /** For tests: the migrations to run and the schema to run them in. */
   readonly migrations?: Readonly<Record<string, Migration>>;
   readonly schema?: string;
-}
-
-/** The database config from `env`, or undefined after logging why it is invalid. */
-function readDatabaseConfig(
-  env: MigrateCliOptions["env"],
-  logger: Logger,
-): DatabaseConfig | undefined {
-  const exit = Effect.runSyncExit(databaseConfigFromEnv(env));
-  if (Exit.isSuccess(exit)) return exit.value;
-  const error = exit.cause.reasons.find((reason) => reason._tag === "Fail")?.error;
-  logger.error("config_invalid", {
-    error:
-      error instanceof ServerConfigError ? { name: error._tag, message: error.message } : error,
-  });
-  return undefined;
+  /** For tests: a database to use instead of connecting to `DATABASE_URL`. */
+  readonly db?: Kysely<unknown>;
 }
 
 /** Connects with a pool of one, waits for the database, and runs `command`. */
@@ -53,15 +40,7 @@ async function runWithDatabase(
   options: MigrateCliOptions,
 ): Promise<number> {
   const schema = options.schema ?? "public";
-  const pool = createPool({
-    connectionString: Redacted.value(config.databaseUrl),
-    max: 1,
-    ...(schema === "public" ? {} : { searchPath: schema }),
-    onIdleError: (error) => {
-      logger.warn("database_idle_connection_failed", { error });
-    },
-  });
-  const db = createDb(pool) as Kysely<unknown>;
+  const db = options.db ?? (openCliDatabase(config, logger, options.schema) as Kysely<unknown>);
   try {
     await Effect.runPromise(
       waitForDatabase(() => pingDatabase(db), {
@@ -88,8 +67,7 @@ async function runWithDatabase(
 }
 
 export async function runMigrateCli(options: MigrateCliOptions): Promise<number> {
-  const writer = options.write ? { write: options.write } : {};
-  const startupLogger = createLogger({ level: "info", ...writer });
+  const startupLogger = createLogger({ level: "info", write: options.write });
 
   let command: MigrationCommand;
   try {
@@ -101,7 +79,7 @@ export async function runMigrateCli(options: MigrateCliOptions): Promise<number>
 
   const config = readDatabaseConfig(options.env, startupLogger);
   if (config === undefined) return 1;
-  const logger = createLogger({ level: config.logLevel, ...writer });
+  const logger = createLogger({ level: config.logLevel, write: options.write });
 
   try {
     assertCommandAllowed(command, config.nodeEnv);
