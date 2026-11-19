@@ -79,6 +79,9 @@ export class ProcessIo implements Io {
         // No code means a signal ended it: a failure all the same.
         resolve({ code: code ?? 1, stdout, stderr });
       });
+      // A command may exit without reading its input, and writing to it then fails with EPIPE.
+      // Its exit code says how it went, so the failed write is not an error of the run.
+      child.stdin.on("error", () => undefined);
       child.stdin.end(options?.input ?? "");
     });
   }

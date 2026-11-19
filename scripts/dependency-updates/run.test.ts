@@ -74,6 +74,17 @@ describe("ProcessIo", () => {
     expect(lines[0]).toMatch(/^\$ node -e /);
   });
 
+  it("reports the exit code of a command that exits without reading its input", async () => {
+    // Its end of the pipe closes first, so writing the input fails with EPIPE. That is the
+    // command's choice, not an error of the run: before, it surfaced as an uncaught exception.
+    const io = new ProcessIo(tempDir(), undefined, () => {});
+
+    for (const options of [{}, { input: "x".repeat(4 * 1024 * 1024) }]) {
+      const result = await io.run("node", ["-e", "process.exit(3)"], options);
+      expect(result.code).toBe(3);
+    }
+  });
+
   it("reports a command a signal ended as a failure, and rejects one that cannot start", async () => {
     const io = new ProcessIo(tempDir(), undefined, () => {});
 
