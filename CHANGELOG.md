@@ -4,6 +4,23 @@ Scaffold-level changes to S10N Base, newest first. Projects created from an earl
 
 ## Unreleased
 
+### Added: hosted server core (Postgres, config, hardened HTTP, graceful shutdown, RPC auth levels)
+
+The server can now run as a multi-instance hosted service, with no auth yet. Details and reasons are in `plans/003-hosted-server-core.md`; setup is in `docs/setup.md`.
+
+- **Config:** one module built on Effect `Config` reads `NODE_ENV`, `APP_URL` (the single public origin; `https` in production), `HOST` (default `0.0.0.0`), `PORT`, `DATABASE_URL`, `DATABASE_POOL_MAX`, `TRUSTED_PROXY_HOPS`, `REQUEST_BODY_LIMIT_BYTES`, `SHUTDOWN_TIMEOUT_MS` and `LOG_LEVEL`. Startup fails with one log line listing every invalid or missing variable; a value of `DATABASE_URL` is never printed. `.env.example` lists them all.
+- **Removed:** `S10N_BASE_PORT`; use `PORT`. The server's default bind address is now `0.0.0.0` (it was `127.0.0.1`).
+- **Changed:** `GET /config` returns `APP_URL`'s origin as `apiBaseUrl`; it no longer reads the `Host` or `X-Forwarded-Proto` headers.
+- **Postgres:** `pg` 8.23.1 and Kysely 0.29.9, a pool with timeouts and an error listener, and generated database types (`kysely-codegen` 0.20.0, `bun run db:generate`). Migrations are numbered TypeScript files in an explicit list (empty for now), run by a separate entry point (`apps/server/dist/migrate.mjs`, `bun run db:migrate`) under an advisory lock. The server never migrates on startup.
+- **HTTP:** CORS allows only `APP_URL`'s origin; request bodies are limited (413) and `/rpc` requires JSON (415); every response has an `X-Request-Id` and security headers (a CSP on HTML, HSTS on https); a 500 never contains the error's message; unknown API paths answer 404 JSON and a wrong method 405; the client address honours `X-Forwarded-For` only behind `TRUSTED_PROXY_HOPS` proxies; static files are streamed with a containment check that no longer accepts a sibling directory with the same name prefix.
+- **Health:** `GET /health` is liveness only. New `GET /ready` checks the database and answers 503 while shutting down.
+- **Lifecycle:** config, logger, database and HTTP server are Effect layers. SIGTERM or SIGINT stops accepting connections, lets requests in flight finish for up to `SHUTDOWN_TIMEOUT_MS`, then closes the pool. Exit code 0 after a clean stop, 1 after a forced one or a failed startup.
+- **Logging:** one JSON object per line on stdout at every level (`at`, `level`, `message`, fields), filtered by `LOG_LEVEL`, with one access-log line per request.
+- **RPC:** `defineRpc` takes one object with a required `auth` (`"public"`, `"session"` or `{ role }`), and contracts carry separate encoded and decoded types. A dispatcher checks the method (404), the caller (401 or 403) before the payload (400), and encodes the result. Error codes are constants in `ERROR_CODES`. A test fails when a contract has no handler.
+- **Removed from `packages/shared`:** `json.ts` (`decodeUnknown`, `encode`, `safeJsonParse`), which had no caller.
+- **Local development:** `docker-compose.local.yml` runs Postgres 18.7 on `127.0.0.1:54320`. `bun dev` starts it, migrates, and runs the server and web app; the Vite dev server listens on `APP_URL`.
+- **Tests:** a live-Postgres lane (`*.live.test.ts`, `bun run test:live`) with a throwaway schema per suite, a guard that `TEST_DATABASE_URL` names a `_test` database, and `bun run db:test:sweep`. CI runs it against a Postgres service, and the smoke test also checks `/ready`, the web app and a clean exit on SIGTERM.
+
 ### Changed: toolchain and packages, CI, and daily dependency updates
 
 Every package and tool moved to the newest stable release that is at least 3 days old, and that rule is now enforced. Details and reasons are in `plans/002-toolchain-upgrade-and-ci.md`.

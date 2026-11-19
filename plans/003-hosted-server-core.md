@@ -1,6 +1,6 @@
 # 003: Hosted server core
 
-> Status: not started.
+> Status: implemented on 2026-11-19, on branch `feature/001-strip-desktop-and-local-first` (PR #1, which carries the whole rework).
 
 Phase 3 of [000](000-hosted-starter-rework.md). Builds on [001](001-strip-desktop-and-local-first.md) and [002](002-toolchain-upgrade-and-ci.md). Source labels are resolved in the private companion's README; nothing from that directory is copied into this repo.
 
@@ -138,4 +138,73 @@ Done when sections 4 to 10 are in, the above passes, nothing in section 2 was to
 
 ## 11. How it was built
 
-Filled in by the implementor.
+Implemented on 2026-11-19 on Node 26.13.1 and bun 1.4.4, with Docker 29 for the local Postgres. Registry and image data were read the same day.
+
+### Dependency versions
+
+| Package | Version | Published | Where |
+| --- | --- | --- | --- |
+| `pg` | `^8.23.1`, 8.23.1 | 2026-09-30 | server dependency |
+| `kysely` | `^0.29.9`, 0.29.9 | 2026-11-12 | server dependency; inside the `0.29.x` hold |
+| `kysely-codegen` | `^0.20.0`, 0.20.0 | 2026-02-16 | server dev dependency |
+| `@types/pg` | `^8.23.1`, 8.23.1 | 2026-08-17 | server dev dependency |
+| Postgres image | `postgres:18.7` | release 2026-11-12 | compose file and CI service |
+
+Each is the newest stable release at least 3 days old. The lockfile gained 49 packages (277 to 326 entries), most of them `kysely-codegen`'s CLI dependencies (`chalk`, `cosmiconfig`, `diff`, `dotenv`, `micromatch`, `zod` and theirs), all dev-only. `bun audit`: no vulnerabilities (288 packages). Nothing else was added.
+
+On the image: PostgreSQL 18.7 was released on 2026-11-12 and the official image's `18.7` tag appeared that day. The tag was rebuilt on 2026-11-18 for a `gosu` update, so the image behind it is a day old even though the release is a week old. It is pinned by tag, as section 9 asks; Dependabot (`docker-compose` ecosystem, 3-day cooldown, majors ignored) proposes the next one.
+
+### How Effect was used
+
+All from `effect` 4.1.4; no `@effect/*` package.
+
+- **`Config`:** each variable is its own `Config` (`Config.schema` with a `Schema` and `isBetween`/`makeFilter` checks, `Config.Literals`, `Config.withDefault`, `Config.map` for the origin and `Redacted`). `loadServerConfig` and `loadDatabaseConfig` read the current `ConfigProvider` (a `Context.Reference`; the environment by default) and `bin.ts` builds its config layer from it with `Layer.effect(AppConfig, loadServerConfig)`. Tests use `ConfigProvider.fromEnvRecord` and `fromUnknown`.
+  - **Did not behave as hoped:** `Config.all` and `Config.schema` stop at the first failure. `Config.schema` runs its parser with the default parse options, and there is no annotation or provider option for `errors: "all"`. So the module parses every variable on its own (`Effect.result` around each `config.parse(provider)`) and collects the failures into one `ServerConfigError`, as section 4 allowed. Cross-variable rules (https in production) are checked whenever the variables they read are valid, so they are reported with the rest.
+  - Effect's own `SchemaError` messages can quote the rejected value, so problems are reported with fixed rule text per variable, and missing versus invalid is told apart by reading the raw string with `Config.option(Config.String(name))`. A test checks no output contains a password.
+  - `ConfigProvider.fromEnvRecord` treats an empty value as unset by default, which is what `.env` files need.
+- **`Layer` and `Scope`:** four `Context.Service`s (`AppConfig`, `AppLogger`, `Database`, `HttpServer`), each with a `Layer.effect`, composed with `Layer.provideMerge` so acquisition runs config, logger, database, HTTP server, and release runs in reverse. The pool and the listening server are `Effect.acquireRelease` resources. `startServer` builds the layers with `Layer.buildWithScope` into a `Scope.make()` scope and stops by `Scope.close`; a failed build closes the scope, so a pool created before the database check failed is still ended (tested). A static `of` on a service class collides with `Context.Service`'s own `of`, so the helper is named `layer`.
+- **`Schedule`:** the first database connection, in the `migrate` entry point and at server startup, retries with `Effect.retry({ schedule: Schedule.spaced("500 millis").pipe(Schedule.upTo({ duration: "30 seconds" })), while: isTransient })`. Network errors and SQLSTATEs `57P03` and `53300` are retried; a wrong password or a missing database fails at once.
+- **Timeouts:** `Effect.timeoutOption` bounds the HTTP drain and the pool close by `SHUTDOWN_TIMEOUT_MS`; `Effect.timeout` bounds `/ready`'s `select 1` to two seconds.
+- **Where D1 did not reach:** signal handling. Without `@effect/platform-node` there is no `runMain`, so `process.ts` registers SIGTERM and SIGINT by hand and closes the scope; it is unit-tested with a fake process. Request handling is plain `node:http` and promises, as D1 says; only startup and shutdown run as Effects.
+
+### Claims checked by running them
+
+- **Kysely's migrator** (0.29.9): its Postgres adapter does take a session advisory lock, but only after it has created its bookkeeping tables, and without `migrationTableSchema` it looks for its table in every schema (`#doesTableExist` matches any schema). So the migrator always passes the schema and wraps every write in our own advisory lock on a pinned connection. The live test shows two concurrent runs serialising and each migration applied once.
+- **All pending migrations run in one transaction** on Postgres: when the second of two fails, neither is applied. The live test and `docs/setup.md` say so.
+- **`kysely-codegen` 0.20.0** has `--verify`, skips Kysely's own tables, and with no tables writes `export interface DB {}`, which oxfmt and oxlint accept. The live test generates types for a fixture table and shows `--verify` failing after the table changes.
+- **An idle connection killed by Postgres** (`pg_terminate_backend`, and a stopped container) is reported by the pool's `error` listener and the next query reconnects; without the listener Node would crash.
+- **Vite's build has no inline script** (`apps/web/dist/index.html` loads one module script and one stylesheet from `/assets`), so the CSP is `script-src 'self'` with no `unsafe-inline`.
+- **bun:** `bun --watch` does not exit when the event loop empties, so after a clean shutdown the server under `bun dev` stayed alive until the dev script killed it. The process now exits explicitly once shutdown completes. `bun run <script>` in 1.4.4 does not pass `.env` to the script it starts, while `bun file.ts` loads `.env` into its own process; the `db:*` scripts therefore go through `scripts/with-env.ts`.
+- **Node's HTTP server** closes the connection after a 413 sent with `Connection: close` while the body is still arriving (tested with a raw socket claiming 10 MB).
+
+### Departures from this plan, with reasons
+
+- **Two more error codes:** `http.not_found` and `http.method_not_allowed`, for unknown API paths (404) and a wrong method (405). Section 8's six codes are RPC and auth codes; these two are not.
+- **A role level requires exactly that role.** Section 8 does not say whether `admin` satisfies `{ role: "user" }`; it does not. A method for any signed-in user uses `"session"`.
+- **The server checks the database at startup** (with the same retry as `migrate`) and fails startup, in one log line, if it cannot connect. Section 7 implies it ("the config or connection error"); this makes it explicit.
+- **`reset` drops and recreates the schema** and then migrates, rather than reverting migration by migration, so it works when the history is broken.
+- **Postgres is published on `127.0.0.1:54320`,** not 5432, so it does not clash with another local Postgres. CI maps the same port, so `.env.example`'s URLs work in both.
+- **`scripts/with-env.ts`** loads `.env` (or `.env.example`) for `dev:server`, `dev:web`, `start:server`, the `db:*` scripts, `test:live` and `smoke`, not only for `bun dev`, so a fresh clone needs no `.env` for any of them.
+- **The Vite dev server listens on `APP_URL`'s host and port** (it used `HOST`, the server's bind address, which now defaults to `0.0.0.0`) and proxies `/ready` and `/api` too. This is the only web change besides removing the `as never` casts in `apps/web/src/rpc/client.ts`.
+- **The pool close has its own bound** of `SHUTDOWN_TIMEOUT_MS` after the HTTP drain, and a pool that does not close in time makes the stop forced (exit 1). `process.ts` exits 1 if the whole shutdown exceeds twice the deadline plus five seconds.
+- **`packages/shared/src/json.ts` is deleted** with its tests, its export and `shared`'s `effect` dependency: none of its three helpers had a caller once the casts went.
+- **The smoke test also checks that `/` serves the web app** when `apps/web/dist` exists. Manual verification found that the bundled server looked for the web build one directory too high (the config had moved into `src/config/`); the path now lives in `src/paths.ts`, and the smoke test would have caught it.
+- **`ServerConfig.paths` became `webDistDir`,** and `startServer` returns `{port, config, stop}`, where `stop` resolves to `{ forced }`.
+- **Process-level log lines** (startup failure, shutdown) are written at `info` regardless of `LOG_LEVEL`, since a startup failure may be the config itself.
+
+### Verification on the final commit (section 10)
+
+1. After `bun run clean`, with the database container stopped: `bun install --frozen-lockfile` passes (lockfile unchanged); `fmt:check`, `lint` (0 findings), `typecheck` (4 packages and `scripts`), `test` (36 files, 372 tests) and `build` pass. With the database started, `smoke` passes: `/health`, `/ready`, the web app at `/`, and exit 0 on SIGTERM.
+2. With the compose database up: `db:migrate` (`applied: []`), `db:status` (`applied: [], pending: [], unknown: []`), `db:generate:check` ("Generated types are up-to-date"), `test:live` (6 files, 13 tests) and `db:test:sweep` (dropped a planted `fixture_1_aaaaaaaaaaaa`) pass.
+3. `bun dev` with no `.env`, no running container and the data volume deleted: it printed "using .env.example", created the volume and both databases, migrated, and `http://localhost:5173/health`, `/ready` and `/config` answered 200 through the Vite proxy within 7 seconds. With the container stopped, `/ready` answered 503 `database_unavailable` while `/health` stayed 200, and the server logged `database_idle_connection_failed` and kept running. With it started again, `/ready` was 200 within 2 seconds. Ctrl-C (SIGINT to the process group) stopped the server, Vite and the dev script in under a second.
+4. Against the built server (`node apps/server/dist/bin.mjs`): a POST from `Origin: https://evil.example.com` got no `Access-Control-*` headers and its preflight 403, while `APP_URL`'s origin got them; a 5 KB body with a 2 KB limit got 413; a static file the server could not open (mode 000) got the fixed 500 body with the error and request id logged; `/%2e%2e%2fdist-evil%2fsecret.txt`, `/../dist-evil/secret.txt` and `/..%2fdist-evil%2fsecret.txt` with a planted `apps/web/dist-evil/secret.txt` got 404 and no secret; a POST whose body was trickled at 1 KB/s was answered after SIGTERM (3 s) and the process exited 0. No RPC method exists in this phase, so "a thrown error" was produced through the static file path; the RPC path is covered by `routes.test.ts`.
+5. `NODE_ENV=production APP_URL=http://example.com/app PORT=70000 LOG_LEVEL=verbose DATABASE_POOL_MAX=0 DATABASE_URL=mysql://app:<password>@db/app node apps/server/dist/bin.mjs` printed one JSON line, `Invalid configuration (5 problems)` naming each variable, exited 1, and the output did not contain the password. `bin.test.ts` checks the same from source.
+6. CI on the head commit: see the PR description.
+7. The scrub check prints nothing.
+
+### For later phases
+
+- **Phase 4:** the session lookup plugs in as `resolveActor` (`createRpcDispatcher({ handlers, resolveActor })`, also a `startServer` option). It is called for every known method, public ones included; make it cheap or lazy. `Database` exposes `db: Kysely<DB>` for the Better Auth Kysely adapter. The auth migration is the first entry in `migrations/index.ts`; run `db:generate` after it. `/api/*` answers 404 JSON today, and CORS allows only `GET, POST` and `content-type`; the auth routes will need more. `readBody` enforces the body limit and can back the Node-to-Fetch bridge. Live suites get a schema per suite from `createFixtureSchema()`.
+- **Phase 5:** `/config` returns `APP_URL`'s origin; the Vite dev server listens on it and proxies `/api`.
+- **Phase 7:** the live lane is not in the root projects, so coverage from it is separate. `paths.ts` must stay directly in `src/`.
+- **Phase 8:** the bundle is `dist/bin.mjs`, `dist/migrate.mjs` and a shared chunk; `pg`, `kysely` and `effect` stay external, so the image needs production `node_modules`. The server finds the web build at `../../web/dist` from `apps/server/dist`, so the image must keep that layout (or the path must become configurable). `HOST` defaults to `0.0.0.0`; health checks are `/health` and `/ready`; SIGTERM exits 0 after a clean stop.

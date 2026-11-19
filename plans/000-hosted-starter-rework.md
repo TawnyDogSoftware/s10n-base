@@ -1,6 +1,6 @@
 # 000: Rework s10n-base into a hosted web and mobile starter
 
-> Status: approved by the owner on 2026-11-18. Phase 1 implemented on 2026-11-19 ([001](001-strip-desktop-and-local-first.md)). Phase 2 implemented on 2026-11-19 ([002](002-toolchain-upgrade-and-ci.md)).
+> Status: approved by the owner on 2026-11-18. Phase 1 implemented on 2026-11-19 ([001](001-strip-desktop-and-local-first.md)). Phase 2 implemented on 2026-11-19 ([002](002-toolchain-upgrade-and-ci.md)). Phase 3 implemented on 2026-11-19 ([003](003-hosted-server-core.md)).
 
 Written 2026-11-18 from a review of three private projects built on this base (called Project A, B and C here), of s10n-base itself, of T3 Code upstream, and of the npm registry.
 
@@ -57,9 +57,9 @@ These are bugs, separate from the desktop assumptions. The first one was found b
 
 1. **The built server doesn't start** (confirmed 2026-11-19 on Node 26.12.1; **fixed in phase 2**, and CI's smoke test now checks it). `apps/server/tsdown.config.ts` has no setting to bundle workspace packages, and `packages/contracts` exports TypeScript source, so `dist/bin.mjs` imports raw `.ts`. Node 26 strips the types and loads that file, then exits with `ERR_MODULE_NOT_FOUND` on its extensionless relative import `./base`.
 2. **Five `tsconfig.tsbuildinfo` files are committed.** All three spin-offs inherited and later removed them.
-3. **No auth on `/rpc`, `/ws` or `/config`**, CORS is `*`, there is no request body limit, and 500 responses leak error messages.
-4. **The database closes before requests drain** on shutdown, and there is no shutdown deadline.
-5. **SQLite tables are created on every boot** with no migrations and no owner column.
+3. **No auth on `/rpc`, `/ws` or `/config`**, CORS is `*`, there is no request body limit, and 500 responses leak error messages. **Partly fixed in phase 3:** CORS allows only `APP_URL`'s origin, bodies are limited, a 500 sends a fixed message, every RPC method declares an auth level that one dispatcher enforces, and `/config` no longer trusts request headers; `/ws` went in phase 1. What is left is the auth itself: every caller is anonymous until phase 4.
+4. **The database closes before requests drain** on shutdown, and there is no shutdown deadline. **Fixed in phase 3:** Effect layers release the HTTP server (drain, then force-close at `SHUTDOWN_TIMEOUT_MS`) before the pool.
+5. **SQLite tables are created on every boot** with no migrations and no owner column. **Fixed in phases 1 and 3:** SQLite went in phase 1; Postgres has numbered migrations run by a separate entry point, and the server never migrates on startup. Owner columns arrive with the first tables (phase 4 onwards).
 6. **The web client uses relative URLs**, which a mobile app can't use.
 7. **Lockfile versions carry known advisories:** `ws` 8.20.0, vite 7.3.2, vitest 4.1.4, turbo 2.9.6, effect beta.45 and electron 40.6.0. **Fixed in phases 1 and 2:** electron went in phase 1; `ws` left the lockfile with jsdom 31; the rest moved past their advisories. Phase 2 also cleared a `source-map-js` advisory the old lockfile kept, and `bun audit` reports nothing.
 8. **Docs are wrong.** `EXTRACTION_REPORT.md` describes path helpers and log rotation that don't exist, and the rename checklist misses the `S10N_BASE_*` env vars, the localStorage key, the page title and the bin name.
@@ -218,7 +218,8 @@ To re-check on the day: `expo` 58.0.26 (eligible from 2026-11-20), oxlint 1.94.0
 - **Lifecycle:** `/health` (liveness) and a readiness check that pings the database; SIGTERM drains requests before closing the pool, with a deadline. Built on Effect `Layer`/`Scope` (D1), so resources release in reverse order of acquisition.
 - **Logging:** structured JSON to stdout only.
 - **RPC:** keep `POST /rpc` with the `{method, payload}` envelope. Every contract method declares `auth` (`public`, `session`, or a role), enforced in one dispatcher before the payload is decoded, with typed `unauthenticated` and `forbidden` errors. An exhaustiveness test fails if a method has no handler.
-- **Tests:** a live-Postgres lane with a throwaway schema per suite, a guard that the test URL ends in `_test`, and a sweeper for leftover databases.
+- **Tests:** a live-Postgres lane with a throwaway schema per suite, a guard that the test URL ends in `_test`, and a sweeper for leftover schemas.
+- **Phase 3 outcome (2026-11-19):** done as planned, with the departures recorded in plan 003, section 11. Two findings matter beyond this phase: Effect 4.1's `Config` stops at the first invalid variable, so the config module collects errors itself on top of per-variable `Config`s; and Kysely creates its bookkeeping tables before taking its own migration lock, which is why the migrator holds a separate advisory lock.
 - **Local dev:** `docker-compose.local.yml` with Postgres, and one `bun dev` that starts the database, server and web.
 
 ### Phase 4: auth
