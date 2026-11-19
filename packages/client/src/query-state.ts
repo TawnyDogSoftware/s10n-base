@@ -1,0 +1,245 @@
+/**
+ * Session-gated query state: cached server data belongs to the user who was signed in when it
+ * was fetched, and never outlives them. The rules:
+ *
+ * 1. Protected queries are built by {@link SessionGate.protectedQueryOptions}: the user's id is in
+ *    the key and the query is disabled without a session, so a component rendering for one user
+ *    cannot read another's data even if a purge were late.
+ * 2. When the accepted session's user (or role) changes, including to signed out, in-flight
+ *    queries are cancelled and every query and mutation not marked {@link PUBLIC_META} is
+ *    removed, synchronously, before React hears of the new session.
+ * 3. A response that started under one user and finishes under another is discarded
+ *    ({@link StaleSessionError}).
+ * 4. `auth.unauthenticated` from a protected call re-reads the session; a session that is gone is
+ *    a sign-out, so rule 2 applies.
+ * 5. A security action (sign in or out, sign up, password reset, passkey added or removed) is run
+ *    through {@link SessionGate.settle}, which re-reads the session afterwards. A `NetworkError`
+ *    is an unknown outcome, settled by that read rather than reported as a failure. The read runs
+ *    even when the browser reports offline.
+ */
+import {
+  hashKey,
+  type QueryClient,
+  QueryClientProvider,
+  type QueryFunctionContext,
+  type UseQueryOptions,
+  useQuery,
+} from "@tanstack/react-query";
+import { createContext, createElement, type ReactNode, useContext } from "react";
+
+import { type AppSession, ERROR_CODES } from "@s10n-base/contracts";
+
+import { NetworkError, RpcError } from "./transport";
+import {
+  type SessionClient,
+  SessionClientProvider,
+  SESSION_QUERY_KEY,
+  sessionQueryOptions,
+  useSession,
+} from "./session";
+
+export { PUBLIC_META, SESSION_QUERY_KEY } from "./session";
+
+/** Thrown in place of a response that belongs to a user who is no longer signed in here. */
+export class StaleSessionError extends Error {
+  override readonly name = "StaleSessionError";
+
+  constructor() {
+    super("The response belongs to a previous session and was discarded.");
+  }
+}
+
+/** The outcome of a security action, with the session read after it. */
+export type SettledAction<T> =
+  /** The action answered. `session` is undefined only if the read after it failed. */
+  | { readonly kind: "done"; readonly value: T; readonly session: AppSession | null | undefined }
+  /**
+   * No answer arrived, so it may or may not have happened. `session` is what the server says
+   * now, or undefined if it could not be reached either.
+   */
+  | { readonly kind: "unknown"; readonly session: AppSession | null | undefined };
+
+/** The key prefix of every protected query: `["user", userId, ...parts]`. */
+export const PROTECTED_ROOT = "user";
+
+export interface ProtectedQueryOptions<T> {
+  readonly queryKey: readonly [typeof PROTECTED_ROOT, string | null, ...unknown[]];
+  readonly queryFn: (context: QueryFunctionContext) => Promise<T>;
+  readonly enabled: boolean;
+}
+
+export interface SessionGate {
+  readonly queryClient: QueryClient;
+  readonly sessionClient: SessionClient;
+  readonly sessionQueryOptions: () => ReturnType<typeof sessionQueryOptions>;
+  /** The accepted session: `null` signed out, `undefined` not known yet. */
+  readonly current: () => AppSession | null | undefined;
+  /** Goes up by one every time the accepted user changes. */
+  readonly epoch: () => number;
+  /** The session from the cache while fresh, or read from the server. For route guards. */
+  readonly ensure: () => Promise<AppSession | null>;
+  /**
+   * Reads the session from the server now, after cancelling any read already in flight (which
+   * may have started before the state changed). Undefined when the read fails.
+   */
+  readonly refresh: () => Promise<AppSession | null | undefined>;
+  readonly protectedQueryOptions: <T>(
+    session: AppSession | null | undefined,
+    parts: readonly unknown[],
+    fetcher: (signal: AbortSignal) => Promise<T>,
+  ) => ProtectedQueryOptions<T>;
+  /**
+   * Runs a call on behalf of the current user: its result is discarded if the user changed
+   * meanwhile (rules 3 and 4). Use it for mutations; protected queries use it already.
+   */
+  readonly guard: <T>(run: () => Promise<T>) => Promise<T>;
+  /** Runs a security action and re-reads the session (rule 5). */
+  readonly settle: <T>(action: () => Promise<T>) => Promise<SettledAction<T>>;
+  /** Stops watching the session. */
+  readonly dispose: () => void;
+}
+
+const NOT_SEEN = Symbol("not seen");
+
+function identityOf(session: AppSession | null): string | null {
+  return session === null ? null : `${session.userId}\u0000${session.role}`;
+}
+
+function isPublic(meta: Record<string, unknown> | undefined): boolean {
+  return meta?.public === true;
+}
+
+export function createSessionGate(options: {
+  readonly queryClient: QueryClient;
+  readonly sessionClient: SessionClient;
+}): SessionGate {
+  const { queryClient, sessionClient } = options;
+  const sessionOptions = () => sessionQueryOptions(sessionClient);
+  const sessionHash = hashKey(SESSION_QUERY_KEY);
+  let accepted: AppSession | null | typeof NOT_SEEN = NOT_SEEN;
+  let epoch = 0;
+
+  const purge = () => {
+    epoch += 1;
+    // The session query is always kept, even when it was created without its meta (as
+    // `setQueryData` does): it is what the next screen renders from.
+    const predicate = (query: {
+      readonly queryHash: string;
+      readonly meta: Record<string, unknown> | undefined;
+    }) => query.queryHash !== sessionHash && !isPublic(query.meta);
+    // Cancelling aborts each request's signal synchronously; the promise is only bookkeeping.
+    void queryClient.cancelQueries({ predicate });
+    queryClient.removeQueries({ predicate });
+    const mutations = queryClient.getMutationCache();
+    for (const mutation of mutations.getAll()) {
+      if (!isPublic(mutation.meta)) mutations.remove(mutation);
+    }
+  };
+
+  const accept = (session: AppSession | null) => {
+    if (accepted !== NOT_SEEN && identityOf(accepted) !== identityOf(session)) purge();
+    accepted = session;
+  };
+
+  const existing = queryClient.getQueryData<AppSession | null>(SESSION_QUERY_KEY);
+  if (existing !== undefined) accepted = existing;
+
+  // The cache calls this synchronously when the session query gets new data, before it
+  // schedules any observer (React) notification, so the purge always happens first.
+  const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+    if (event.type !== "updated" || event.query.queryHash !== sessionHash) return;
+    if (event.action.type !== "success") return;
+    accept(event.query.state.data as AppSession | null);
+  });
+
+  const refresh = async () => {
+    await queryClient.cancelQueries({ queryKey: SESSION_QUERY_KEY });
+    try {
+      return await queryClient.fetchQuery({ ...sessionOptions(), staleTime: 0 });
+    } catch {
+      return undefined;
+    }
+  };
+
+  const guard = async <T>(run: () => Promise<T>): Promise<T> => {
+    const started = epoch;
+    let value: T;
+    try {
+      value = await run();
+    } catch (error) {
+      if (epoch !== started) throw new StaleSessionError();
+      if (error instanceof RpcError && error.code === ERROR_CODES.unauthenticated) void refresh();
+      throw error;
+    }
+    if (epoch !== started) throw new StaleSessionError();
+    return value;
+  };
+
+  return {
+    queryClient,
+    sessionClient,
+    sessionQueryOptions: sessionOptions,
+    current: () => (accepted === NOT_SEEN ? undefined : accepted),
+    epoch: () => epoch,
+    ensure: () => queryClient.fetchQuery(sessionOptions()),
+    refresh,
+    protectedQueryOptions: (session, parts, fetcher) => ({
+      queryKey: [PROTECTED_ROOT, session?.userId ?? null, ...parts],
+      queryFn: ({ signal }) => guard(() => fetcher(signal)),
+      enabled: session !== null && session !== undefined,
+    }),
+    guard,
+    settle: async (action) => {
+      let value;
+      try {
+        value = await action();
+      } catch (error) {
+        const session = await refresh();
+        if (error instanceof NetworkError) return { kind: "unknown", session };
+        throw error;
+      }
+      return { kind: "done", value, session: await refresh() };
+    },
+    dispose: unsubscribe,
+  };
+}
+
+const SessionGateContext = createContext<SessionGate | null>(null);
+
+/** Provides the gate, its query client and its session client to the tree. */
+export function SessionGateProvider(props: {
+  readonly gate: SessionGate;
+  readonly children?: ReactNode;
+}) {
+  const { gate } = props;
+  return createElement(
+    QueryClientProvider,
+    { client: gate.queryClient },
+    createElement(
+      SessionGateContext.Provider,
+      { value: gate },
+      createElement(SessionClientProvider, { client: gate.sessionClient }, props.children),
+    ),
+  );
+}
+
+export function useSessionGate(): SessionGate {
+  const gate = useContext(SessionGateContext);
+  if (gate === null) throw new Error("useSessionGate needs a SessionGateProvider above it.");
+  return gate;
+}
+
+/**
+ * A protected query for the signed-in user: `["user", userId, ...parts]`, disabled when signed
+ * out. Returns the session it was built for, so a screen can tell "signed out" from "loading".
+ */
+export function useProtectedQuery<T>(
+  parts: readonly unknown[],
+  fetcher: (signal: AbortSignal) => Promise<T>,
+  extra: Omit<UseQueryOptions<T>, "queryKey" | "queryFn" | "enabled"> = {},
+) {
+  const gate = useSessionGate();
+  const session = useSession();
+  const query = useQuery({ ...extra, ...gate.protectedQueryOptions(session, parts, fetcher) });
+  return { session, query };
+}
