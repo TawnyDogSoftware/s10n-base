@@ -71,7 +71,7 @@
     "lint": "bun run lint:directives && bun run lint:oxlint && bun run lint:eslint",
     "lint:directives": "bun scripts/quality/lint-directives.main.ts",
     "lint:oxlint": "oxlint . --deny-warnings --report-unused-disable-directives",
-    "lint:eslint": "eslint . --max-warnings=0",
+    "lint:eslint": "bun run --cwd apps/mobile typegen > /dev/null && eslint . --max-warnings=0",
     "deadcode": "knip && knip --production --exclude exports,types",
     "boundaries": "depcruise apps packages scripts --output-type err",
     "fmt": "oxfmt .",
