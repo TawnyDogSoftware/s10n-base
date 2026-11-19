@@ -62,6 +62,17 @@ export type SettledAction<T> =
 /** The key prefix of every protected query: `["user", userId, ...parts]`. */
 export const PROTECTED_ROOT = "user";
 
+/**
+ * The key of a protected query for `session`: `["user", userId, ...parts]`. Use it with
+ * `useInfiniteQuery` or `useMutation` keys, and run the request through `gate.guard`.
+ */
+export function protectedQueryKey(
+  session: AppSession | null | undefined,
+  parts: readonly unknown[],
+): readonly [typeof PROTECTED_ROOT, string | null, ...unknown[]] {
+  return [PROTECTED_ROOT, session?.userId ?? null, ...parts];
+}
+
 export interface ProtectedQueryOptions<T> {
   readonly queryKey: readonly [typeof PROTECTED_ROOT, string | null, ...unknown[]];
   readonly queryFn: (context: QueryFunctionContext) => Promise<T>;
@@ -184,7 +195,7 @@ export function createSessionGate(options: {
     ensure: () => queryClient.fetchQuery(sessionOptions()),
     refresh,
     protectedQueryOptions: (session, parts, fetcher) => ({
-      queryKey: [PROTECTED_ROOT, session?.userId ?? null, ...parts],
+      queryKey: protectedQueryKey(session, parts),
       queryFn: ({ signal }) => guard(() => fetcher(signal)),
       enabled: session !== null && session !== undefined,
     }),

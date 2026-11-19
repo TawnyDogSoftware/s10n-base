@@ -11,12 +11,19 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@better-auth/passkey": "catalog:",
+    "@s10n-base/client": "workspace:*",
     "@s10n-base/contracts": "workspace:*",
+    "@s10n-base/i18n": "workspace:*",
+    "@s10n-base/theme": "workspace:*",
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
+    "better-auth": "catalog:",
     "effect": "catalog:",
+    "i18next": "catalog:",
     "react": "catalog:",
-    "react-dom": "catalog:"
+    "react-dom": "catalog:",
+    "react-i18next": "catalog:"
   },
   "devDependencies": {
     "@tailwindcss/vite": "catalog:",
