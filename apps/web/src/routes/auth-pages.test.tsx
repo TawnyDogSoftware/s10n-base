@@ -242,6 +242,20 @@ describe("/sign-in", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("We could not reach the server.");
   });
 
+  it("says the server cannot be reached when sign-in succeeded but the session cannot be read", async () => {
+    const app = renderApp("/sign-in", backendWith("sam@example.com"));
+    await screen.findByRole("heading", { name: "Sign in" });
+    app.backend.failNext("/api/app-auth/session", { kind: "network" });
+
+    type("Email address", "sam@example.com");
+    type("Password", "correct horse");
+    click("Sign in");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("We could not reach the server.");
+    expect(app.location()).toBe("/sign-in");
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled();
+  });
+
   it("reports a passkey sign-in that did not complete", async () => {
     const app = renderApp("/sign-in", backendWith());
     await screen.findByRole("heading", { name: "Sign in" });

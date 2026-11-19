@@ -27,7 +27,11 @@ export function SignOutButton(props: { readonly variant?: "primary" | "secondary
     run(async () => {
       setOutcome(null);
       const result = await gate.settle(() => auth.signOut());
-      if (result.session === null) {
+      // The server confirmed the sign-out, and its answer cleared the cookie: if the read after
+      // it failed, signed out is still the known state.
+      const confirmed = result.kind === "done" && result.value.ok && result.session === undefined;
+      if (confirmed) gate.confirmSignedOut();
+      if (confirmed || result.session === null) {
         await navigate({ to: "/sign-in", replace: true });
         return;
       }
@@ -53,6 +57,8 @@ export function SignOutButton(props: { readonly variant?: "primary" | "secondary
         />
       ) : outcome?.kind === "done" && !outcome.value.ok ? (
         <Notice tone="danger">{tError(errorMessageKey(outcome.value))}</Notice>
+      ) : outcome?.kind === "done" ? (
+        <Notice tone="danger">{t("unknownOutcome.stillSignedIn")}</Notice>
       ) : null}
     </div>
   );

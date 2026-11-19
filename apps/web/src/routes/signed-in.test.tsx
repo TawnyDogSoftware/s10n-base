@@ -170,6 +170,19 @@ describe("/profile", () => {
     await waitForLocation(app, "/sign-in");
   });
 
+  it("goes to sign-in after a confirmed sign-out even when the session cannot be read afterwards", async () => {
+    const app = renderApp("/profile", signedIn());
+    await screen.findByLabelText("Name");
+    app.backend.failNext("/api/app-auth/session", { kind: "network" });
+
+    click("Sign out");
+
+    // The server answered the sign-out, and its answer cleared the cookie.
+    await waitForLocation(app, "/sign-in");
+    expect(app.services.gate.current()).toBeNull();
+    expect(screen.queryByText("sam@example.com")).not.toBeInTheDocument();
+  });
+
   it("says the user is still signed in when the sign-out answer is lost and it did not happen", async () => {
     const app = renderApp("/profile", signedIn());
     await screen.findByLabelText("Name");

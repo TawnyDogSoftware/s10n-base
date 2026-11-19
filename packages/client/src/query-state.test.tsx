@@ -352,6 +352,20 @@ describe("security actions", () => {
   });
 });
 
+describe("confirmSignedOut", () => {
+  it("installs signed-out and purges, for a sign-out the server confirmed when the read after it failed", () => {
+    const { gate, queryClient } = setup(alice);
+    accept(gate, alice);
+    queryClient.setQueryData(["user", "alice", "profile"], "alice's profile");
+
+    gate.confirmSignedOut();
+
+    expect(gate.current()).toBeNull();
+    expect(queryClient.getQueryData(SESSION_QUERY_KEY)).toBeNull();
+    expect(queryClient.getQueryData(["user", "alice", "profile"])).toBeUndefined();
+  });
+});
+
 describe("ensure", () => {
   it("returns the cached session, or reads it once", async () => {
     const { gate, server } = setup(alice);

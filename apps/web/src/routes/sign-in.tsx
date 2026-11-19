@@ -110,6 +110,9 @@ function SignInPage() {
             />
           ) : outcome?.kind === "done" && !outcome.value.ok ? (
             <Notice tone="danger">{tError(errorMessageKey(outcome.value))}</Notice>
+          ) : outcome?.kind === "done" ? (
+            // Signed in, but the session could not be read to confirm it.
+            <Notice tone="danger">{tError("network")}</Notice>
           ) : null}
           <Field
             label={t("fields.email")}

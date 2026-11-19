@@ -106,6 +106,12 @@ export interface SessionGate {
   readonly guard: <T>(run: () => Promise<T>) => Promise<T>;
   /** Runs a security action and re-reads the session (rule 5). */
   readonly settle: <T>(action: () => Promise<T>) => Promise<SettledAction<T>>;
+  /**
+   * Installs "signed out" without asking the server. Only for a sign-out the server answered
+   * with success (its answer cleared the cookie) when the read after it failed: the one case
+   * where the client may decide the session state itself.
+   */
+  readonly confirmSignedOut: () => void;
   /** Stops watching the session. */
   readonly dispose: () => void;
 }
@@ -210,6 +216,9 @@ export function createSessionGate(options: {
         throw error;
       }
       return { kind: "done", value, session: await refresh() };
+    },
+    confirmSignedOut: () => {
+      queryClient.setQueryData(SESSION_QUERY_KEY, null);
     },
     dispose: unsubscribe,
   };
