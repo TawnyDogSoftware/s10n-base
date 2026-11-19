@@ -97,19 +97,25 @@ export function wantsHtmlFallback(
   return method === "GET" && accept?.includes("text/html") === true && !isApiPath(pathname);
 }
 
-/** Sends `file`. `HEAD` gets the headers only. */
+/**
+ * Sends `file`. `HEAD` gets the headers only. The file is opened before anything is written, so
+ * a file that cannot be read throws with the response untouched and the caller can answer 500.
+ */
 export async function sendStaticFile(
   method: string | undefined,
   response: ServerResponse,
   file: StaticFile,
 ): Promise<void> {
+  const handle = await fs.promises.open(file.filePath, "r");
   response.statusCode = 200;
   response.setHeader("Content-Type", file.contentType);
   response.setHeader("Content-Length", String(file.size));
   response.setHeader("Cache-Control", file.cacheControl);
   if (method === "HEAD") {
+    await handle.close();
     response.end();
     return;
   }
-  await pipeline(fs.createReadStream(file.filePath), response);
+  // The stream closes the handle when it ends or fails.
+  await pipeline(handle.createReadStream(), response);
 }

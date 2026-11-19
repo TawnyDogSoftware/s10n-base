@@ -19,7 +19,7 @@ import {
   type RpcDispatcher,
 } from "../rpc/dispatcher";
 import { HTML_CONTENT_SECURITY_POLICY } from "./security-headers";
-import { createRequestHandler, type HttpContext } from "./routes";
+import { UNEXPECTED_ERROR_BODY, createRequestHandler, type HttpContext } from "./routes";
 
 const APP_ORIGIN = "http://localhost:5173";
 let parent: string;
@@ -448,6 +448,16 @@ describe("the web app", () => {
     expect(response.headers.get("content-security-policy")).toBeNull();
   });
 
+  it("answers HEAD with the headers only", async () => {
+    const base = await start();
+
+    const response = await fetch(`${base}/assets/app-1a2b3c.js`, { method: "HEAD" });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-length")).toBe("10");
+    expect(await response.text()).toBe("");
+  });
+
   it("falls back to index.html for a page navigation", async () => {
     const base = await start();
 
@@ -477,6 +487,25 @@ describe("the web app", () => {
     const response = await rawGet(base, target);
 
     expect(response.body).not.toContain("secret");
+  });
+
+  it("answers a file it cannot read with the fixed 500 body", async () => {
+    const unreadable = path.join(webDistDir, "assets", "locked-9z8y7x.js");
+    fs.writeFileSync(unreadable, "export {};");
+    fs.chmodSync(unreadable, 0o000);
+    try {
+      const base = await start();
+
+      const response = await fetch(`${base}/assets/locked-9z8y7x.js`);
+
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual(UNEXPECTED_ERROR_BODY);
+      expect(logLines.find((line) => line.message === "request_failed")).toMatchObject({
+        error: { code: "EACCES" },
+      });
+    } finally {
+      fs.rmSync(unreadable, { force: true });
+    }
   });
 
   it("answers 404 for every non-API path when there is no web build", async () => {
