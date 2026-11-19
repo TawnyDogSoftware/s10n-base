@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 
 import { describe, expect, it } from "vitest";
 
-import { supervise, type Supervised } from "./dev";
+import { localInboxUrl, supervise, type Supervised } from "./dev";
 
 function node(name: string, source: string): Supervised {
   return { name, child: spawn("node", ["-e", source], { stdio: "ignore" }) };
@@ -10,6 +10,14 @@ function node(name: string, source: string): Supervised {
 
 const RUN_UNTIL_SIGTERM =
   "setInterval(() => {}, 1000); process.on('SIGTERM', () => process.exit(0));";
+
+describe("localInboxUrl", () => {
+  it("is the capture server's page when SES_ENDPOINT is set, and undefined otherwise", () => {
+    expect(localInboxUrl({ SES_ENDPOINT: "http://127.0.0.1:8005" })).toBe("http://127.0.0.1:8005/");
+    expect(localInboxUrl({ SES_ENDPOINT: "" })).toBeUndefined();
+    expect(localInboxUrl({})).toBeUndefined();
+  });
+});
 
 describe("supervise", () => {
   it("stops every child when interrupted and returns 0", async () => {

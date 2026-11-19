@@ -1,8 +1,8 @@
 /**
  * `bun dev`: starts the local database and waits until it is healthy, applies migrations, then
- * runs the API server (in watch mode) and the web dev server until interrupted. Ctrl-C stops
- * both; if either exits on its own, the other is stopped too. The database container keeps
- * running (`bun run db:down` stops it).
+ * runs the local SES capture server (when `SES_ENDPOINT` is set), the API server (in watch mode)
+ * and the web dev server until interrupted. Ctrl-C stops them all; if one exits on its own, the
+ * others are stopped too. The database container keeps running (`bun run db:down` stops it).
  *
  * Environment: `.env` if present, otherwise `.env.example` (see local-env.ts).
  */
@@ -64,6 +64,18 @@ async function run(command: string, args: ReadonlyArray<string>, env: Record<str
   if (code !== 0) throw new Error(`${command} ${args.join(" ")} exited with code ${code}`);
 }
 
+/**
+ * The local inbox URL when `SES_ENDPOINT` points at the capture server, or undefined when it is
+ * unset (email then goes to real SES, and no capture server is started).
+ */
+export function localInboxUrl(
+  env: Readonly<Record<string, string | undefined>>,
+): string | undefined {
+  const endpoint = env.SES_ENDPOINT;
+  if (endpoint === undefined || endpoint === "") return undefined;
+  return `${new URL(endpoint).origin}/`;
+}
+
 async function main(): Promise<number> {
   const { source, env } = loadLocalEnv(ROOT, process.env);
   console.log(`bun dev: using ${source}`);
@@ -78,7 +90,20 @@ async function main(): Promise<number> {
   await run("docker", ["compose", "-f", "docker-compose.local.yml", "up", "-d", "--wait"], env);
   await run("bun", ["apps/server/src/migrate.ts", "up"], env);
 
+  const inbox = localInboxUrl(env);
   const children: Supervised[] = [
+    ...(inbox === undefined
+      ? []
+      : [
+          {
+            name: "ses-local",
+            child: spawn("bun", ["scripts/ses-local/main.ts"], {
+              cwd: ROOT,
+              env,
+              stdio: "inherit",
+            }),
+          },
+        ]),
     {
       name: "server",
       child: spawn("bun", ["--watch", "src/bin.ts"], {
@@ -97,6 +122,7 @@ async function main(): Promise<number> {
     },
   ];
   console.log(`bun dev: open ${env.APP_URL ?? "the APP_URL origin"}`);
+  if (inbox !== undefined) console.log(`bun dev: emails are captured, not sent; inbox: ${inbox}`);
   return supervise(children, stop);
 }
 
