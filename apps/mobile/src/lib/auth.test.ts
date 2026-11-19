@@ -22,7 +22,7 @@ function setup() {
 describe("authStoragePrefix", () => {
   it("gives each API origin its own keys, in characters SecureStore accepts", () => {
     const one = authStoragePrefix("https://api.example.com");
-    const other = authStoragePrefix("http://192.168.1.20:4210");
+    const other = authStoragePrefix("http://localhost:4210");
 
     expect(one).not.toBe(other);
     for (const prefix of [one, other]) expect(prefix).toMatch(/^[A-Za-z0-9._-]+$/);

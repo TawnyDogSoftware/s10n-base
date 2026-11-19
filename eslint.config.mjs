@@ -99,6 +99,12 @@ export default tseslint.config(
     },
   },
   {
+    // Development tools and tests run git, bun, node and docker from PATH, as the developer's own
+    // shell does; nothing that ships runs a command. Plan 007, section 11.
+    files: ["scripts/**", "e2e/**", ...TESTS],
+    rules: { "sonarjs/no-os-command-from-path": "off" },
+  },
+  {
     // Every word a user reads comes from packages/i18n.
     files: ["apps/web/src/**/*.tsx", "apps/mobile/src/**/*.tsx"],
     ignores: TESTS,

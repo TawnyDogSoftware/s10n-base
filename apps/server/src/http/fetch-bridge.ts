@@ -52,7 +52,7 @@ export function toFetchRequest(
   request: Pick<IncomingMessage, "method" | "url" | "headers">,
   options: ToFetchRequestOptions,
 ): Request {
-  const target = new URL(request.url ?? "/", "http://placeholder.invalid");
+  const target = new URL(request.url ?? "/", "https://placeholder.invalid");
   const url = new URL(options.appOrigin);
   url.pathname = target.pathname;
   url.search = target.search;

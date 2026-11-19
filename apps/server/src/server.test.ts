@@ -60,6 +60,14 @@ const slow = defineRpc({ method: "fixture.slow", auth: "public", payload: Empty,
 
 let started: StartedServer | undefined;
 
+/** The server the test started; the test stops it itself, so afterEach does not. */
+function takeStarted(): StartedServer {
+  const server = started;
+  if (server === undefined) throw new Error("No server was started.");
+  started = undefined;
+  return server;
+}
+
 afterEach(async () => {
   await started?.stop();
   started = undefined;
@@ -119,8 +127,7 @@ describe("startServer", () => {
   it("lets a request in flight finish, then closes the pool, in that order", async () => {
     const events: string[] = [];
     const { call, handlerStarted, finish } = await startWithSlowMethod(events);
-    const server = started!;
-    started = undefined;
+    const server = takeStarted();
 
     const inFlight = call();
     await vi.waitFor(() => {
@@ -145,8 +152,7 @@ describe("startServer", () => {
   it("stops accepting connections once stopping", async () => {
     const events: string[] = [];
     const { base } = await startWithSlowMethod(events);
-    const server = started!;
-    started = undefined;
+    const server = takeStarted();
 
     await server.stop();
 
@@ -156,8 +162,7 @@ describe("startServer", () => {
   it("answers /ready 503 when shutdown starts while the check is running", async () => {
     const events: string[] = [];
     const { base, pool } = await startWithSlowMethod(events);
-    const server = started!;
-    started = undefined;
+    const server = takeStarted();
 
     const release = pool.holdQueries();
     const ready = fetch(`${base}/ready`);
@@ -191,8 +196,7 @@ describe("startServer", () => {
     const { call, handlerStarted, logs } = await startWithSlowMethod(events, {
       shutdownTimeoutMs: 300,
     });
-    const server = started!;
-    started = undefined;
+    const server = takeStarted();
 
     const stuck = call().then(
       () => "answered",
@@ -247,8 +251,7 @@ describe("startServer", () => {
   it("stops only once, however often stop is called", async () => {
     const events: string[] = [];
     await startWithSlowMethod(events);
-    const server = started!;
-    started = undefined;
+    const server = takeStarted();
 
     const results = await Promise.all([server.stop(), server.stop()]);
 

@@ -38,6 +38,8 @@ const handlers = [
 ];
 
 const PASSWORD = "correct horse battery staple";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 let app: AuthServer;
 let nextIp = 1;
 
@@ -110,9 +112,9 @@ describe("sign-up, verification, sign-in and sign-out", () => {
       password: PASSWORD,
     });
     expect(signedIn.status).toBe(200);
-    const session = await browser.session();
+    const { userId, ...session } = (await browser.session()) as Record<string, unknown>;
+    expect(userId).toMatch(UUID);
     expect(session).toEqual({
-      userId: expect.any(String),
       email: address,
       name: "Test User",
       image: null,

@@ -143,12 +143,12 @@ describe("runServerProcess", () => {
 
     expect(runtime.exitCode).toBe(1);
     expect(runtime.exits).toEqual([1]);
-    expect(output.lines).toEqual([
-      expect.objectContaining({
+    expect(output.lines).toMatchObject([
+      {
         level: "error",
         message: "startup_failed",
-        error: expect.objectContaining({ message: "Could not connect to the database." }),
-      }),
+        error: { message: "Could not connect to the database." },
+      },
     ]);
     expect(listeners("SIGTERM")).toBe(0);
   });

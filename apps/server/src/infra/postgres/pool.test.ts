@@ -52,7 +52,7 @@ describe("createPool", () => {
     pool.emit("error", new Error("terminating connection due to administrator command"));
 
     expect(onIdleError).toHaveBeenCalledWith(
-      expect.objectContaining({ message: expect.any(String) }),
+      expect.objectContaining({ message: "terminating connection due to administrator command" }),
     );
     void pool.end();
   });

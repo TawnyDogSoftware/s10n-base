@@ -10,7 +10,7 @@ import type { AppSession } from "@s10n-base/contracts";
 import { Notice } from "./ui";
 
 function sessionText(
-  t: TFunction<"common">,
+  t: TFunction,
   session: AppSession | null | undefined,
   signedInText: string,
 ): string {

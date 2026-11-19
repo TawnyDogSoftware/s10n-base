@@ -1,4 +1,5 @@
-import type { Kysely } from "kysely";
+import { Kysely, PostgresDialect } from "kysely";
+import { Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -24,8 +25,12 @@ describe("parseMigrationCommand", () => {
 });
 
 describe("runMigrationCommand", () => {
-  // Never reached: the production check runs before any query.
-  const db = {} as Kysely<unknown>;
+  // Never connected: the production check runs before any query, and Kysely connects lazily.
+  const db = new Kysely<unknown>({
+    dialect: new PostgresDialect({
+      pool: new Pool({ connectionString: "postgres://u:p@127.0.0.1:1/x" }),
+    }),
+  });
 
   it.each(["down", "reset"] as const)("refuses %s when NODE_ENV is production", async (command) => {
     const log = vi.fn<(message: string) => void>();

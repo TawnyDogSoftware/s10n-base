@@ -103,7 +103,7 @@ async function main(): Promise<number> {
       : [
           {
             name: "ses-local",
-            child: spawn("bun", ["scripts/ses-local/main.ts"], {
+            child: spawn(process.execPath, ["scripts/ses-local/main.ts"], {
               cwd: ROOT,
               env,
               stdio: "inherit",
@@ -112,7 +112,7 @@ async function main(): Promise<number> {
         ]),
     {
       name: "server",
-      child: spawn("bun", ["--watch", "src/bin.ts"], {
+      child: spawn(process.execPath, ["--watch", "src/bin.ts"], {
         cwd: path.join(ROOT, "apps/server"),
         env,
         stdio: "inherit",

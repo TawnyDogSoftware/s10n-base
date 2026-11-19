@@ -57,8 +57,8 @@ describe("buildExpoConfig", () => {
 
   it("accepts plain http in development only", () => {
     expect(
-      buildExpoConfig({ EXPO_PUBLIC_API_BASE_URL: "http://192.168.1.20:4210" }).extra,
-    ).toMatchObject({ apiBaseUrl: "http://192.168.1.20:4210" });
+      buildExpoConfig({ EXPO_PUBLIC_API_BASE_URL: "http://dev-machine.example.com:4210" }).extra,
+    ).toMatchObject({ apiBaseUrl: "http://dev-machine.example.com:4210" });
     for (const variant of ["preview", "production"]) {
       expect(() =>
         buildExpoConfig({

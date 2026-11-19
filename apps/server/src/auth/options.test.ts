@@ -183,13 +183,13 @@ describe("buildAuthOptions", () => {
 
     options.logger.log?.("error", "something failed", new Error("boom"), { other: 1 });
 
-    expect(lines).toEqual([
-      expect.objectContaining({
+    expect(lines).toMatchObject([
+      {
         level: "error",
         message: "better_auth",
         authMessage: "something failed",
-        error: expect.objectContaining({ message: "boom" }),
-      }),
+        error: { message: "boom" },
+      },
     ]);
   });
 });

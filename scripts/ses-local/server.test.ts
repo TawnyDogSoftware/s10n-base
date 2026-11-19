@@ -207,7 +207,7 @@ describe("ses-local", () => {
     expect((await fetch(`${local.url}/store`, { method: "DELETE" })).status).toBe(404);
   });
 
-  it.each(["0.0.0.0", "::", "192.168.1.10", "example.com"])(
+  it.each(["0.0.0.0", "::", "192.0.2.10", "example.com"])(
     "refuses to listen on %s, since the inbox has no authentication",
     async (host) => {
       await expect(startSesLocal({ host, port: 0 })).rejects.toThrow(/loopback/);

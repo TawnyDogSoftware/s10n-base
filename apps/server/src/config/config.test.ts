@@ -156,7 +156,7 @@ describe("server config", () => {
     ["SES_REGION", "us east 1"],
     ["SES_REGION", "US-EAST-1"],
     ["SES_ENDPOINT", "http://ses.example.com:8005"],
-    ["SES_ENDPOINT", "http://10.0.0.5:8005"],
+    ["SES_ENDPOINT", "https://192.0.2.5:8005"],
     ["SES_ENDPOINT", "http://127.0.0.1:8005/v2"],
     ["SES_ENDPOINT", "ftp://127.0.0.1:8005"],
     ["AWS_ACCESS_KEY_ID", "has space"],

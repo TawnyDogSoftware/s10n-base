@@ -191,7 +191,7 @@ describe("every response", () => {
     const base = await start();
 
     const response = await fetch(`${base}/health?token=abc`, {
-      headers: { "x-forwarded-for": "6.6.6.6" },
+      headers: { "x-forwarded-for": "192.0.2.66" },
     });
     await response.text();
 
@@ -698,7 +698,7 @@ describe("/api/auth", () => {
       headers: {
         "content-type": "application/json",
         host: "evil.example.com",
-        [CLIENT_IP_HEADER]: "6.6.6.6",
+        [CLIENT_IP_HEADER]: "192.0.2.66",
       },
       body: '{"email":"a@example.com"}',
     });

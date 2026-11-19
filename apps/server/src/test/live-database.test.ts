@@ -28,9 +28,16 @@ describe("testDatabaseUrl", () => {
   });
 
   it("does not quote the URL, which holds a password, in its errors", () => {
-    expect(() =>
-      testDatabaseUrl({ TEST_DATABASE_URL: "postgres://u:hunter2@localhost/app" }),
-    ).toThrow(expect.objectContaining({ message: expect.not.stringContaining("hunter2") }));
+    const thrown = (() => {
+      try {
+        testDatabaseUrl({ TEST_DATABASE_URL: "postgres://u:hunter2@localhost/app" });
+      } catch (error) {
+        return error;
+      }
+      return undefined;
+    })();
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).not.toContain("hunter2");
   });
 
   it("returns the URL and the database name", () => {

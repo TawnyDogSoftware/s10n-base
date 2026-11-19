@@ -74,7 +74,7 @@ describe("toFetchRequest", () => {
   });
 
   it("replaces any incoming client-IP header with the address the server resolved", () => {
-    const spoofed = incoming("/api/auth/x", { [CLIENT_IP_HEADER]: "1.2.3.4" });
+    const spoofed = incoming("/api/auth/x", { [CLIENT_IP_HEADER]: "192.0.2.4" });
 
     const resolved = toFetchRequest(spoofed, {
       appOrigin: APP_ORIGIN,

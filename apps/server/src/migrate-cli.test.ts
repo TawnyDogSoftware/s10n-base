@@ -55,13 +55,11 @@ describe("runMigrateCli", () => {
     });
 
     expect(code).toBe(1);
-    expect(output.entries()).toEqual([
-      expect.objectContaining({
+    expect(output.entries()).toMatchObject([
+      {
         message: "migrate_refused",
-        error: expect.objectContaining({
-          message: `"${command}" refuses to run when NODE_ENV is production.`,
-        }),
-      }),
+        error: { message: `"${command}" refuses to run when NODE_ENV is production.` },
+      },
     ]);
   });
 
