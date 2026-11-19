@@ -83,6 +83,25 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
     });
   });
 
+  it("fails and stops the server when /health sends headers but never finishes its body", async () => {
+    const stalled = fixture(
+      "stalled-body",
+      `import http from "node:http";
+const server = http.createServer((_request, response) => {
+  response.writeHead(200, { "Content-Type": "application/json" });
+  response.flushHeaders();
+});
+server.listen(Number(process.env.PORT), "127.0.0.1");
+process.on("SIGTERM", () => process.exit(0));
+`,
+    );
+
+    const result = await runSmoke({ serverEntry: stalled, deadlineMs: 10_000 });
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toMatch(/^\/health answered 200 but its body could not be read: /);
+  });
+
   it("fails when the server never answers before the deadline", async () => {
     const silent = fixture(
       "silent",

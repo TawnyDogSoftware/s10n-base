@@ -60,7 +60,16 @@ async function probeHealth(url: string): Promise<Probe> {
     // Not listening yet.
     return { done: false };
   }
-  const text = await response.text();
+  let text: string;
+  try {
+    text = await response.text();
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return {
+      done: true,
+      reason: `/health answered ${response.status} but its body could not be read: ${detail}`,
+    };
+  }
   if (response.status !== 200) {
     return { done: true, reason: `/health answered ${response.status}: ${text}` };
   }
@@ -91,28 +100,28 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeResult> {
   const deadline = Date.now() + options.deadlineMs;
   let reason: string | undefined = `/health did not answer within ${options.deadlineMs} ms`;
 
-  while (Date.now() < deadline) {
-    if (exitCode !== undefined) {
-      reason = `the server exited with code ${exitCode} before /health answered`;
-      break;
+  try {
+    while (Date.now() < deadline) {
+      if (exitCode !== undefined) {
+        reason = `the server exited with code ${exitCode} before /health answered`;
+        break;
+      }
+      const probe = await probeHealth(url);
+      if (probe.done) {
+        reason = probe.reason;
+        break;
+      }
+      await delay(options.pollIntervalMs ?? 100);
     }
-    const probe = await probeHealth(url);
-    if (probe.done) {
-      reason = probe.reason;
-      break;
+  } finally {
+    // Whatever happened above, never leave the server running.
+    if (exitCode === undefined) {
+      child.kill("SIGTERM");
+      const stopped = await Promise.race([exited.then(() => true), delay(STOP_GRACE_MS, false)]);
+      if (!stopped) child.kill("SIGKILL");
     }
-    await delay(options.pollIntervalMs ?? 100);
+    await exited;
   }
-
-  if (exitCode === undefined) {
-    child.kill("SIGTERM");
-    const stopped = await Promise.race([exited.then(() => true), delay(STOP_GRACE_MS, false)]);
-    if (!stopped) {
-      child.kill("SIGKILL");
-      await exited;
-    }
-  }
-  await exited;
 
   return reason === undefined ? { ok: true, output } : { ok: false, reason, output };
 }
