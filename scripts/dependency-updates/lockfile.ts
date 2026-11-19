@@ -13,3 +13,20 @@ export function parseLockedVersions(lockText: string): Map<string, string> {
   }
   return versions;
 }
+
+/**
+ * Reads the `dependencies` a top-level package's own manifest declares, as bun.lock records
+ * them. Undefined when the package has no top-level entry.
+ */
+export function parseLockedDependencies(
+  lockText: string,
+  name: string,
+): Map<string, string> | undefined {
+  for (const line of lockText.split("\n")) {
+    const match = /^\s+"([^"]+)": \["((?:@[^/"]+\/)?[^@"]+)@[^"]+", "[^"]*", (\{.*\})/.exec(line);
+    if (match === null || match[1] !== name || match[2] !== name) continue;
+    const meta = JSON.parse(match[3] ?? "{}") as { dependencies?: Record<string, string> };
+    return new Map(Object.entries(meta.dependencies ?? {}));
+  }
+  return undefined;
+}

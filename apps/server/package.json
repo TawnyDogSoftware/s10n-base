@@ -14,8 +14,12 @@
     "db:generate:check": "kysely-codegen --dialect postgres --default-schema public --out-file src/infra/postgres/generated/db.ts --verify"
   },
   "dependencies": {
+    "@better-auth/expo": "catalog:",
+    "@better-auth/passkey": "catalog:",
     "@s10n-base/contracts": "workspace:*",
     "@s10n-base/shared": "workspace:*",
+    "better-auth": "catalog:",
+    "better-call": "catalog:",
     "effect": "catalog:",
     "kysely": "catalog:",
     "pg": "catalog:"

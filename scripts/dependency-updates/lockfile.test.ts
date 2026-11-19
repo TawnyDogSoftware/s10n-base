@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseLockedVersions } from "./lockfile";
+import { parseLockedDependencies, parseLockedVersions } from "./lockfile";
 
 const lock = `{
   "lockfileVersion": 1,
@@ -32,5 +32,21 @@ describe("parseLockedVersions", () => {
         ["typescript", "6.0.3"],
       ]),
     );
+  });
+});
+
+describe("parseLockedDependencies", () => {
+  it("reads the dependencies a top-level package's own manifest declares", () => {
+    expect(parseLockedDependencies(lock, "@types/node")).toEqual(
+      new Map([["undici-types", "~8.9.0"]]),
+    );
+  });
+
+  it("is empty for a package with no dependencies", () => {
+    expect(parseLockedDependencies(lock, "typescript")).toEqual(new Map());
+  });
+
+  it("is undefined for a package that is not in the lockfile", () => {
+    expect(parseLockedDependencies(lock, "source-map-js")).toBeUndefined();
   });
 });

@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { readCatalog } from "./manifests";
-import { parseLockedVersions } from "./lockfile";
+import { parseLockedDependencies, parseLockedVersions } from "./lockfile";
 import { enforceHolds, findHold, matchesPattern, parseHolds, type Hold } from "./holds";
 import { satisfies, specBaseVersion } from "./semver";
 
@@ -182,5 +182,23 @@ describe("dependency-holds.json", () => {
         (name) => findHold(holds, name)?.group,
       ),
     ).toEqual(["better-auth", "better-auth", "better-auth"]);
+  });
+
+  it("pins better-call to exactly the version better-auth depends on", () => {
+    // Better Auth does not re-export its router; the route guard imports better-call itself
+    // and must match with the very same version (plan 004, section 3).
+    const lockText = readFileSync(path.join(repoRoot, "bun.lock"), "utf8");
+    const wanted = parseLockedDependencies(lockText, "better-auth")?.get("better-call");
+
+    expect(wanted).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(catalog.get("better-call")).toBe(wanted);
+    expect(locked.get("better-call")).toBe(wanted);
+  });
+
+  it("pins the better-auth group exactly", () => {
+    for (const name of ["better-auth", "@better-auth/expo", "@better-auth/passkey"]) {
+      expect(catalog.get(name), name).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(locked.get(name), name).toBe(catalog.get(name));
+    }
   });
 });
