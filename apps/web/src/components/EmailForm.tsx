@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { validateEmail, fieldErrorText } from "../lib/validation";
+import { validateEmail, fieldErrorText } from "@s10n-base/client/validation";
+
 import { Button, Field } from "./ui";
 
 /** One email field and a submit button; validates before calling `onSubmit`. */

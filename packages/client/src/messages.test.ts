@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { DecodeError, NetworkError, RpcError } from "@s10n-base/client/rpc";
-
-import { errorMessageKey } from "./errors";
+import { errorMessageKey } from "./messages";
+import { DecodeError, NetworkError, RpcError } from "./transport";
 
 describe("errorMessageKey", () => {
   it("maps each kind of failure to an errors key", () => {

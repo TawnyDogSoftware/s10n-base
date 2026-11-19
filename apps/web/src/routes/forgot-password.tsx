@@ -2,14 +2,14 @@ import { createRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { errorMessageKey } from "@s10n-base/client/messages";
 import type { SettledAction } from "@s10n-base/client/query-state";
+import { usePending } from "@s10n-base/client/use-pending";
 
 import { EmailForm } from "../components/EmailForm";
 import { UnknownOutcome } from "../components/UnknownOutcome";
 import { Card, linkClass, Notice, PageShell } from "../components/ui";
 import type { AuthResult } from "../lib/auth";
-import { errorMessageKey } from "../lib/errors";
-import { usePending } from "../lib/use-pending";
 import { useServices } from "../services";
 import { redirectSignedIn } from "./guards";
 import { rootRoute } from "./root";

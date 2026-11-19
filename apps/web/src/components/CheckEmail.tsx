@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { errorMessageKey } from "@s10n-base/client/messages";
 import { NetworkError } from "@s10n-base/client/rpc";
+import { usePending } from "@s10n-base/client/use-pending";
 
-import { errorMessageKey } from "../lib/errors";
-import { usePending } from "../lib/use-pending";
 import { useServices } from "../services";
 import { Button, Notice } from "./ui";
 

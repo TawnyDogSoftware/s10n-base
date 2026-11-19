@@ -1,7 +1,10 @@
-import { NetworkError, RpcError } from "@s10n-base/client/rpc";
+/**
+ * The `errors` message for any failure a screen can show, on the web and on mobile.
+ */
 import { appErrorKey, authErrorKey, type ErrorMessageKey } from "@s10n-base/i18n";
 
 import type { AuthFailure } from "./auth";
+import { NetworkError, RpcError } from "./transport";
 
 function isAuthFailure(value: unknown): value is AuthFailure {
   return (

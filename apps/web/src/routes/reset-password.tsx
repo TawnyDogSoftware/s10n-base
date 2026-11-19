@@ -2,15 +2,15 @@ import { createRoute, Link } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { errorMessageKey } from "@s10n-base/client/messages";
 import type { SettledAction } from "@s10n-base/client/query-state";
+import { usePending } from "@s10n-base/client/use-pending";
+import { PASSWORD_MIN, validateNewPassword, fieldErrorText } from "@s10n-base/client/validation";
 
 import { UnknownOutcome } from "../components/UnknownOutcome";
 import { Button, Card, Field, linkClass, Notice, PageShell } from "../components/ui";
 import type { AuthResult } from "../lib/auth";
-import { errorMessageKey } from "../lib/errors";
 import { optionalString } from "../lib/search";
-import { usePending } from "../lib/use-pending";
-import { PASSWORD_MIN, validateNewPassword, fieldErrorText } from "../lib/validation";
 import { useServices } from "../services";
 import { rootRoute } from "./root";
 

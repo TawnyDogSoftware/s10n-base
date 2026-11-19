@@ -2,23 +2,23 @@ import { createRoute, Link } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { checkFields, type FieldErrors } from "@s10n-base/client/form";
+import { errorMessageKey } from "@s10n-base/client/messages";
 import type { SettledAction } from "@s10n-base/client/query-state";
-
-import { CheckEmail } from "../components/CheckEmail";
-import { UnknownOutcome } from "../components/UnknownOutcome";
-import { Button, Card, Field, linkClass, Notice, PageShell } from "../components/ui";
-import type { AuthResult } from "../lib/auth";
-import { errorMessageKey } from "../lib/errors";
-import { checkFields, type FieldErrors } from "../lib/form";
-import { optionalString } from "../lib/search";
-import { usePending } from "../lib/use-pending";
+import { usePending } from "@s10n-base/client/use-pending";
 import {
   PASSWORD_MIN,
   validateEmail,
   validateName,
   validateNewPassword,
   fieldErrorText,
-} from "../lib/validation";
+} from "@s10n-base/client/validation";
+
+import { CheckEmail } from "../components/CheckEmail";
+import { UnknownOutcome } from "../components/UnknownOutcome";
+import { Button, Card, Field, linkClass, Notice, PageShell } from "../components/ui";
+import type { AuthResult } from "../lib/auth";
+import { optionalString } from "../lib/search";
 import { useServices } from "../services";
 import { redirectSignedIn } from "./guards";
 import { rootRoute } from "./root";

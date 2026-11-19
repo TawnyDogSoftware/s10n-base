@@ -2,13 +2,13 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { createRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
+import { errorMessageKey } from "@s10n-base/client/messages";
 import { protectedQueryKey } from "@s10n-base/client/query-state";
 import { useSession } from "@s10n-base/client/session";
 import { adminListUsers } from "@s10n-base/contracts";
 
 import { Loading } from "../components/RouteStates";
 import { Button, Notice, PageShell } from "../components/ui";
-import { errorMessageKey } from "../lib/errors";
 import { useServices } from "../services";
 import { authedRoute } from "./authed";
 

@@ -2,11 +2,11 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { errorMessageKey } from "@s10n-base/client/messages";
 import type { SettledAction } from "@s10n-base/client/query-state";
+import { usePending } from "@s10n-base/client/use-pending";
 
-import { errorMessageKey } from "../lib/errors";
 import type { AuthResult } from "../lib/auth";
-import { usePending } from "../lib/use-pending";
 import { useServices } from "../services";
 import { UnknownOutcome } from "./UnknownOutcome";
 import { Button, Notice } from "./ui";

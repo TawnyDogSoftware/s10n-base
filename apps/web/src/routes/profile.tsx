@@ -3,11 +3,14 @@ import { createRoute } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { errorMessageKey } from "@s10n-base/client/messages";
 import {
   protectedQueryKey,
   type SettledAction,
   useProtectedQuery,
 } from "@s10n-base/client/query-state";
+import { usePending } from "@s10n-base/client/use-pending";
+import { validateName, fieldErrorText } from "@s10n-base/client/validation";
 import { profileGet, profileUpdate, type Profile } from "@s10n-base/contracts";
 
 import { Loading } from "../components/RouteStates";
@@ -15,9 +18,6 @@ import { SignOutButton } from "../components/SignOutButton";
 import { UnknownOutcome } from "../components/UnknownOutcome";
 import { Button, Card, Field, Notice, PageShell } from "../components/ui";
 import type { AuthResult, Passkey } from "../lib/auth";
-import { errorMessageKey } from "../lib/errors";
-import { usePending } from "../lib/use-pending";
-import { validateName, fieldErrorText } from "../lib/validation";
 import { useServices } from "../services";
 import { authedRoute } from "./authed";
 
