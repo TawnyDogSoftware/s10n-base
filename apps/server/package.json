@@ -4,19 +4,26 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run src/bin.ts",
+    "dev": "bun --watch src/bin.ts",
     "build": "tsdown",
     "start": "node dist/bin.mjs",
+    "migrate": "node dist/migrate.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:generate": "kysely-codegen --dialect postgres --default-schema public --out-file src/infra/postgres/generated/db.ts",
+    "db:generate:check": "kysely-codegen --dialect postgres --default-schema public --out-file src/infra/postgres/generated/db.ts --verify"
   },
   "dependencies": {
     "@s10n-base/contracts": "workspace:*",
     "@s10n-base/shared": "workspace:*",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "kysely": "catalog:",
+    "pg": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/pg": "catalog:",
+    "kysely-codegen": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
