@@ -46,7 +46,8 @@
     "fmt": "oxfmt .",
     "fmt:check": "oxfmt --check .",
     "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules apps/*/dist packages/*/dist .turbo",
-    "smoke": "bun scripts/smoke-built-server.ts"
+    "smoke": "bun scripts/smoke-built-server.ts",
+    "deps:update": "bun scripts/dependency-updates/run.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",
