@@ -2,7 +2,16 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import * as contracts from "./index";
-import { AppError, BootstrapConfig, RpcRequest, defineRpc, rpcContracts } from "./index";
+import {
+  AppError,
+  BootstrapConfig,
+  ERROR_CODES,
+  Role,
+  RpcAuth,
+  RpcRequest,
+  defineRpc,
+  rpcContracts,
+} from "./index";
 
 describe("AppError", () => {
   it("decodes a valid error", () => {
@@ -61,15 +70,72 @@ describe("RpcRequest", () => {
 });
 
 describe("defineRpc", () => {
-  it("returns the method and schemas it was given", () => {
+  it("returns the method, auth level and schemas it was given", () => {
     const payload = Schema.Struct({ id: Schema.String });
     const success = Schema.Struct({ name: Schema.String });
 
-    const contract = defineRpc("example.get", payload, success);
+    const contract = defineRpc({ method: "example.get", auth: "session", payload, success });
 
-    expect(contract.method).toBe("example.get");
-    expect(contract.payload).toBe(payload);
-    expect(contract.success).toBe(success);
+    expect(contract).toEqual({ method: "example.get", auth: "session", payload, success });
+  });
+
+  it("keeps the encoded and decoded types of each schema apart", () => {
+    // NumberFromString decodes "1" to 1 and encodes 1 to "1", so the two types differ.
+    const contract = defineRpc({
+      method: "example.count",
+      auth: "public",
+      payload: Schema.Struct({ n: Schema.NumberFromString }),
+      success: Schema.NumberFromString,
+    });
+
+    const decoded: { readonly n: number } = Schema.decodeUnknownSync(contract.payload)({ n: "1" });
+    const encoded: string = Schema.encodeSync(contract.success)(2);
+
+    expect(decoded).toEqual({ n: 1 });
+    expect(encoded).toBe("2");
+  });
+
+  it("requires an auth level", () => {
+    // @ts-expect-error auth is required: there is no default level.
+    defineRpc({
+      method: "example.none",
+      payload: Schema.Struct({}),
+      success: Schema.Struct({}),
+    });
+  });
+});
+
+describe("RpcAuth", () => {
+  const decode = Schema.decodeUnknownSync(RpcAuth);
+
+  it("accepts public, session and a role", () => {
+    expect(decode("public")).toBe("public");
+    expect(decode("session")).toBe("session");
+    expect(decode({ role: "admin" })).toEqual({ role: "admin" });
+  });
+
+  it("rejects an unknown level or role", () => {
+    expect(() => decode("anyone")).toThrow();
+    expect(() => decode({ role: "owner" })).toThrow();
+  });
+});
+
+describe("Role", () => {
+  it("is user or admin", () => {
+    expect(Role.literals).toEqual(["user", "admin"]);
+  });
+});
+
+describe("ERROR_CODES", () => {
+  it("names every error the RPC layer and auth checks answer with", () => {
+    expect(ERROR_CODES).toEqual({
+      unauthenticated: "auth.unauthenticated",
+      forbidden: "auth.forbidden",
+      invalidRequest: "rpc.invalid_request",
+      invalidPayload: "rpc.invalid_payload",
+      methodNotFound: "rpc.method_not_found",
+      unexpected: "server.unexpected_error",
+    });
   });
 });
 

@@ -23,13 +23,13 @@ export async function getBootstrapConfig() {
   return getJson<BootstrapConfig>("/config");
 }
 
-export async function callRpc<Payload, Success>(
-  contract: RpcContract<Payload, Success>,
+export async function callRpc<Payload, Success, PayloadEncoded, SuccessEncoded>(
+  contract: RpcContract<Payload, Success, PayloadEncoded, SuccessEncoded>,
   payload: Payload,
 ): Promise<Success> {
   const response = await postJson<RpcEnvelope<unknown>>("/rpc", {
     method: contract.method,
-    payload: Schema.encodeSync(contract.payload as never)(payload as never),
+    payload: Schema.encodeSync(contract.payload)(payload),
   });
 
   if (!response.ok) {
@@ -37,5 +37,5 @@ export async function callRpc<Payload, Success>(
     throw new Error(`${error.code}: ${error.message}`);
   }
 
-  return Schema.decodeUnknownSync(contract.success as never)(response.data) as Success;
+  return Schema.decodeUnknownSync(contract.success)(response.data);
 }
