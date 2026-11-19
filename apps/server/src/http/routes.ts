@@ -109,7 +109,9 @@ const routes: Readonly<Record<string, Readonly<Record<string, RouteHandler>>>> =
   },
   "/api/app-auth/session": {
     GET: async ({ request, response }, context) => {
-      sendJson(response, 200, { ok: true, data: await readAppSession(request, context.auth) });
+      const { body, setCookies } = await readAppSession(request, context.auth);
+      if (setCookies.length > 0) response.setHeader("Set-Cookie", [...setCookies]);
+      sendJson(response, 200, { ok: true, data: body });
     },
   },
   "/rpc": {

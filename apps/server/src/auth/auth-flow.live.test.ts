@@ -157,6 +157,42 @@ describe("sign-up, verification, sign-in and sign-out", () => {
   });
 });
 
+describe("session renewal", () => {
+  it("renews an active session's cookie through the app's session route", async () => {
+    const browser = await signedInUser(email("renewal"));
+    const session = (await browser.session()) as { userId: string };
+    // Better Auth renews a session once it is a day old (updateAge): age this one by two days.
+    const aged = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+    await app.schema.db
+      .updateTable("ba_session")
+      .set({ expires_at: aged })
+      .where("user_id", "=", session.userId)
+      .execute();
+
+    const response = await browser.get("/api/app-auth/session");
+
+    expect(((await response.json()) as { data: { session: unknown } }).data.session).not.toBeNull();
+    const renewed = response.headers
+      .getSetCookie()
+      .find((cookie) => cookie.startsWith("s10n-base.session_token="));
+    expect(renewed).toMatch(/Max-Age=604800/i);
+    const row = await app.schema.db
+      .selectFrom("ba_session")
+      .select("expires_at")
+      .where("user_id", "=", session.userId)
+      .executeTakeFirstOrThrow();
+    expect(new Date(row.expires_at).getTime()).toBeGreaterThan(aged.getTime());
+  });
+
+  it("sends no cookie when the session is fresh", async () => {
+    const browser = await signedInUser(email("fresh"));
+
+    const response = await browser.get("/api/app-auth/session");
+
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+});
+
 describe("cross-site requests to /api/auth", () => {
   it("refuses a sign-in from a foreign Origin, and allows one with no Origin, as a mobile app sends", async () => {
     const address = email("cross-site");

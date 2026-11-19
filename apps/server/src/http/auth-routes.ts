@@ -100,8 +100,11 @@ export async function handleAuthRequest(
   await sendFetchResponse(response, fetched);
 }
 
-/** `GET /api/app-auth/session`: the signed-in user's `AppSession`, or `null`. */
+/**
+ * `GET /api/app-auth/session`: the signed-in user's `AppSession`, or `null`, and the cookies
+ * Better Auth set while reading it, which the route must send on (a renewed session cookie).
+ */
 export async function readAppSession(request: IncomingMessage, auth: AppAuth) {
-  const session = await auth.getSession(toFetchHeaders(request.headers));
-  return encodeSessionResponse({ session });
+  const { session, setCookies } = await auth.readSession(toFetchHeaders(request.headers));
+  return { body: encodeSessionResponse({ session }), setCookies };
 }

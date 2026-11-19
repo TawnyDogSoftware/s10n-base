@@ -78,6 +78,8 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
   const failures = new Map<string, Failure>();
   let signedIn: string | null = null;
   let nextId = 1;
+  /** Cookie mode: the next session read renews the session, as Better Auth does once a day. */
+  let renewNext = false;
   /** Requests whose answers are held until the test releases them, by path. */
   const holds = new Map<string, Promise<void>>();
 
@@ -286,7 +288,22 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     if (url.origin !== origin) throw new TypeError(`Unexpected origin ${url.origin}`);
     requestCookie = cookie;
     if (url.pathname === "/api/app-auth/session" && method === "GET") {
-      return json({ ok: true, data: { session: sessionOf(current()) } });
+      const response = json({ ok: true, data: { session: sessionOf(current()) } });
+      const token = sessionToken(requestCookie);
+      const userId = sessions.get(token ?? "");
+      if (renewNext && token !== undefined && userId !== undefined) {
+        // The renewed cookie carries a new token and the old one stops working, so only a client
+        // that stores the renewal stays signed in.
+        renewNext = false;
+        sessions.delete(token);
+        const renewed = `session-${nextId++}`;
+        sessions.set(renewed, userId);
+        return withCookie(
+          response,
+          `${SESSION_COOKIE}=${renewed}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`,
+        );
+      }
+      return response;
     }
     if (url.pathname === "/rpc" && method === "POST") {
       return handleRpc(body as { method: string; payload: Record<string, unknown> });
@@ -319,6 +336,10 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     /** The shared signed-in user (not used in cookie mode). */
     signedInUser: () =>
       signedIn === null ? undefined : [...users.values()].find((user) => user.id === signedIn),
+    /** Cookie mode: makes the next session read renew the session with a new cookie. */
+    renewNextSessionRead() {
+      renewNext = true;
+    },
     /** Cookie mode: how many sessions are live. */
     liveSessions: () => sessions.size,
     /** The latest unused token of a kind for an address, as the email would carry it. */

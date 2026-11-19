@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { NetworkError } from "@s10n-base/client/rpc";
 import { createFakeBackend, SESSION_COOKIE } from "@s10n-base/client/testing/fake-backend";
+import { profileGet } from "@s10n-base/contracts";
 import { appVariants } from "@s10n-base/shared/app-variants";
 
 import { secureStore } from "../test/native";
+import { createServices } from "../services";
 import { authStoragePrefix, createMobileAuth, withAuthCookie } from "./auth";
 
 const API = "https://api.example.com";
@@ -100,6 +102,45 @@ describe("createMobileAuth", () => {
       ["POST", "/api/auth/send-verification-email"],
       ["POST", "/api/auth/request-password-reset"],
     ]);
+  });
+});
+
+describe("session renewal", () => {
+  it("stores the renewed cookie the session route sends, so the next request carries it", async () => {
+    const backend = createFakeBackend({ origin: API, cookies: true });
+    backend.addUser({ email: "sam@example.com", password: "correct horse" });
+    const services = createServices({ apiBaseUrl: API, scheme: SCHEME, fetch: backend.fetch });
+    await services.auth.signIn({ email: "sam@example.com", password: "correct horse" });
+    const before = await services.auth.cookie();
+
+    backend.renewNextSessionRead();
+    await expect(services.gate.refresh()).resolves.toMatchObject({ email: "sam@example.com" });
+
+    const after = await services.auth.cookie();
+    expect(after).not.toBe(before);
+    // The old token no longer works; the stored one does.
+    await expect(services.rpc.call(profileGet, {})).resolves.toMatchObject({
+      email: "sam@example.com",
+    });
+  });
+
+  it("ignores cookies that are not the auth cookies", async () => {
+    const stored: string[] = [];
+    const fetch = withAuthCookie(
+      () => Promise.resolve(""),
+      () => Promise.resolve(new Response("{}", { headers: { "set-cookie": "other=1; Path=/" } })),
+      (header) => {
+        stored.push(header);
+        return Promise.resolve();
+      },
+    );
+
+    await fetch(`${API}/rpc`);
+
+    expect(stored).toEqual(["other=1; Path=/"]);
+    const { auth } = setup();
+    await auth.storeCookies("other=1; Path=/");
+    await expect(auth.cookie()).resolves.toBe("");
   });
 });
 

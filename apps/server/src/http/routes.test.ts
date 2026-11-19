@@ -33,6 +33,7 @@ function fakeAuth(overrides: Partial<AppAuth> = {}): AppAuth {
     guard: () => Promise.resolve(false),
     routes: [],
     getSession: () => Promise.resolve(null),
+    readSession: () => Promise.resolve({ session: null, setCookies: [] }),
     isTrustedOrigin: (origin) =>
       Promise.resolve(origin === APP_ORIGIN || origin.startsWith("s10nbase-dev://")),
     updateUserName: () => Promise.reject(new Error("not used in these tests")),
@@ -578,15 +579,15 @@ describe("cross-site requests", () => {
   });
 
   it("refuses /api/app-auth/* from an origin that is not trusted", async () => {
-    const getSession = vi.fn(() => Promise.resolve(null));
-    const base = await start({ auth: { getSession } });
+    const readSession = vi.fn(() => Promise.resolve({ session: null, setCookies: [] }));
+    const base = await start({ auth: { readSession } });
 
     const response = await fetch(`${base}/api/app-auth/session`, {
       headers: { origin: "https://evil.example.com" },
     });
 
     expect(response.status).toBe(403);
-    expect(getSession).not.toHaveBeenCalled();
+    expect(readSession).not.toHaveBeenCalled();
   });
 });
 
@@ -601,8 +602,8 @@ describe("GET /api/app-auth/session", () => {
   };
 
   it("answers the session as an AppSession, uncached, reading the request's cookie", async () => {
-    const getSession = vi.fn((_headers: Headers) => Promise.resolve(session));
-    const base = await start({ auth: { getSession } });
+    const readSession = vi.fn((_headers: Headers) => Promise.resolve({ session, setCookies: [] }));
+    const base = await start({ auth: { readSession } });
 
     const response = await fetch(`${base}/api/app-auth/session`, {
       headers: { cookie: "s10n-base.session_token=abc" },
@@ -610,8 +611,32 @@ describe("GET /api/app-auth/session", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.getSetCookie()).toEqual([]);
     expect(await response.json()).toEqual({ ok: true, data: { session } });
-    expect(getSession.mock.calls[0]?.[0].get("cookie")).toBe("s10n-base.session_token=abc");
+    expect(readSession.mock.calls[0]?.[0].get("cookie")).toBe("s10n-base.session_token=abc");
+  });
+
+  it("passes on the cookies Better Auth sets while reading the session, such as a renewal", async () => {
+    const readSession = vi.fn((_headers: Headers) =>
+      Promise.resolve({
+        session,
+        setCookies: [
+          "s10n-base.session_token=renewed; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+          "s10n-base.session_data=; Max-Age=0; Path=/",
+        ],
+      }),
+    );
+    const base = await start({ auth: { readSession } });
+
+    const response = await fetch(`${base}/api/app-auth/session`, {
+      headers: { cookie: "s10n-base.session_token=abc" },
+    });
+
+    expect(await response.json()).toEqual({ ok: true, data: { session } });
+    expect(response.headers.getSetCookie()).toEqual([
+      "s10n-base.session_token=renewed; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+      "s10n-base.session_data=; Max-Age=0; Path=/",
+    ]);
   });
 
   it("answers null when signed out", async () => {

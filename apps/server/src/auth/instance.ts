@@ -29,6 +29,16 @@ export interface AppAuth {
    * session expired, or the user is banned.
    */
   readonly getSession: (headers: Headers) => Promise<AppSession | null>;
+  /**
+   * The same, plus the cookies Better Auth set while reading it: a renewed session cookie once
+   * the session is a day old (`session.updateAge`), or a deletion for one that is gone. The
+   * app's session route passes them on, so an active user's cookie keeps being renewed; without
+   * them it would expire seven days after sign-in however active the user is.
+   */
+  readonly readSession: (headers: Headers) => Promise<{
+    readonly session: AppSession | null;
+    readonly setCookies: readonly string[];
+  }>;
   /** Whether an `Origin` header value is one Better Auth trusts, matched the way it matches. */
   readonly isTrustedOrigin: (origin: string) => Promise<boolean>;
   /**
@@ -105,6 +115,15 @@ export function createAppAuth(options: AuthOptions, now: () => Date = () => new 
       if (result === null) return null;
       const user = result.user as AuthUser;
       return isBanned(user, now()) ? null : toAppSession(user);
+    },
+    readSession: async (headers) => {
+      const result = await auth.api.getSession({ headers, returnHeaders: true });
+      const setCookies = result.headers.getSetCookie();
+      if (result.response === null) return { session: null, setCookies };
+      const user = result.response.user as AuthUser;
+      // A banned user's session is not renewed for them.
+      if (isBanned(user, now())) return { session: null, setCookies: [] };
+      return { session: toAppSession(user), setCookies };
     },
     isTrustedOrigin: async (origin) => (await auth.$context).isTrustedOrigin(origin),
     updateUserName: async (userId, name) =>
