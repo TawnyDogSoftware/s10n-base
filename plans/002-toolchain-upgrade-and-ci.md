@@ -303,7 +303,7 @@ The workflow file itself has not run: a scheduled or dispatched workflow runs on
 
 ### Verification on the final commit (section 9)
 
-1. After `bun run clean` (no `node_modules`), on Node 26.13.1 and bun 1.4.4: `bun install --frozen-lockfile` passes (lockfile unchanged); `fmt:check`, `lint` (0 findings), `typecheck` (4 packages and `scripts`), `test` (19 files, 126 tests: contracts, server, web, shared and scripts), `build` (4 packages) and `smoke` all pass, with no baseline exceptions.
+1. After `bun run clean` (no `node_modules`), on Node 26.13.1 and bun 1.4.4: `bun install --frozen-lockfile` passes (lockfile unchanged); `fmt:check`, `lint` (0 findings), `typecheck` (4 packages and `scripts`), `test` (19 files, 130 tests: contracts, server, web, shared and scripts), `build` (4 packages) and `smoke` all pass, with no baseline exceptions.
 2. `bun run typecheck` prints no deprecation warning.
 3. The age gate holds packages back; from `bun outdated -r`:
 
@@ -330,6 +330,7 @@ Codex reviewed the PR's head after each push. Each finding was reproduced with a
   - On a same-day rerun where merging `main` into today's branch conflicted, the fresh commit did not descend from the branch and the plain push would be rejected. The push to today's branch now uses `--force-with-lease` against the fetched branch.
   - When the run built on an open PR, the body listed only that run's changes, so a superseding PR dropped updates it still carried. The body now compares the result with the base commit (`git show` of the manifests, lockfile and `.nvmrc`), while holds are still enforced against the starting point.
   - `--from HEAD` was resolved after the checkout had moved `HEAD`, so a dry run with an open PR merged the PR into itself. The start ref is now resolved to a commit with `git rev-parse` before any checkout.
+- **Round 2 (1e544f3):** no findings.
 
 ### For later phases
 
