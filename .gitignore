@@ -9,3 +9,7 @@ packages/*/dist/
 .env
 .env.*
 !.env.example
+
+# Playwright output. Traces, videos and screenshots stay off: email links carry tokens.
+e2e/test-results/
+playwright-report/
