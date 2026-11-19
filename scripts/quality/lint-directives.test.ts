@@ -195,4 +195,14 @@ describe("runLintDirectiveCheck", () => {
       "2 suppressions found. Fix the code or the test instead; see docs/quality.md.",
     ]);
   });
+
+  it("counts a single suppression in the singular", () => {
+    const root = repository({ "src/a.ts": `// ${ESLINT_OFF}-next-line\nexport const a = 1;\n` });
+    const lines: string[] = [];
+
+    expect(runLintDirectiveCheck(root, (line) => lines.push(line))).toBe(1);
+    expect(lines.at(-1)).toBe(
+      "1 suppression found. Fix the code or the test instead; see docs/quality.md.",
+    );
+  });
 });

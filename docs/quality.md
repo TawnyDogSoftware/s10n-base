@@ -75,6 +75,7 @@ Ignored: generated output only (`dist`, `coverage`, `.turbo`, `apps/mobile/.expo
 `.dependency-cruiser.cjs`, with type-only imports counted:
 
 - no circular dependencies, and nothing imports build output (`dist`);
+- every import resolves: an import of a workspace package the importer does not declare resolves to nothing (bun links each workspace's own dependencies only), and would otherwise slip past the rules below;
 - packages never import apps, and apps never import each other;
 - `apps/web` and `apps/mobile` import only `contracts`, `shared`, `client`, `theme` and `i18n`;
 - `apps/server` imports only `contracts`, `shared` and `i18n`;
@@ -82,11 +83,11 @@ Ignored: generated output only (`dist`, `coverage`, `.turbo`, `apps/mobile/.expo
 - `contracts`, `shared` and `theme` import no other workspace package;
 - `i18n` imports no other workspace package, except that its tests import `contracts` to check there is a message for every error code.
 
-`scripts/quality/boundaries.test.ts` runs the cruiser over small fixture trees that break each rule, so each rule is known to fire. A boundary failure means the import is in the wrong place: move the shared code into the package both sides may use.
+`scripts/quality/boundaries.test.ts` runs the cruiser, with the config's own options, over small fixture trees that break each rule, so each rule is known to fire. (The options matter: an `exclude` that drops `dist` from the graph once hid every import of it from `no-build-output`.) A boundary failure means the import is in the wrong place: move the shared code into the package both sides may use.
 
 ## Dead code
 
-`bun run deadcode` runs knip twice. The normal pass counts tests as users, and fails on unused files, exports and dependencies anywhere. The production pass starts from the production entry points alone (the `!` patterns in `knip.jsonc`) and fails on files and dependencies only tests and tools use; it does not report exports, since an export only a test imports is the normal pass's question.
+`bun run deadcode` runs knip twice. The normal pass counts tests as users, and fails on unused files, exports and dependencies anywhere, package entry files included (`includeEntryExports`): an export no workspace imports is dead even when a package's `exports` map makes it reachable. The production pass starts from the production entry points alone (the `!` patterns in `knip.jsonc`) and fails on files and dependencies only tests and tools use; it does not report exports, since an export only a test imports is the normal pass's question.
 
 When knip reports something, delete it, or stop exporting it. `knip.jsonc` names its exceptions with reasons: the server keeps `i18next` as a dependency because its bundle leaves that import external, and the mobile app's `expo-dev-client` and `expo-splash-screen` are config plugins that `app.config.ts` names and nothing imports. Test-only modules (the server's check helpers, the client package's fakes) are left out of the production project.
 

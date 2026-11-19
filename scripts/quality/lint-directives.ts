@@ -89,9 +89,9 @@ export function runLintDirectiveCheck(root: string, print: (line: string) => voi
         `${finding.file}:${String(finding.line)}:${String(finding.column)} ${finding.directive}`,
       );
     }
-    print(
-      `${String(findings.length)} suppressions found. Fix the code or the test instead; see docs/quality.md.`,
-    );
+    const count =
+      findings.length === 1 ? "1 suppression" : `${String(findings.length)} suppressions`;
+    print(`${count} found. Fix the code or the test instead; see docs/quality.md.`);
     return 1;
   }
   print(`No lint, type or coverage suppression in ${String(files.length)} files.`);
