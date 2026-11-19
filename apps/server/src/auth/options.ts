@@ -38,11 +38,11 @@ export const CLIENT_IP_HEADER = "x-s10n-base-client-ip";
  * knows about, so the admin plugin's stock endpoint stays off; docs/auth.md shows how to add a
  * guarded one.
  */
-export const DISABLED_AUTH_PATHS: readonly string[] = ["/admin/remove-user"];
+const DISABLED_AUTH_PATHS: readonly string[] = ["/admin/remove-user"];
 
 /** The web app's pages that email links open. They read `token` and call Better Auth. */
-export const VERIFY_EMAIL_PAGE = "/verify-email";
-export const RESET_PASSWORD_PAGE = "/reset-password";
+const VERIFY_EMAIL_PAGE = "/verify-email";
+const RESET_PASSWORD_PAGE = "/reset-password";
 
 /**
  * A link to one of the web app's pages under `APP_URL`, carrying the token. The page calls Better
@@ -74,7 +74,7 @@ export interface AuthOptionsDependencies {
 const TIMESTAMPS = { createdAt: "created_at", updatedAt: "updated_at" };
 
 /** Every camelCase field mapped to its snake_case column, table by table. */
-export const AUTH_TABLES = {
+const AUTH_TABLES = {
   user: {
     modelName: "ba_user",
     fields: { emailVerified: "email_verified", ...TIMESTAMPS },

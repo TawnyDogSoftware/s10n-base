@@ -109,7 +109,6 @@
         "@tanstack/react-query": "catalog:",
         "@tanstack/react-router": "catalog:",
         "better-auth": "catalog:",
-        "effect": "catalog:",
         "i18next": "catalog:",
         "react": "catalog:",
         "react-dom": "catalog:",

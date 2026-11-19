@@ -10,7 +10,7 @@ import { type Migration, type MigrationResultSet, Migrator } from "kysely/migrat
 
 import type { NodeEnv } from "../../config";
 
-export const MIGRATION_COMMANDS = ["up", "status", "down", "reset"] as const;
+const MIGRATION_COMMANDS = ["up", "status", "down", "reset"] as const;
 export type MigrationCommand = (typeof MIGRATION_COMMANDS)[number];
 
 const PRODUCTION_REFUSED: ReadonlySet<MigrationCommand> = new Set(["down", "reset"]);

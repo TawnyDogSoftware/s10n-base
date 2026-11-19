@@ -51,9 +51,9 @@ export class AppConfig extends Context.Service<AppConfig, ServerConfig>()(
   static readonly layer = (config: ServerConfig) => Layer.succeed(AppConfig, config);
 }
 
-export class AppLogger extends Context.Service<AppLogger, Logger>()("s10n-base/server/AppLogger") {}
+class AppLogger extends Context.Service<AppLogger, Logger>()("s10n-base/server/AppLogger") {}
 
-export interface DatabaseService {
+interface DatabaseService {
   readonly db: Kysely<DB>;
   /** `select 1` within two seconds. Never throws. */
   readonly checkReadiness: () => Promise<boolean>;
@@ -61,20 +61,18 @@ export interface DatabaseService {
   readonly closeTimedOut: () => boolean;
 }
 
-export class Database extends Context.Service<Database, DatabaseService>()(
-  "s10n-base/server/Database",
-) {}
+class Database extends Context.Service<Database, DatabaseService>()("s10n-base/server/Database") {}
 
 /** Better Auth, over the database, sending email through SES. */
-export class Auth extends Context.Service<Auth, AppAuth>()("s10n-base/server/Auth") {}
+class Auth extends Context.Service<Auth, AppAuth>()("s10n-base/server/Auth") {}
 
-export interface HttpServerService {
+interface HttpServerService {
   readonly port: number;
   /** Whether the last release had to force-close requests at the deadline. */
   readonly forced: () => boolean;
 }
 
-export class HttpServer extends Context.Service<HttpServer, HttpServerService>()(
+class HttpServer extends Context.Service<HttpServer, HttpServerService>()(
   "s10n-base/server/HttpServer",
 ) {}
 
@@ -303,10 +301,7 @@ const httpServerLayer = (options: ServerLayerOptions) =>
  * Every layer the server needs, given a config layer. Acquired config → logger → database → auth
  * → HTTP server; released in reverse.
  */
-export function serverLayer(
-  config: Layer.Layer<AppConfig, unknown>,
-  options: ServerLayerOptions = {},
-) {
+function serverLayer(config: Layer.Layer<AppConfig, unknown>, options: ServerLayerOptions = {}) {
   return httpServerLayer(options).pipe(
     Layer.provideMerge(authLayer(options)),
     Layer.provideMerge(databaseLayer(options)),
@@ -315,7 +310,7 @@ export function serverLayer(
   );
 }
 
-export interface StopResult {
+interface StopResult {
   /**
    * True when requests were still running at the deadline and were cut off, or the pool did not
    * close within the deadline.

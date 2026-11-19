@@ -61,7 +61,7 @@ function hmac(key: string | Buffer, data: string): Buffer {
 }
 
 /** Percent-encodes every byte except the unreserved characters `A-Z a-z 0-9 - . _ ~`. */
-export function uriEncode(value: string): string {
+function uriEncode(value: string): string {
   let encoded = "";
   for (const byte of Buffer.from(value, "utf8")) {
     const char = String.fromCharCode(byte);
@@ -147,7 +147,7 @@ function signingKey(secretAccessKey: string, dateStamp: string, region: string, 
 }
 
 /** `20261119T120000Z` for a date. */
-export function toAmzDate(date: Date): string {
+function toAmzDate(date: Date): string {
   return date
     .toISOString()
     .replace(/[-:]/g, "")

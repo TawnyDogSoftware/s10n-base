@@ -24,10 +24,10 @@ export const EXAMPLE_AUTH_SECRET = "development-only-secret-replace-me-in-produc
 
 export { LOCAL_SES_CREDENTIALS };
 
-export const NODE_ENVS = ["development", "test", "production"] as const;
+const NODE_ENVS = ["development", "test", "production"] as const;
 export type NodeEnv = (typeof NODE_ENVS)[number];
 
-export const LOG_LEVELS = ["debug", "info", "warn", "error"] as const;
+const LOG_LEVELS = ["debug", "info", "warn", "error"] as const;
 export type LogLevel = (typeof LOG_LEVELS)[number];
 
 /** Everything the server reads from its environment, validated. */
@@ -53,12 +53,12 @@ export interface ServerConfig {
   readonly email: EmailConfig;
 }
 
-export interface AuthConfig {
+interface AuthConfig {
   /** Signs and encrypts Better Auth's cookies and tokens. At least 32 characters. */
   readonly secret: Redacted.Redacted;
 }
 
-export interface SesConfig {
+interface SesConfig {
   readonly region: string;
   /** A loopback URL that replaces the regional endpoint; never set in production. */
   readonly endpoint: string | undefined;
@@ -69,7 +69,7 @@ export interface SesConfig {
   };
 }
 
-export interface EmailConfig {
+interface EmailConfig {
   /** The sender address of every email. */
   readonly from: string;
   /** Shown in email footers as the address to write to. */
@@ -85,7 +85,7 @@ export interface DatabaseConfig {
 }
 
 /** One environment variable: its name, the rule it must follow, and how to read it. */
-export interface Variable<A> {
+interface Variable<A> {
   readonly name: string;
   /** Completes "must ...": what a valid value looks like. Never contains a value. */
   readonly rule: string;
@@ -132,7 +132,7 @@ function parseUrl(value: string): URL | undefined {
  * normalises the path of `http://host` to `/`, so a trailing slash is accepted; any other path,
  * a query, a fragment or credentials are not.
  */
-export function isBareOrigin(value: string): boolean {
+function isBareOrigin(value: string): boolean {
   return parseBareOrigin(value) !== null;
 }
 
@@ -146,14 +146,14 @@ function isPostgresUrl(value: string): boolean {
 }
 
 /** A plain address such as `no-reply@example.com`: no display name, no spaces. */
-export function isEmailAddress(value: string): boolean {
+function isEmailAddress(value: string): boolean {
   return /^[^\s@<>()",;:]+@[^\s@<>()",;:.]+(\.[^\s@<>()",;:.]+)+$/.test(value);
 }
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 /** A bare http or https origin on a loopback host, such as `http://127.0.0.1:8005`. */
-export function isLoopbackOrigin(value: string): boolean {
+function isLoopbackOrigin(value: string): boolean {
   return isBareOrigin(value) && LOOPBACK_HOSTS.has(new URL(value).hostname);
 }
 
@@ -508,7 +508,7 @@ export const loadServerConfig: Effect.Effect<ServerConfig, ServerConfigError> = 
 );
 
 /** Reads the `migrate` entry point's config from the current `ConfigProvider`. */
-export const loadDatabaseConfig: Effect.Effect<DatabaseConfig, ServerConfigError> = Effect.gen(
+const loadDatabaseConfig: Effect.Effect<DatabaseConfig, ServerConfigError> = Effect.gen(
   function* () {
     const provider = yield* ConfigProvider.ConfigProvider;
     const parsed = yield* parseAll([nodeEnv, databaseUrl, logLevel] as const, provider);
@@ -521,9 +521,7 @@ export const loadDatabaseConfig: Effect.Effect<DatabaseConfig, ServerConfigError
 );
 
 /** A provider over an environment record. Empty values count as unset. */
-export function envProvider(
-  env: Record<string, string | undefined>,
-): ConfigProvider.ConfigProvider {
+function envProvider(env: Record<string, string | undefined>): ConfigProvider.ConfigProvider {
   return ConfigProvider.fromEnvRecord(env);
 }
 

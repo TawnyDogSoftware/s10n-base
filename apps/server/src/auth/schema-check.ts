@@ -27,7 +27,7 @@ export type TableShapes = Readonly<Record<string, Readonly<Record<string, Column
  * declares `impersonated_by` as a plain string; it holds a user id, so it is a `uuid` with a
  * foreign key, and the admin's impersonation sessions end with the admin.
  */
-export const OWN_CHOICES: Readonly<Record<string, Partial<ColumnShape>>> = {
+const OWN_CHOICES: Readonly<Record<string, Partial<ColumnShape>>> = {
   "ba_session.impersonated_by": {
     type: "uuid",
     indexed: true,

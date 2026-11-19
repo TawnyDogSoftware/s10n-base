@@ -44,7 +44,7 @@ function isAppVariant(value: string): value is AppVariant {
  * `APP_VARIANT`. Unset means a local development build; anything unknown is an error, so a typo
  * can never build the production app.
  */
-export function resolveAppVariant(value: string | undefined): AppVariant {
+function resolveAppVariant(value: string | undefined): AppVariant {
   const variant = trimmed(value);
   if (variant === "") return "development";
   if (!isAppVariant(variant)) {
@@ -58,7 +58,7 @@ export function resolveAppVariant(value: string | undefined): AppVariant {
  * preview and production builds must name their server: a missing value fails the build here
  * rather than the app at run time.
  */
-export function resolveApiBaseUrl(variant: AppVariant, value: string | undefined): string {
+function resolveApiBaseUrl(variant: AppVariant, value: string | undefined): string {
   const raw = trimmed(value);
   if (raw === "") {
     if (variant === "development") return DEVELOPMENT_API_BASE_URL;
@@ -102,6 +102,9 @@ export function buildExpoConfig(env: ExpoConfigEnv, colors: NativeColors): ExpoC
     // Light and dark follow the system; the theme has both.
     userInterfaceStyle: "automatic",
     icon: "./assets/icon.png",
+    // No over-the-air updates: expo-updates is not installed, and every change ships as a build.
+    // A project that adds EAS Update installs expo-updates and turns this on.
+    updates: { enabled: false },
     ios: {
       bundleIdentifier: identity.bundleIdentifier,
       supportsTablet: true,

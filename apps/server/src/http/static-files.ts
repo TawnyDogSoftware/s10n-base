@@ -10,7 +10,7 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 
 /** Paths that belong to the server; the HTML fallback never answers under them. */
-export const API_PREFIXES = ["/rpc", "/api", "/health", "/ready", "/config"] as const;
+const API_PREFIXES = ["/rpc", "/api", "/health", "/ready", "/config"] as const;
 
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".css": "text/css; charset=utf-8",

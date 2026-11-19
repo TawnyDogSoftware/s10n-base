@@ -75,7 +75,7 @@ export interface SesClient {
   readonly sendEmail: (email: SesEmail) => Promise<{ readonly messageId: string }>;
 }
 
-export const DEFAULT_RETRY_SCHEDULE: Schedule.Schedule<unknown> = Schedule.max([
+const DEFAULT_RETRY_SCHEDULE: Schedule.Schedule<unknown> = Schedule.max([
   Schedule.exponential("250 millis").pipe(Schedule.jittered),
   Schedule.recurs(2),
 ]);

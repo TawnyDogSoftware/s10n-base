@@ -15,7 +15,7 @@ import {
   trackNetworkFailures,
 } from "@s10n-base/client/auth";
 
-export type { AuthFailure, AuthResult } from "@s10n-base/client/auth";
+export type { AuthResult } from "@s10n-base/client/auth";
 
 export interface Passkey {
   readonly id: string;

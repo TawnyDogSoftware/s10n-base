@@ -13,7 +13,7 @@ import { AUTH_BASE_PATH, CLIENT_IP_HEADER } from "../auth/options";
 import { readBody } from "./body";
 import { sendFetchResponse, toFetchHeaders, toFetchRequest } from "./fetch-bridge";
 
-export const APP_AUTH_BASE_PATH = "/api/app-auth";
+const APP_AUTH_BASE_PATH = "/api/app-auth";
 
 const BODYLESS = new Set(["GET", "HEAD"]);
 const encodeSessionResponse = Schema.encodeSync(AppSessionResponse);

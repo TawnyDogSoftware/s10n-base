@@ -16,7 +16,7 @@ import { createLogger, type LogWriter } from "./observability/logger";
 
 const USAGE = `usage: auth:set-role <email> <${Role.literals.join("|")}>`;
 
-export class UnknownUserError extends Error {
+class UnknownUserError extends Error {
   override readonly name = "UnknownUserError";
 }
 

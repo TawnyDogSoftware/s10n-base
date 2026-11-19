@@ -154,6 +154,10 @@ describe("buildExpoConfig", () => {
     ]);
   });
 
+  it("turns over-the-air updates off, since expo-updates is not installed", () => {
+    expect(buildExpoConfig({}).updates).toEqual({ enabled: false });
+  });
+
   it("uses the generated placeholder images on the theme's background colours", () => {
     const config = buildExpoConfig({});
     const splash = config.plugins?.find(

@@ -47,7 +47,7 @@ export async function readBody(request: IncomingMessage, limit: number): Promise
 }
 
 /** Whether the request says its body is JSON: `application/json`, with or without parameters. */
-export function isJsonContentType(header: string | undefined): boolean {
+function isJsonContentType(header: string | undefined): boolean {
   const type = header?.split(";", 1)[0]?.trim().toLowerCase();
   return type === "application/json";
 }

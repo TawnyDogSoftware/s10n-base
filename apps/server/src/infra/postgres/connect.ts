@@ -14,7 +14,7 @@ export class DatabaseUnavailableError extends Data.TaggedError("DatabaseUnavaila
  * How long to keep trying the first connection: every half second for up to 30 seconds, long
  * enough for a database container that is still starting.
  */
-export const FIRST_CONNECTION_RETRY = Schedule.spaced("500 millis").pipe(
+const FIRST_CONNECTION_RETRY = Schedule.spaced("500 millis").pipe(
   Schedule.upTo({ duration: "30 seconds" }),
 );
 

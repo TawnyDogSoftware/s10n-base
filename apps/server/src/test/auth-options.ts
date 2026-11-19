@@ -14,7 +14,7 @@ export function unusedDb(): Kysely<DB> {
   });
 }
 
-export const TEST_AUTH_CONFIG: AuthOptionsConfig = {
+const TEST_AUTH_CONFIG: AuthOptionsConfig = {
   appName: "S10N Base",
   appOrigin: "http://localhost:5173",
   nodeEnv: "test",

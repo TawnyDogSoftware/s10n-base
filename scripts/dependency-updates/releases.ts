@@ -1,6 +1,6 @@
 import { compareVersions } from "./semver";
 
-export const MIN_RELEASE_AGE_MS = 3 * 24 * 60 * 60 * 1000;
+const MIN_RELEASE_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 
 export interface GitHubRelease {
   readonly tag_name: string;

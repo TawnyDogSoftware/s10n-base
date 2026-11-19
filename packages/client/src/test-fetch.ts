@@ -1,5 +1,5 @@
 /** A fake `fetch` for tests: records requests and answers from a handler. */
-export interface RecordedRequest {
+interface RecordedRequest {
   readonly url: string;
   readonly method: string;
   readonly body: unknown;

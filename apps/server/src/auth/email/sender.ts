@@ -3,7 +3,7 @@ import type { Logger } from "../../observability/logger";
 import { renderAuthEmail, type AuthEmailKind } from "./render";
 
 /** One auth email: who it goes to and the link it carries. */
-export interface AuthEmailLink {
+interface AuthEmailLink {
   readonly to: string;
   readonly url: string;
 }
