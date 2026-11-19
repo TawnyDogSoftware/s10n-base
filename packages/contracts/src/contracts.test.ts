@@ -28,16 +28,12 @@ describe("BootstrapConfig", () => {
     expect(() => decode({ appName: "S10N Base", appVersion: "0.0.0" })).toThrow();
   });
 
-  it("does not carry the removed desktop and websocket fields", () => {
-    const decoded = decode({
-      appName: "S10N Base",
-      appVersion: "0.0.0",
-      apiBaseUrl: "http://127.0.0.1:4210",
-      websocketUrl: "ws://127.0.0.1:4210/ws",
-      desktopHost: false,
-    });
-
-    expect(Object.keys(decoded).sort()).toEqual(["apiBaseUrl", "appName", "appVersion"]);
+  it("has exactly the three fields, without the removed desktop and live-stream fields", () => {
+    expect(Object.keys(BootstrapConfig.fields).sort()).toEqual([
+      "apiBaseUrl",
+      "appName",
+      "appVersion",
+    ]);
   });
 });
 

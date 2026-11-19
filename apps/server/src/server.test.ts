@@ -55,8 +55,8 @@ describe("server", () => {
     expect(Schema.decodeUnknownSync(BootstrapConfig)(body)).toMatchObject({
       appName: "S10N Base",
     });
-    expect(body).not.toHaveProperty("websocketUrl");
-    expect(body).not.toHaveProperty("desktopHost");
+    // Exactly the three fields: the removed desktop and live-stream fields are gone.
+    expect(Object.keys(body).sort()).toEqual(["apiBaseUrl", "appName", "appVersion"]);
   });
 
   it("returns 404 rpc.method_not_found for an unknown method", async () => {
