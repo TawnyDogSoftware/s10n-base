@@ -27,6 +27,12 @@ export interface SesLocalIo {
   readonly onInterrupt: (stop: () => void) => void;
 }
 
+/** Calls `stop` on Ctrl-C and on SIGTERM, listening for each signal once. */
+export function onProcessInterrupt(stop: () => void): void {
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+}
+
 /**
  * Runs the capture server at `SES_ENDPOINT` until interrupted, then stops it. Resolves with the
  * exit code: 0 after a clean stop, 1 when it could not start.

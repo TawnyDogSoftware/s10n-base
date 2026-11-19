@@ -28,6 +28,24 @@ export interface ServerProcessOptions {
   readonly logger: Logger;
 }
 
+/**
+ * A Node process as a `ProcessRuntime`. `exit` waits until stdout has taken every line written
+ * before it, so the last log line is not lost.
+ */
+export function nodeRuntime(node: NodeJS.Process): ProcessRuntime {
+  return {
+    get exitCode() {
+      return node.exitCode;
+    },
+    set exitCode(code) {
+      node.exitCode = code;
+    },
+    on: (signal, listener) => node.on(signal, listener),
+    off: (signal, listener) => node.off(signal, listener),
+    exit: (code) => node.stdout.write("", () => node.exit(code)),
+  };
+}
+
 const SIGNALS = ["SIGTERM", "SIGINT"] as const;
 /** Added to twice the deadline (HTTP drain, then pool close) before the process gives up. */
 const HARD_STOP_MARGIN_MS = 5_000;

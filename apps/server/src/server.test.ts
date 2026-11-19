@@ -10,7 +10,7 @@ import { defineRpc } from "@s10n-base/contracts";
 
 import type { ServerConfig } from "./config";
 import { defineHandler } from "./rpc/dispatcher";
-import { sesCredentials, startServer, type StartedServer } from "./server";
+import { sesCredentials, startFromEnvironment, startServer, type StartedServer } from "./server";
 import { testServerConfig } from "./test/config";
 
 const noop = () => {};
@@ -306,5 +306,34 @@ describe("sesCredentials", () => {
     };
 
     expect(sesCredentials(withToken).sessionToken).toBe("session-token");
+  });
+});
+
+describe("startFromEnvironment", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("starts from the environment's config and stops cleanly", async () => {
+    vi.stubEnv("APP_URL", "http://localhost:5173");
+    vi.stubEnv("PORT", "0");
+    vi.stubEnv("HOST", "127.0.0.1");
+    vi.stubEnv("DATABASE_URL", "postgres://u:p@127.0.0.1:9/db");
+    vi.stubEnv("BETTER_AUTH_SECRET", "a-test-secret-that-is-at-least-32-characters");
+    vi.stubEnv("SHUTDOWN_TIMEOUT_MS", "1500");
+    vi.stubEnv("EMAIL_FROM", "no-reply@example.com");
+    vi.stubEnv("SUPPORT_EMAIL", "support@example.com");
+    vi.stubEnv("SES_REGION", "us-east-1");
+    vi.stubEnv("AWS_ACCESS_KEY_ID", "local");
+    vi.stubEnv("AWS_SECRET_ACCESS_KEY", "local");
+    const events: string[] = [];
+
+    const running = await startFromEnvironment({
+      createPool: () => createFakePool(events),
+      write: () => {},
+    });
+
+    expect(running.shutdownTimeoutMs).toBe(1500);
+    expect(await running.stop()).toEqual({ forced: false });
   });
 });

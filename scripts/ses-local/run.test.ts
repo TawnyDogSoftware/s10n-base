@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { listenAddress, runSesLocal } from "./run";
+import { listenAddress, onProcessInterrupt, runSesLocal } from "./run";
 
 describe("listenAddress", () => {
   it("reads the host and port from SES_ENDPOINT", () => {
@@ -59,5 +59,20 @@ describe("runSesLocal", () => {
     expect(run.lines).toEqual([
       "! ses-local: SES_ENDPOINT must be set to the capture server's address, such as http://127.0.0.1:8005.",
     ]);
+  });
+});
+
+describe("onProcessInterrupt", () => {
+  it("calls stop on Ctrl-C and on SIGTERM, listening for each once", () => {
+    const stop = vi.fn<() => void>();
+    const before = process.listenerCount("SIGINT");
+
+    onProcessInterrupt(stop);
+    process.emit("SIGINT");
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(process.listenerCount("SIGINT")).toBe(before);
+    process.emit("SIGTERM");
+    expect(stop).toHaveBeenCalledTimes(2);
   });
 });

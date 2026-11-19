@@ -11,6 +11,8 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["apps/*/src/**/*.{ts,tsx}", "packages/*/src/**/*.{ts,tsx}", "scripts/**/*.ts"],
+      // Every pattern here is in scripts/quality/coverage-exclusions.ts with its reason, and
+      // `bun run coverage:exclusions` fails if the two lists differ.
       exclude: [
         "**/*.test.{ts,tsx}",
         "apps/*/src/test/**",
@@ -23,6 +25,7 @@ export default defineConfig({
         "apps/server/src/migrate.ts",
         "apps/server/src/set-role.ts",
         "apps/web/src/main.tsx",
+        "scripts/**/*.main.ts",
       ],
       reporter: ["text-summary", "text", "json-summary"],
       reportsDirectory: "coverage",

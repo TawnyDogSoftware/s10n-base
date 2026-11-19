@@ -363,3 +363,14 @@ export async function startWithConfigLayer(
 export function startServer(config: ServerConfig, options: ServerLayerOptions = {}) {
   return startWithConfigLayer(AppConfig.layer(config), options);
 }
+
+/**
+ * Starts the server from the environment's config, as `bin.ts` does, and returns what the process
+ * runner needs. `options` are for tests.
+ */
+export async function startFromEnvironment(
+  options: ServerLayerOptions = {},
+): Promise<{ readonly shutdownTimeoutMs: number; readonly stop: StartedServer["stop"] }> {
+  const started = await startWithConfigLayer(AppConfig.fromEnvironment, options);
+  return { shutdownTimeoutMs: started.config.shutdownTimeoutMs, stop: started.stop };
+}

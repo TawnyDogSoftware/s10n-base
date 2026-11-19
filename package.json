@@ -67,6 +67,8 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck && tsc -p scripts",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "coverage:exclusions": "bun scripts/quality/coverage-exclusions.main.ts",
     "test:live": "bun scripts/with-env.main.ts vitest run --config apps/server/vitest.live.config.ts",
     "lint": "bun run lint:directives && bun run lint:oxlint && bun run lint:eslint",
     "lint:directives": "bun scripts/quality/lint-directives.main.ts",

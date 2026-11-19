@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { errorMessageKey } from "@s10n-base/client/messages";
-import { NetworkError } from "@s10n-base/client/rpc";
 import { usePending } from "@s10n-base/client/use-pending";
 
 import { useServices } from "../services";
@@ -35,8 +34,8 @@ export function CheckEmail(props: {
             : { tone: "danger", text: tError(errorMessageKey(result)) },
         );
       } catch (error) {
-        if (!(error instanceof NetworkError)) throw error;
-        setMessage({ tone: "danger", text: tError("network") });
+        // A lost answer, or anything else that went wrong: say which, as the other screens do.
+        setMessage({ tone: "danger", text: tError(errorMessageKey(error)) });
       }
     });
 

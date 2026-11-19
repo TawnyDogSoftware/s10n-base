@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createLogger } from "./observability/logger";
-import { runServerProcess, type ProcessRuntime, type RunningServer } from "./process";
+import { nodeRuntime, runServerProcess, type ProcessRuntime, type RunningServer } from "./process";
 
 function createRuntime() {
   const emitter = new EventEmitter();
@@ -233,5 +233,40 @@ describe("runServerProcess", () => {
     runtime.emit("SIGTERM");
 
     expect(runtime.exitCode).toBe(1);
+  });
+});
+
+describe("nodeRuntime", () => {
+  it("reads and sets the exit code, adds and removes listeners, and exits after stdout drains", () => {
+    const written: string[] = [];
+    const exits: number[] = [];
+    const node = Object.assign(new EventEmitter(), {
+      exitCode: undefined as number | string | null | undefined,
+      stdout: {
+        write: (text: string, done: () => void) => {
+          written.push(text);
+          done();
+          return true;
+        },
+      },
+      exit: (code: number) => {
+        exits.push(code);
+      },
+    });
+    const runtime = nodeRuntime(node as unknown as NodeJS.Process);
+    const listener = vi.fn<() => void>();
+
+    runtime.exitCode = 3;
+    runtime.on("SIGTERM", listener);
+    node.emit("SIGTERM");
+    runtime.off("SIGTERM", listener);
+    node.emit("SIGTERM");
+    runtime.exit(1);
+
+    expect(runtime.exitCode).toBe(3);
+    expect(node.exitCode).toBe(3);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(written).toEqual([""]);
+    expect(exits).toEqual([1]);
   });
 });
