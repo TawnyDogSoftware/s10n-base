@@ -8,6 +8,10 @@
       "types": "./src/app-variants.ts",
       "import": "./src/app-variants.ts"
     },
+    "./auth": {
+      "types": "./src/auth.ts",
+      "import": "./src/auth.ts"
+    },
     "./id": {
       "types": "./src/id.ts",
       "import": "./src/id.ts"
@@ -18,7 +22,7 @@
     }
   },
   "scripts": {
-    "build": "tsdown src/app-variants.ts src/id.ts src/time.ts --format esm,cjs --dts --clean",
+    "build": "tsdown src/app-variants.ts src/auth.ts src/id.ts src/time.ts --format esm,cjs --dts --clean",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts"
   },

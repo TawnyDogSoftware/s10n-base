@@ -10,6 +10,7 @@ import { admin } from "better-auth/plugins";
 import type { Kysely } from "kysely";
 
 import { appVariants, type AppVariant } from "@s10n-base/shared/app-variants";
+import { AUTH_COOKIE_PREFIX } from "@s10n-base/shared/auth";
 
 import type { LogLevel, NodeEnv } from "../config";
 import type { DB } from "../infra/postgres/generated/db";
@@ -21,10 +22,10 @@ import type { AuthEmailSender } from "./email/sender";
 export const AUTH_BASE_PATH = "/api/auth";
 
 /**
- * The prefix of every auth cookie (`s10n-base.session_token`). One constant, so a project
- * renames it in one place.
+ * The prefix of every auth cookie (`s10n-base.session_token`). It lives in `packages/shared`, so
+ * the mobile app's auth client reads the same cookies the server sets.
  */
-export const AUTH_COOKIE_PREFIX = "s10n-base";
+export { AUTH_COOKIE_PREFIX };
 
 /**
  * The header Better Auth reads the client's IP address from. Only the bridge sets it, from the

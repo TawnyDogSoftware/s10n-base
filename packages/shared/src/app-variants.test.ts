@@ -17,4 +17,19 @@ describe("appVariants", () => {
     expect(new Set(schemes).size).toBe(schemes.length);
     expect(new Set(names).size).toBe(names.length);
   });
+
+  it("gives each variant its own bundle identifier, valid on iOS and Android", () => {
+    const ids = APP_VARIANTS.map((variant) => appVariants[variant].bundleIdentifier);
+
+    // Android's rule is the stricter one: at least two dot-separated segments, each a letter
+    // followed by letters, digits or underscores. iOS also allows "-", Android does not.
+    for (const id of ids) expect(id).toMatch(/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("uses placeholders under com.example until a project renames them", () => {
+    for (const variant of APP_VARIANTS) {
+      expect(appVariants[variant].bundleIdentifier.startsWith("com.example.")).toBe(true);
+    }
+  });
 });

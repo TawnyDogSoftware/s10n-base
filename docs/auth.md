@@ -30,7 +30,7 @@ To expose a route, move it to `EXPOSED_AUTH_ROUTES` with the reason a client nee
 
 ## Cookies and cross-site rules
 
-- Cookies are named `s10n-base.<name>` (`AUTH_COOKIE_PREFIX` in `apps/server/src/auth/options.ts`), `HttpOnly`, `SameSite=Lax`, `Path=/`, and `Secure` whenever `APP_URL` is `https`.
+- Cookies are named `s10n-base.<name>` (`AUTH_COOKIE_PREFIX` in `packages/shared/src/auth.ts`, which the mobile app's auth client reads too), `HttpOnly`, `SameSite=Lax`, `Path=/`, and `Secure` whenever `APP_URL` is `https`.
 - Trusted origins are `APP_URL`, the mobile app's URL scheme for the server's `APP_VARIANT` (from `packages/shared/src/app-variants.ts`), and `exp://` (Expo Go) only when `NODE_ENV` is `development`.
 - `/rpc` and `/api/app-auth/*` refuse a request whose `Origin` header is not trusted, with 403 and before any work. Requests with no `Origin` (the mobile app, servers, curl) pass that check and still need a session cookie.
 - `/api/auth/*` relies on Better Auth's own checks: a sign-in or sign-up that carries an `Origin`, and any request that carries a cookie, must come from a trusted origin. **Better Auth turns these checks off by default when `NODE_ENV` is `test`**; the options set `disableOriginCheck: false` and `disableCSRFCheck: false` so they are on everywhere.
