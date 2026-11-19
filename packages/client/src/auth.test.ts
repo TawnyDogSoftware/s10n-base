@@ -36,6 +36,60 @@ describe("runAuthAction", () => {
     ).rejects.toBeInstanceOf(NetworkError);
   });
 
+  it("throws a NetworkError when the connection drops while the answer's body is read", async () => {
+    // The headers arrived, so fetch resolved; then the body stream failed.
+    const broken = () =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('{"status":'));
+              controller.error(new TypeError("Network connection was lost"));
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    const tracker = trackNetworkFailures(broken);
+    const action = async () => {
+      const response = await tracker.fetch("https://api.example.com/reset-password");
+      return { data: (await response.json()) as unknown, error: null };
+    };
+
+    await expect(runAuthAction(tracker, action)).rejects.toBeInstanceOf(NetworkError);
+  });
+
+  it("passes a complete answer through with its status and headers", async () => {
+    const tracker = trackNetworkFailures(() =>
+      Promise.resolve(
+        new Response('{"ok":1}', {
+          status: 201,
+          statusText: "Created",
+          headers: { "content-type": "application/json", "x-test": "kept" },
+        }),
+      ),
+    );
+
+    const response = await tracker.fetch("https://api.example.com/x");
+
+    expect(response.status).toBe(201);
+    expect(response.statusText).toBe("Created");
+    expect(response.headers.get("x-test")).toBe("kept");
+    await expect(response.json()).resolves.toEqual({ ok: 1 });
+    expect(tracker.failures()).toBe(0);
+  });
+
+  it("passes an answer with no body through", async () => {
+    const tracker = trackNetworkFailures(() =>
+      Promise.resolve(new Response(null, { status: 204 })),
+    );
+
+    const response = await tracker.fetch("https://api.example.com/x");
+
+    expect(response.status).toBe(204);
+    await expect(response.text()).resolves.toBe("");
+  });
+
   it("rethrows an error that is not a network failure", async () => {
     const tracker = trackNetworkFailures(() => Promise.resolve(new Response()));
     const failure = new Error("bug");

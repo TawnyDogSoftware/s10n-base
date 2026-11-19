@@ -25,7 +25,10 @@ export interface PasswordAuth {
   readonly requestPasswordReset: (email: string) => Promise<AuthResult>;
 }
 
-/** A `fetch` that counts requests that got no answer (an abort is not counted). */
+/**
+ * A `fetch` that counts requests that got no complete answer: the connection failed before the
+ * headers, or dropped while the body was read. An abort is not counted.
+ */
 export interface NetworkTracker {
   readonly fetch: typeof fetch;
   readonly failures: () => number;
@@ -40,15 +43,29 @@ function isAbort(error: unknown): boolean {
   );
 }
 
+/** Statuses whose responses cannot carry a body. */
+const NULL_BODY = new Set([101, 204, 205, 304]);
+
 export function trackNetworkFailures(base: typeof globalThis.fetch): NetworkTracker {
   let failures = 0;
-  const tracked = async (input: RequestInfo | URL, init?: RequestInit) => {
+  const counted = async <T>(step: () => Promise<T>): Promise<T> => {
     try {
-      return await base(input, init);
+      return await step();
     } catch (error) {
       if (!isAbort(error)) failures += 1;
       throw error;
     }
+  };
+  const tracked = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const response = await counted(() => base(input, init));
+    // The body is read here, inside the count: a connection that drops after the headers is as
+    // much a lost answer as one that drops before them. Auth answers are small JSON.
+    const body = await counted(() => response.arrayBuffer());
+    return new Response(NULL_BODY.has(response.status) ? null : body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
   };
   return { fetch: tracked as typeof globalThis.fetch, failures: () => failures };
 }
