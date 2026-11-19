@@ -54,6 +54,7 @@
   },
   "type": "module",
   "scripts": {
+    "agent:check": "bun scripts/quality/agent-check.main.ts",
     "dev": "bun scripts/dev.main.ts",
     "dev:server": "bun scripts/with-env.main.ts turbo run dev --filter=@s10n-base/server",
     "dev:web": "bun scripts/with-env.main.ts turbo run dev --filter=@s10n-base/web",

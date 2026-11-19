@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   check:
-    name: Check, test, build, live-test and smoke-test
+    name: Gates, build, live tests and smoke test
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -47,10 +47,11 @@ jobs:
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
-      - run: bun run fmt:check
-      - run: bun run lint
-      - run: bun run typecheck
-      - run: bun run test
+      # Every gate that needs no database and no browser, the same command as locally: lint with
+      # no suppressions, format, typecheck, boundaries, dead code, 100% coverage and the audit.
+      # scripts/ci-workflow.test.ts fails if this job stops running it.
+      - name: Run every gate that needs no database (bun run agent:check)
+        run: bun run agent:check
       - run: bun run build
       # Against the installed Expo SDK's own version map, so the result depends only on the
       # lockfile. Online, the check compares with Expo's newest patches, which the 3-day rule may
@@ -92,3 +93,27 @@ jobs:
         run: bunx expo prebuild --no-install --platform all
       - name: Check the generated projects carry the development variant's identity
         run: bun scripts/mobile-bundle/check-prebuild.main.ts apps/mobile development
+
+  journeys:
+    name: Browser journeys
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - name: Install Chromium and the libraries it needs
+        run: bunx playwright install --with-deps chromium
+      # Builds, then Playwright starts the compose database, the email capture server and the
+      # built server itself (playwright.config.ts), as it does locally. Failures are reported as
+      # text only: no trace, video or screenshot is recorded or uploaded, since email links carry
+      # tokens.
+      - name: Sign up, confirm, sign in and out, and use a passkey, in Chromium
+        run: bun run test:e2e
