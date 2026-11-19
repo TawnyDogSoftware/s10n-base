@@ -33,35 +33,56 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isPackageList(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((name) => typeof name === "string" && name !== "")
+  );
+}
+
+function optionalString(value: unknown, problem: string): string | undefined {
+  if (value !== undefined && typeof value !== "string") throw new Error(problem);
+  return value;
+}
+
+function parseHold(entry: unknown, index: number): Hold {
+  const label = `dependency-holds.json entry ${String(index + 1)}`;
+  if (!isRecord(entry)) throw new Error(`${label} must be an object`);
+  const { packages, reason } = entry;
+  if (!isPackageList(packages)) throw new Error(`${label} needs at least one package`);
+  if (typeof reason !== "string" || reason.trim() === "") {
+    throw new Error(`${label} needs a reason`);
+  }
+  const range = optionalString(entry.range, `${label}: range must be a string`);
+  const group = optionalString(entry.group, `${label}: group must be a string`);
+  const hold: { -readonly [Key in keyof Hold]: Hold[Key] } = { packages, reason };
+  if (range !== undefined) {
+    // Throws on a range the update cannot read, so a typo fails here and not in the update.
+    satisfies("0.0.0", range);
+    hold.range = range;
+  }
+  if (group !== undefined) hold.group = group;
+  return hold;
+}
+
 export function parseHolds(json: unknown): Hold[] {
   const entries = isRecord(json) && Array.isArray(json.holds) ? (json.holds as unknown[]) : [];
-  return entries.map((entry, index) => {
-    const label = `dependency-holds.json entry ${String(index + 1)}`;
-    if (!isRecord(entry)) throw new Error(`${label} must be an object`);
-    const { packages, reason, range, group } = entry;
-    if (
-      !Array.isArray(packages) ||
-      packages.length === 0 ||
-      !packages.every((name) => typeof name === "string" && name !== "")
-    ) {
-      throw new Error(`${label} needs at least one package`);
-    }
-    if (typeof reason !== "string" || reason.trim() === "") {
-      throw new Error(`${label} needs a reason`);
-    }
-    if (range !== undefined && typeof range !== "string")
-      throw new Error(`${label}: range must be a string`);
-    if (group !== undefined && typeof group !== "string")
-      throw new Error(`${label}: group must be a string`);
-    if (range !== undefined) satisfies("0.0.0", range);
-    const hold: { -readonly [Key in keyof Hold]: Hold[Key] } = {
-      packages: packages as string[],
-      reason,
-    };
-    if (range !== undefined) hold.range = range;
-    if (group !== undefined) hold.group = group;
-    return hold;
-  });
+  return entries.map(parseHold);
+}
+
+/** A hold without a range never lets its package move; one with a range, only inside it. */
+function allowedByHold(hold: Hold, spec: string): boolean {
+  return hold.range !== undefined && satisfies(specBaseVersion(spec) ?? "", hold.range);
+}
+
+/** A group moves only when every member lands on one version, inside the range if there is one. */
+function groupAllowed(hold: Hold, specs: readonly string[]): boolean {
+  if (new Set(specs.map(specBaseVersion)).size > 1) return false;
+  const { range } = hold;
+  return (
+    range === undefined || specs.every((spec) => satisfies(specBaseVersion(spec) ?? "", range))
+  );
 }
 
 /**
@@ -82,30 +103,22 @@ export function enforceHolds(
     }
   };
 
-  const groups = new Map<string, { hold: Hold; names: string[] }>();
-  for (const name of after.keys()) {
+  const groups = new Map<string, { hold: Hold; specs: Map<string, string> }>();
+  for (const [name, spec] of after) {
     const hold = findHold(holds, name);
     if (hold === undefined) continue;
-    if (hold.group !== undefined) {
-      const members = groups.get(hold.group) ?? { hold, names: [] };
-      members.names.push(name);
-      groups.set(hold.group, members);
-    } else if (hold.range === undefined) {
-      restore(name, hold);
-    } else if (!satisfies(specBaseVersion(after.get(name) ?? "") ?? "", hold.range)) {
-      restore(name, hold);
+    if (hold.group === undefined) {
+      if (!allowedByHold(hold, spec)) restore(name, hold);
+      continue;
     }
+    const members = groups.get(hold.group) ?? { hold, specs: new Map<string, string>() };
+    members.specs.set(name, spec);
+    groups.set(hold.group, members);
   }
 
-  for (const { hold, names } of groups.values()) {
-    const versions = new Set(names.map((name) => specBaseVersion(after.get(name) ?? "")));
-    const outOfRange =
-      hold.range !== undefined &&
-      names.some(
-        (name) => !satisfies(specBaseVersion(after.get(name) ?? "") ?? "", hold.range ?? ""),
-      );
-    if (versions.size > 1 || outOfRange) {
-      for (const name of names) restore(name, hold);
+  for (const { hold, specs } of groups.values()) {
+    if (!groupAllowed(hold, [...specs.values()])) {
+      for (const name of specs.keys()) restore(name, hold);
     }
   }
 

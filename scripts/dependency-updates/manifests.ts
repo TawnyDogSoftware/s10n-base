@@ -37,12 +37,11 @@ export function collectSpecs(files: readonly ManifestFile[]): Map<string, string
   for (const file of files) {
     for (const [name, spec] of Object.entries(catalogOf(file.json))) specs.set(name, spec);
   }
-  for (const file of files) {
-    for (const section of DEPENDENCY_SECTIONS) {
-      for (const [name, spec] of Object.entries(asStringRecord(file.json[section]))) {
-        if (isVersionSpec(spec)) specs.set(name, spec);
-      }
-    }
+  const direct = files.flatMap((file) =>
+    DEPENDENCY_SECTIONS.flatMap((section) => Object.entries(asStringRecord(file.json[section]))),
+  );
+  for (const [name, spec] of direct) {
+    if (isVersionSpec(spec)) specs.set(name, spec);
   }
   return specs;
 }

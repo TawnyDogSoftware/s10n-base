@@ -122,56 +122,78 @@ type ParsedSendEmail =
   | { readonly email: Omit<StoredEmail, "messageId" | "at"> }
   | { readonly error: string };
 
-/** Reads an SES v2 `SendEmail` body with simple content, or describes what is wrong with it. */
-function parseSendEmail(body: unknown): ParsedSendEmail {
-  if (typeof body !== "object" || body === null)
-    return { error: "The body must be a JSON object." };
-  const request = body as {
-    FromEmailAddress?: unknown;
-    Destination?: { ToAddresses?: unknown; CcAddresses?: unknown; BccAddresses?: unknown };
-    ReplyToAddresses?: unknown;
-    Content?: {
-      Simple?: { Subject?: Content; Body?: { Text?: Content; Html?: Content } };
-      Raw?: unknown;
-      Template?: unknown;
-    };
+interface SendEmailRequest {
+  readonly FromEmailAddress?: unknown;
+  readonly Destination?: { ToAddresses?: unknown; CcAddresses?: unknown; BccAddresses?: unknown };
+  readonly ReplyToAddresses?: unknown;
+  readonly Content?: {
+    readonly Simple?: { Subject?: Content; Body?: { Text?: Content; Html?: Content } };
+    readonly Raw?: unknown;
+    readonly Template?: unknown;
   };
-  if (request.Content?.Raw !== undefined || request.Content?.Template !== undefined) {
+}
+
+type Addresses = Pick<StoredEmail, "destination" | "replyTo">;
+
+function parseAddresses(request: SendEmailRequest): Addresses | { readonly error: string } {
+  const to = stringArray(request.Destination?.ToAddresses);
+  const cc = stringArray(request.Destination?.CcAddresses);
+  const bcc = stringArray(request.Destination?.BccAddresses);
+  const replyTo = stringArray(request.ReplyToAddresses);
+  if (to === undefined || cc === undefined || bcc === undefined || replyTo === undefined) {
+    return { error: "Addresses must be arrays of strings." };
+  }
+  if (to.length + cc.length + bcc.length === 0) return { error: "Destination needs an address." };
+  return { destination: { to, cc, bcc }, replyTo };
+}
+
+type SimpleContent = NonNullable<NonNullable<SendEmailRequest["Content"]>["Simple"]>;
+
+function bodyOf(text: unknown, html: unknown): StoredEmail["body"] | undefined {
+  if (typeof text !== "string" && typeof html !== "string") return undefined;
+  return {
+    ...(typeof text === "string" ? { text } : {}),
+    ...(typeof html === "string" ? { html } : {}),
+  };
+}
+
+function parseSimple(
+  simple: SimpleContent | undefined,
+): Pick<StoredEmail, "subject" | "body"> | { readonly error: string } {
+  const { Subject, Body } = simple ?? {};
+  const subject = Subject?.Data;
+  const body = bodyOf(Body?.Text?.Data, Body?.Html?.Data);
+  if (typeof subject !== "string") return { error: "Content.Simple.Subject.Data is required." };
+  if (body === undefined) return { error: "Content.Simple.Body needs Text or Html data." };
+  return { subject, body };
+}
+
+function parseContent(
+  content: SendEmailRequest["Content"],
+): Pick<StoredEmail, "subject" | "body"> | { readonly error: string } {
+  if (content?.Raw !== undefined || content?.Template !== undefined) {
     return {
       error:
         "The local capture server accepts only Simple content: raw MIME and templates are not supported, and the server never sends them.",
     };
   }
-  const simple = request.Content?.Simple;
-  const to = stringArray(request.Destination?.ToAddresses);
-  const cc = stringArray(request.Destination?.CcAddresses);
-  const bcc = stringArray(request.Destination?.BccAddresses);
-  const replyTo = stringArray(request.ReplyToAddresses);
-  const subject = simple?.Subject?.Data;
-  const text = simple?.Body?.Text?.Data;
-  const html = simple?.Body?.Html?.Data;
-  if (typeof request.FromEmailAddress !== "string")
+  return parseSimple(content?.Simple);
+}
+
+/** Reads an SES v2 `SendEmail` body with simple content, or describes what is wrong with it. */
+function parseSendEmail(body: unknown): ParsedSendEmail {
+  if (typeof body !== "object" || body === null) {
+    return { error: "The body must be a JSON object." };
+  }
+  const request = body as SendEmailRequest;
+  const content = parseContent(request.Content);
+  if ("error" in content) return content;
+  if (typeof request.FromEmailAddress !== "string") {
     return { error: "FromEmailAddress is required." };
-  if (to === undefined || cc === undefined || bcc === undefined || replyTo === undefined) {
-    return { error: "Addresses must be arrays of strings." };
   }
-  if (to.length + cc.length + bcc.length === 0) return { error: "Destination needs an address." };
-  if (typeof subject !== "string") return { error: "Content.Simple.Subject.Data is required." };
-  if (typeof text !== "string" && typeof html !== "string") {
-    return { error: "Content.Simple.Body needs Text or Html data." };
-  }
-  return {
-    email: {
-      from: request.FromEmailAddress,
-      destination: { to, cc, bcc },
-      replyTo,
-      subject,
-      body: {
-        ...(typeof text === "string" ? { text } : {}),
-        ...(typeof html === "string" ? { html } : {}),
-      },
-    },
-  };
+  const addresses = parseAddresses(request);
+  if ("error" in addresses) return addresses;
+  return { email: { from: request.FromEmailAddress, ...addresses, ...content } };
 }
 
 function headerPairs(request: IncomingMessage): Array<[string, string]> {

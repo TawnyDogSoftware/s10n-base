@@ -11,6 +11,8 @@ import path from "node:path";
 
 import { APP_VARIANTS, type AppVariant, appVariants } from "../../packages/shared/src/app-variants";
 
+type AppVariantIdentity = (typeof appVariants)[AppVariant];
+
 export interface PrebuildFiles {
   readonly pbxproj: string;
   readonly infoPlist: string;
@@ -20,47 +22,52 @@ export interface PrebuildFiles {
 }
 
 const all = (text: string, pattern: RegExp) =>
-  [...new Set([...text.matchAll(pattern)].map((match) => match[1] ?? ""))].toSorted((left, right) =>
+  [...new Set([...text.matchAll(pattern)].map(([, value = ""]) => value))].toSorted((left, right) =>
     left.localeCompare(right),
   );
 
-/** Everything that does not match the variant, as sentences; empty when it all matches. */
-export function checkPrebuild(files: PrebuildFiles, variant: AppVariant): string[] {
-  const identity = appVariants[variant];
+function nameProblem(platform: string, found: string | undefined, expected: string): string[] {
+  return found === expected
+    ? []
+    : [`the ${platform} is ${found ?? "missing"}, expected ${expected}`];
+}
+
+function iosProblems(files: PrebuildFiles, identity: AppVariantIdentity): string[] {
   const problems: string[] = [];
-  const iosIds = all(files.pbxproj, /PRODUCT_BUNDLE_IDENTIFIER = "?([^";]+)"?;/g);
-  if (iosIds.join() !== identity.bundleIdentifier) {
+  const ids = all(files.pbxproj, /PRODUCT_BUNDLE_IDENTIFIER = "?([^";]+)"?;/g);
+  if (ids.join() !== identity.bundleIdentifier) {
     problems.push(
-      `iOS bundle identifiers are ${iosIds.join(", ")}, expected ${identity.bundleIdentifier}`,
+      `iOS bundle identifiers are ${ids.join(", ")}, expected ${identity.bundleIdentifier}`,
     );
   }
   if (!all(files.infoPlist, /<string>([^<]+)<\/string>/g).includes(identity.urlScheme)) {
     problems.push(`the iOS Info.plist does not declare the ${identity.urlScheme} scheme`);
   }
-  const iosName = /<key>CFBundleDisplayName<\/key>\s*<string>([^<]*)<\/string>/.exec(
+  const name = /<key>CFBundleDisplayName<\/key>\s*<string>([^<]*)<\/string>/.exec(
     files.infoPlist,
   )?.[1];
-  if (iosName !== identity.displayName) {
+  return [...problems, ...nameProblem("iOS display name", name, identity.displayName)];
+}
+
+function androidProblems(files: PrebuildFiles, identity: AppVariantIdentity): string[] {
+  const problems: string[] = [];
+  const ids = all(files.buildGradle, /applicationId '([^']+)'/g);
+  if (ids.join() !== identity.bundleIdentifier) {
     problems.push(
-      `the iOS display name is ${iosName ?? "missing"}, expected ${identity.displayName}`,
-    );
-  }
-  const androidIds = all(files.buildGradle, /applicationId '([^']+)'/g);
-  if (androidIds.join() !== identity.bundleIdentifier) {
-    problems.push(
-      `the Android application id is ${androidIds.join(", ")}, expected ${identity.bundleIdentifier}`,
+      `the Android application id is ${ids.join(", ")}, expected ${identity.bundleIdentifier}`,
     );
   }
   if (!all(files.androidManifest, /android:scheme="([^"]+)"/g).includes(identity.urlScheme)) {
     problems.push(`the Android manifest does not declare the ${identity.urlScheme} scheme`);
   }
-  const androidName = /<string name="app_name">([^<]*)<\/string>/.exec(files.androidStrings)?.[1];
-  if (androidName !== identity.displayName) {
-    problems.push(
-      `the Android app name is ${androidName ?? "missing"}, expected ${identity.displayName}`,
-    );
-  }
-  return problems;
+  const name = /<string name="app_name">([^<]*)<\/string>/.exec(files.androidStrings)?.[1];
+  return [...problems, ...nameProblem("Android app name", name, identity.displayName)];
+}
+
+/** Everything that does not match the variant, as sentences; empty when it all matches. */
+export function checkPrebuild(files: PrebuildFiles, variant: AppVariant): string[] {
+  const identity = appVariants[variant];
+  return [...iosProblems(files, identity), ...androidProblems(files, identity)];
 }
 
 function read(appRoot: string): PrebuildFiles {

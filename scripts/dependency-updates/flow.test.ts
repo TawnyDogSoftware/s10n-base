@@ -104,17 +104,38 @@ class FakeIo implements Io {
     const line = [command, ...args].join(" ");
     this.commands.push(line);
     if (options?.input !== undefined) this.inputs.set(line, options.input);
-
     this.atBase ??= new Map(this.files);
+    return this.git(line, this.atBase) ?? this.bun(line) ?? this.gh(line) ?? ok();
+  }
+
+  private git(line: string, atBase: Map<string, string>): Promise<CommandResult> | undefined {
     const revParse = /^git rev-parse --verify (.+)\^\{commit\}$/.exec(line);
     if (revParse !== null) return ok(`${FakeIo.shas[revParse[1] ?? ""] ?? "unknown-sha"}\n`);
     const show = /^git show ([^:]+):(.+)$/.exec(line);
-    if (show !== null) {
-      const text = this.atBase.get(show[2] ?? "");
-      return text === undefined
-        ? Promise.resolve({ code: 128, stdout: "", stderr: "fatal: path not in tree" })
-        : ok(text);
+    if (show !== null) return FakeIo.show(atBase, show[2] ?? "");
+    if (line.startsWith("git checkout --detach")) this.checkout(line, atBase);
+    if (line.includes(" merge --no-edit ")) {
+      return this.scenario.mergeConflicts === true
+        ? Promise.resolve({ code: 1, stdout: "CONFLICT (content)", stderr: "" })
+        : ok();
     }
+    if (line === "git status --porcelain") return this.status();
+    return undefined;
+  }
+
+  private static show(atBase: Map<string, string>, path: string): Promise<CommandResult> {
+    const text = atBase.get(path);
+    return text === undefined
+      ? Promise.resolve({ code: 128, stdout: "", stderr: "fatal: path not in tree" })
+      : ok(text);
+  }
+
+  private status(): Promise<CommandResult> {
+    const changed = [...this.files].filter(([path, text]) => this.atCheckout.get(path) !== text);
+    return ok(changed.map(([path]) => ` M ${path}\n`).join(""));
+  }
+
+  private checkout(line: string, atBase: Map<string, string>): void {
     if (
       line.startsWith("git checkout --detach origin/deps/") &&
       this.scenario.prHead !== undefined
@@ -122,16 +143,11 @@ class FakeIo implements Io {
       this.files.set("package.json", rootManifest(this.scenario.prHead.catalog));
       this.files.set("bun.lock", lockfile(this.scenario.prHead.lock));
     }
-    if (line === "git checkout --detach base-sha") this.files = new Map(this.atBase);
-    if (line.startsWith("git checkout --detach")) this.atCheckout = new Map(this.files);
-    if (line.startsWith("gh pr list")) {
-      return ok(JSON.stringify(this.scenario.openPr === undefined ? [] : [this.scenario.openPr]));
-    }
-    if (line.includes(" merge --no-edit ")) {
-      return this.scenario.mergeConflicts === true
-        ? Promise.resolve({ code: 1, stdout: "CONFLICT (content)", stderr: "" })
-        : ok();
-    }
+    if (line === "git checkout --detach base-sha") this.files = new Map(atBase);
+    this.atCheckout = new Map(this.files);
+  }
+
+  private bun(line: string): Promise<CommandResult> | undefined {
     if (line === "bun update -r --latest --ignore-scripts") {
       const latest = this.scenario.latest;
       if (latest !== undefined) {
@@ -154,11 +170,6 @@ class FakeIo implements Io {
       return ok();
     }
     if (line === "bun outdated -r") return ok(outdatedOutput);
-    if (line === "git status --porcelain") {
-      const changed = [...this.files].filter(([path, text]) => this.atCheckout.get(path) !== text);
-      return ok(changed.map(([path]) => ` M ${path}\n`).join(""));
-    }
-    if (line.startsWith("gh pr create")) return ok("https://github.com/o/r/pull/9\n");
     if (line.startsWith("bunx expo install --check")) {
       return Promise.resolve({
         code: 1,
@@ -166,7 +177,15 @@ class FakeIo implements Io {
         stderr: "",
       });
     }
-    return ok();
+    return undefined;
+  }
+
+  private gh(line: string): Promise<CommandResult> | undefined {
+    if (line.startsWith("gh pr list")) {
+      return ok(JSON.stringify(this.scenario.openPr === undefined ? [] : [this.scenario.openPr]));
+    }
+    if (line.startsWith("gh pr create")) return ok("https://github.com/o/r/pull/9\n");
+    return undefined;
   }
 
   readFile(path: string): Promise<string> {

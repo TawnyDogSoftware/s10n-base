@@ -38,41 +38,44 @@ function describeFound(value: string | undefined): string {
   return value === undefined ? "nothing" : `"${value}"`;
 }
 
-export function checkVersionSources(sources: VersionSources): string[] {
-  const problems: string[] = [];
-
+function nodeProblems(sources: VersionSources): string[] {
   if (!EXACT_VERSION.test(sources.nvmrc)) {
-    problems.push(
-      `.nvmrc must hold an exact Node version such as 26.13.1, found "${sources.nvmrc}"`,
-    );
-  } else {
-    if (sources.enginesNode !== `>=${sources.nvmrc}`) {
-      problems.push(
-        `engines.node must be ">=${sources.nvmrc}" to match .nvmrc, found ${describeFound(sources.enginesNode)}`,
-      );
-    }
-    const nodeMajor = sources.nvmrc.slice(0, sources.nvmrc.indexOf("."));
-    if (sources.typesNode === undefined) {
-      problems.push("@types/node must be in the root catalog");
-    } else if (/^[\^~]?(\d+)\./.exec(sources.typesNode)?.[1] !== nodeMajor) {
-      problems.push(
-        `@types/node must be on Node's major version ${nodeMajor}, found "${sources.typesNode}"`,
-      );
-    }
+    return [`.nvmrc must hold an exact Node version such as 26.13.1, found "${sources.nvmrc}"`];
   }
+  const problems: string[] = [];
+  if (sources.enginesNode !== `>=${sources.nvmrc}`) {
+    problems.push(
+      `engines.node must be ">=${sources.nvmrc}" to match .nvmrc, found ${describeFound(sources.enginesNode)}`,
+    );
+  }
+  const nodeMajor = sources.nvmrc.slice(0, sources.nvmrc.indexOf("."));
+  if (sources.typesNode === undefined) {
+    problems.push("@types/node must be in the root catalog");
+  } else if (/^[\^~]?(\d+)\./.exec(sources.typesNode)?.[1] !== nodeMajor) {
+    problems.push(
+      `@types/node must be on Node's major version ${nodeMajor}, found "${sources.typesNode}"`,
+    );
+  }
+  return problems;
+}
 
+function bunProblems(sources: VersionSources): string[] {
   const bunVersion = sources.packageManager?.startsWith("bun@")
     ? sources.packageManager.slice("bun@".length)
     : undefined;
   if (bunVersion === undefined || !EXACT_VERSION.test(bunVersion)) {
-    problems.push(
+    return [
       `packageManager must be "bun@<exact version>", found ${describeFound(sources.packageManager)}`,
-    );
-  } else if (sources.enginesBun !== `>=${bunVersion}`) {
-    problems.push(
-      `engines.bun must be ">=${bunVersion}" to match packageManager, found ${describeFound(sources.enginesBun)}`,
-    );
+    ];
   }
+  if (sources.enginesBun !== `>=${bunVersion}`) {
+    return [
+      `engines.bun must be ">=${bunVersion}" to match packageManager, found ${describeFound(sources.enginesBun)}`,
+    ];
+  }
+  return [];
+}
 
-  return problems;
+export function checkVersionSources(sources: VersionSources): string[] {
+  return [...nodeProblems(sources), ...bunProblems(sources)];
 }

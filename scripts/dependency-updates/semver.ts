@@ -31,6 +31,33 @@ export function specBaseVersion(spec: string): string | undefined {
 
 type Comparator = (version: string) => boolean;
 
+/** The upper bound of `^target` (the next major, or the next minor below 1.0.0) and `~target`. */
+function caretCeiling(target: string): string {
+  const [major, minor] = parse(target);
+  return major > 0 ? `${String(major + 1)}.0.0` : `0.${String(minor + 1)}.0`;
+}
+
+function tildeCeiling(target: string): string {
+  const [major, minor] = parse(target);
+  return `${String(major)}.${String(minor + 1)}.0`;
+}
+
+/** The comparators of each operator, for a target version. A bare version means "=". */
+const OPERATORS: Readonly<Record<string, (target: string) => Comparator[]>> = {
+  "^": (target) => [
+    (v) => compareVersions(v, target) >= 0,
+    (v) => compareVersions(v, caretCeiling(target)) < 0,
+  ],
+  "~": (target) => [
+    (v) => compareVersions(v, target) >= 0,
+    (v) => compareVersions(v, tildeCeiling(target)) < 0,
+  ],
+  ">=": (target) => [(v) => compareVersions(v, target) >= 0],
+  "<=": (target) => [(v) => compareVersions(v, target) <= 0],
+  ">": (target) => [(v) => compareVersions(v, target) > 0],
+  "<": (target) => [(v) => compareVersions(v, target) < 0],
+};
+
 function comparatorsFor(term: string, range: string): Comparator[] {
   const xRange = /^(\d+)\.(\d+)\.[x*]$/.exec(term);
   if (xRange !== null) {
@@ -44,29 +71,8 @@ function comparatorsFor(term: string, range: string): Comparator[] {
   if (match === null) {
     throw new Error(`Unsupported version range "${range}"`);
   }
-  const operator = match[1] ?? "=";
-  const target = match[2] ?? "";
-  const [major, minor] = parse(target);
-  switch (operator) {
-    case "^": {
-      const ceiling = major > 0 ? `${String(major + 1)}.0.0` : `0.${String(minor + 1)}.0`;
-      return [(v) => compareVersions(v, target) >= 0, (v) => compareVersions(v, ceiling) < 0];
-    }
-    case "~": {
-      const ceiling = `${String(major)}.${String(minor + 1)}.0`;
-      return [(v) => compareVersions(v, target) >= 0, (v) => compareVersions(v, ceiling) < 0];
-    }
-    case ">=":
-      return [(v) => compareVersions(v, target) >= 0];
-    case "<=":
-      return [(v) => compareVersions(v, target) <= 0];
-    case ">":
-      return [(v) => compareVersions(v, target) > 0];
-    case "<":
-      return [(v) => compareVersions(v, target) < 0];
-    default:
-      return [(v) => compareVersions(v, target) === 0];
-  }
+  const [, operator = "=", target = ""] = match;
+  return OPERATORS[operator]?.(target) ?? [(v) => compareVersions(v, target) === 0];
 }
 
 /** Throws for a range it cannot read, so a typo in a hold never passes silently. */

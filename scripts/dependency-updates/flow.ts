@@ -256,6 +256,11 @@ async function updatePackages(
   return restorations;
 }
 
+/** `candidate` when it is newer than `current`, else undefined. */
+function newerThan(candidate: string | undefined, current: string): string | undefined {
+  return candidate !== undefined && compareVersions(candidate, current) > 0 ? candidate : undefined;
+}
+
 async function updateRuntimes(io: Io, now: Date): Promise<string[]> {
   const root = JSON.parse(await io.readFile("package.json")) as Manifest;
   const currentNode = (await io.readFile(".nvmrc")).trim();
@@ -270,11 +275,8 @@ async function updateRuntimes(io: Io, now: Date): Promise<string[]> {
     now,
   );
 
-  const newBun = bun !== undefined && compareVersions(bun, currentBun) > 0 ? bun : undefined;
-  const newNode =
-    node.version !== undefined && compareVersions(node.version, currentNode) > 0
-      ? node.version
-      : undefined;
+  const newBun = newerThan(bun, currentBun);
+  const newNode = newerThan(node.version, currentNode);
   if (newNode !== undefined) {
     await io.writeFile(".nvmrc", `${newNode}\n`);
   }

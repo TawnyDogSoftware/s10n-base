@@ -7,7 +7,7 @@
  * `bun run build`; it needs DATABASE_URL (from the environment, `.env` or `.env.example`) and a
  * running database (`bun run db:up`).
  */
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { once } from "node:events";
 import { createServer } from "node:net";
@@ -120,6 +120,47 @@ async function checkWebApp(url: string): Promise<string | undefined> {
     : `/ answered ${String(response.status)} ${type}, not the web app's HTML`;
 }
 
+/** Polls /health until it answers, the server exits, or the deadline passes; then /ready and /. */
+async function checkServer(
+  base: string,
+  options: SmokeOptions,
+  exitCode: () => number | null | undefined,
+): Promise<string | undefined> {
+  const deadline = Date.now() + options.deadlineMs;
+  let reason: string | undefined = `/health did not answer within ${String(options.deadlineMs)} ms`;
+  while (Date.now() < deadline) {
+    const code = exitCode();
+    if (code !== undefined)
+      return `the server exited with code ${String(code)} before /health answered`;
+    const probe = await probeHealth(`${base}/health`);
+    if (probe.done) {
+      reason = probe.reason;
+      break;
+    }
+    await delay(options.pollIntervalMs ?? 100);
+  }
+  if (reason === undefined) reason = await checkReady(`${base}/ready`);
+  if (reason === undefined && options.expectWebApp === true) {
+    reason = await checkWebApp(`${base}/`);
+  }
+  return reason;
+}
+
+/** SIGTERM, then SIGKILL if the server has not exited in time. Returns whether SIGTERM was enough. */
+async function stopServer(
+  child: ChildProcess,
+  exited: Promise<void>,
+  shutdownDeadlineMs: number,
+): Promise<boolean> {
+  child.kill("SIGTERM");
+  const stopped = await Promise.race([
+    exited.then(() => true),
+    delay(shutdownDeadlineMs + 2_000, false),
+  ]);
+  if (!stopped) child.kill("SIGKILL");
+  return stopped;
+}
+
 export async function runSmoke(options: SmokeOptions): Promise<SmokeResult> {
   const port = await findFreePort();
   const shutdownDeadlineMs = options.shutdownDeadlineMs ?? DEFAULT_SHUTDOWN_DEADLINE_MS;
@@ -146,38 +187,13 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeResult> {
   });
 
   const base = `http://127.0.0.1:${String(port)}`;
-  const deadline = Date.now() + options.deadlineMs;
-  let reason: string | undefined = `/health did not answer within ${String(options.deadlineMs)} ms`;
-
+  let reason: string | undefined;
   try {
-    while (Date.now() < deadline) {
-      if (exitCode !== undefined) {
-        reason = `the server exited with code ${String(exitCode)} before /health answered`;
-        break;
-      }
-      const probe = await probeHealth(`${base}/health`);
-      if (probe.done) {
-        reason = probe.reason;
-        break;
-      }
-      await delay(options.pollIntervalMs ?? 100);
-    }
-    if (reason === undefined) reason = await checkReady(`${base}/ready`);
-    if (reason === undefined && options.expectWebApp === true) {
-      reason = await checkWebApp(`${base}/`);
-    }
+    reason = await checkServer(base, options, () => exitCode);
   } finally {
     // Whatever happened above, never leave the server running.
-    if (exitCode === undefined) {
-      child.kill("SIGTERM");
-      const stopped = await Promise.race([
-        exited.then(() => true),
-        delay(shutdownDeadlineMs + 2_000, false),
-      ]);
-      if (!stopped) {
-        child.kill("SIGKILL");
-        reason ??= `the server did not exit within ${String(shutdownDeadlineMs)} ms of SIGTERM`;
-      }
+    if (exitCode === undefined && !(await stopServer(child, exited, shutdownDeadlineMs))) {
+      reason ??= `the server did not exit within ${String(shutdownDeadlineMs)} ms of SIGTERM`;
     }
     await exited;
   }

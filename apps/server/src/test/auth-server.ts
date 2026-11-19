@@ -153,25 +153,35 @@ export class TestClient {
     body?: unknown,
     headers: Record<string, string> = {},
   ): Promise<Response> {
+    const json = body === undefined ? {} : { body: JSON.stringify(body) };
     const response = await fetch(path.startsWith("http") ? path : `${this.base}${path}`, {
       method,
       redirect: "manual",
-      headers: {
-        "x-forwarded-for": this.ip,
-        ...(this.origin === undefined ? {} : { origin: this.origin }),
-        ...(this.cookies.size > 0 ? { cookie: this.cookieHeader() } : {}),
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
-        ...headers,
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      headers: { ...this.browserHeaders(body !== undefined), ...headers },
+      ...json,
     });
+    this.storeCookies(response);
+    return response;
+  }
+
+  /** What this browser sends with every request: its address, origin and cookies. */
+  private browserHeaders(hasBody: boolean): Record<string, string> {
+    return {
+      "x-forwarded-for": this.ip,
+      ...(this.origin === undefined ? {} : { origin: this.origin }),
+      ...(this.cookies.size > 0 ? { cookie: this.cookieHeader() } : {}),
+      ...(hasBody ? { "content-type": "application/json" } : {}),
+    };
+  }
+
+  /** Keeps the cookies a response sets, and forgets the ones it clears. */
+  private storeCookies(response: Response): void {
     for (const cookie of response.headers.getSetCookie()) {
       const [pair = ""] = cookie.split(";");
       const [name = "", value = ""] = pair.split(/=(.*)/s);
       if (value === "" || /max-age=0/i.test(cookie)) this.cookies.delete(name);
       else this.cookies.set(name, value);
     }
-    return response;
   }
 
   get(path: string, headers?: Record<string, string>) {
