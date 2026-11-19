@@ -127,13 +127,15 @@ describe("Role", () => {
 });
 
 describe("ERROR_CODES", () => {
-  it("names every error the RPC layer and auth checks answer with", () => {
+  it("names every error the server answers with", () => {
     expect(ERROR_CODES).toEqual({
       unauthenticated: "auth.unauthenticated",
       forbidden: "auth.forbidden",
       invalidRequest: "rpc.invalid_request",
       invalidPayload: "rpc.invalid_payload",
       methodNotFound: "rpc.method_not_found",
+      notFound: "http.not_found",
+      methodNotAllowed: "http.method_not_allowed",
       unexpected: "server.unexpected_error",
     });
   });

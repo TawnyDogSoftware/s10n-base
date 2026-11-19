@@ -1,0 +1,33 @@
+import { isIP, isIPv4 } from "node:net";
+
+interface ClientIpRequest {
+  readonly socket: { readonly remoteAddress?: string | undefined };
+  readonly headers: Readonly<Record<string, string | ReadonlyArray<string> | undefined>>;
+}
+
+const IPV4_MAPPED_PREFIX = "::ffff:";
+
+function plain(address: string): string {
+  const mapped = address.slice(IPV4_MAPPED_PREFIX.length);
+  return address.toLowerCase().startsWith(IPV4_MAPPED_PREFIX) && isIPv4(mapped) ? mapped : address;
+}
+
+/**
+ * The client's IP address. With no trusted proxy (`hops` 0) it is the socket's peer. Behind
+ * `hops` proxies, each proxy appends the address it received the request from to
+ * `X-Forwarded-For`, so the client is the entry `hops` places from the right; anything further
+ * left was written by the client and is ignored. A header that is missing, too short or holds
+ * something that is not an address falls back to the socket's peer.
+ */
+export function resolveClientIp(request: ClientIpRequest, hops: number): string | undefined {
+  const peer = request.socket.remoteAddress;
+  const fallback = peer === undefined ? undefined : plain(peer);
+  if (hops === 0) return fallback;
+
+  const raw = request.headers["x-forwarded-for"];
+  const header = Array.isArray(raw) ? raw.join(",") : (raw as string | undefined);
+  if (header === undefined || header.trim() === "") return fallback;
+  const entries = header.split(",").map((entry) => entry.trim());
+  if (entries.length < hops || entries.some((entry) => isIP(entry) === 0)) return fallback;
+  return plain(entries[entries.length - hops] ?? "");
+}
