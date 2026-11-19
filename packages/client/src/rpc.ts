@@ -8,15 +8,9 @@ import type { RpcContract } from "@s10n-base/contracts";
 
 import { createTransport, DecodeError, type TransportOptions } from "./transport";
 
-export {
-  DecodeError,
-  NetworkError,
-  parseBaseUrl,
-  RpcError,
-  type TransportOptions as RpcClientOptions,
-} from "./transport";
+export { DecodeError, NetworkError, parseBaseUrl, RpcError } from "./transport";
 
-export interface CallOptions {
+interface CallOptions {
   readonly signal?: AbortSignal;
 }
 

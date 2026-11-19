@@ -10,13 +10,13 @@ import { type AppSession, AppSessionResponse } from "@s10n-base/contracts";
 
 import { createTransport, DecodeError, type TransportOptions } from "./transport";
 
-export const SESSION_PATH = "/api/app-auth/session";
+const SESSION_PATH = "/api/app-auth/session";
 
 /** The query key of the session. Every other query is purged when its user changes. */
 export const SESSION_QUERY_KEY = ["session"] as const;
 
 /** `meta` that keeps a query or mutation when the signed-in user changes. Use it sparingly. */
-export const PUBLIC_META = { public: true } as const;
+const PUBLIC_META = { public: true } as const;
 
 export interface SessionClient {
   /**
@@ -70,7 +70,7 @@ export function SessionClientProvider(props: {
   return createElement(SessionClientContext.Provider, { value: props.client }, props.children);
 }
 
-export function useSessionClient(): SessionClient {
+function useSessionClient(): SessionClient {
   const client = useContext(SessionClientContext);
   if (client === null) throw new Error("useSession needs a SessionClientProvider above it.");
   return client;

@@ -38,8 +38,6 @@ import {
   useSession,
 } from "./session";
 
-export { PUBLIC_META, SESSION_QUERY_KEY } from "./session";
-
 /** Thrown in place of a response that belongs to a user who is no longer signed in here. */
 export class StaleSessionError extends Error {
   override readonly name = "StaleSessionError";
@@ -73,7 +71,7 @@ export function protectedQueryKey(
   return [PROTECTED_ROOT, session?.userId ?? null, ...parts];
 }
 
-export interface ProtectedQueryOptions<T> {
+interface ProtectedQueryOptions<T> {
   readonly queryKey: readonly [typeof PROTECTED_ROOT, string | null, ...unknown[]];
   readonly queryFn: (context: QueryFunctionContext) => Promise<T>;
   readonly enabled: boolean;

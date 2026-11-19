@@ -38,7 +38,7 @@ export function contrastRatio(first: string, second: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-export type Declarations = Readonly<Record<string, string>>;
+type Declarations = Readonly<Record<string, string>>;
 
 export interface ThemeModes {
   /** The `@theme` block: what Tailwind's utilities are built from. */

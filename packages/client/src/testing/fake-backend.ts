@@ -38,7 +38,7 @@ export interface FakeUser {
   passkeys: Array<{ id: string; name: string | null; createdAt: string }>;
 }
 
-export interface SeenRequest {
+interface SeenRequest {
   readonly method: string;
   readonly path: string;
   readonly search: string;
