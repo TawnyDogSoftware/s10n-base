@@ -1,19 +1,27 @@
 import fs from "node:fs";
 
+import { Redacted } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createLogger } from "./logger";
+import { createLogger, serializeError } from "./logger";
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function captureLines() {
+const AT = new Date("2026-11-19T10:00:00.000Z");
+
+function captureLines(level: "debug" | "info" | "warn" | "error" = "debug") {
   const lines: string[] = [];
-  const logger = createLogger((line) => {
-    lines.push(line);
+  const logger = createLogger({
+    level,
+    write: (line) => {
+      lines.push(line);
+    },
+    now: () => AT,
   });
-  return { lines, logger };
+  const entries = () => lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+  return { lines, logger, entries };
 }
 
 describe("createLogger", () => {
@@ -27,39 +35,87 @@ describe("createLogger", () => {
     for (const line of lines) {
       expect(line.endsWith("\n")).toBe(true);
       expect(line.slice(0, -1)).not.toContain("\n");
-      expect(() => JSON.parse(line) as unknown).not.toThrow();
     }
   });
 
-  it("includes at, level, message and meta", () => {
-    const { lines, logger } = captureLines();
+  it("writes at, level and message, then the fields", () => {
+    const { lines, logger, entries } = captureLines();
 
-    logger.error("request_failed", { path: "/rpc" });
+    logger.warn("request_slow", { path: "/rpc", durationMs: 12 });
 
-    const entry = JSON.parse(lines[0] ?? "") as Record<string, unknown>;
-    expect(entry).toEqual({
-      at: expect.any(String),
-      level: "error",
-      message: "request_failed",
-      meta: { path: "/rpc" },
-    });
-    expect(new Date(entry.at as string).toISOString()).toBe(entry.at);
+    expect(entries()).toEqual([
+      {
+        at: "2026-11-19T10:00:00.000Z",
+        level: "warn",
+        message: "request_slow",
+        path: "/rpc",
+        durationMs: 12,
+      },
+    ]);
+    expect(lines[0]).toMatch(/^\{"at":.*"level":.*"message":/);
   });
 
-  it("omits meta when none is given", () => {
+  it("does not let a field replace at, level or message", () => {
+    const { logger, entries } = captureLines();
+
+    logger.info("real", { at: "x", level: "error", message: "fake" });
+
+    expect(entries()[0]).toMatchObject({ level: "info", message: "real" });
+    expect(entries()[0]?.at).toBe("2026-11-19T10:00:00.000Z");
+  });
+
+  it("drops lines below the configured level", () => {
+    const { logger, entries } = captureLines("warn");
+
+    logger.debug("a");
+    logger.info("b");
+    logger.warn("c");
+    logger.error("d");
+
+    expect(entries().map((entry) => entry.message)).toEqual(["c", "d"]);
+  });
+
+  it("adds a child's fields to every line", () => {
+    const { logger, entries } = captureLines();
+
+    const child = logger.child({ requestId: "r1" });
+    child.info("handled", { status: 200 });
+    child.child({ step: 2 }).info("nested");
+
+    expect(entries()).toEqual([
+      expect.objectContaining({ message: "handled", requestId: "r1", status: 200 }),
+      expect.objectContaining({ message: "nested", requestId: "r1", step: 2 }),
+    ]);
+  });
+
+  it("serialises errors with their name, message, stack and cause", () => {
+    const { logger, entries } = captureLines();
+    const error = new TypeError("bad input", { cause: new Error("root") });
+
+    logger.error("request_failed", { error });
+
+    const logged = entries()[0]?.error as Record<string, unknown>;
+    expect(logged).toMatchObject({ name: "TypeError", message: "bad input" });
+    expect(logged.stack).toContain("bad input");
+    expect(logged.cause).toMatchObject({ name: "Error", message: "root" });
+  });
+
+  it("serialises a thrown value that is not an Error", () => {
+    expect(serializeError("plain")).toEqual({ name: "NonError", message: "plain" });
+  });
+
+  it("never writes a redacted value", () => {
     const { lines, logger } = captureLines();
 
-    logger.info("server_started");
+    logger.info("config", { databaseUrl: Redacted.make("postgres://u:pw@h/db") });
 
-    const entry = JSON.parse(lines[0] ?? "") as Record<string, unknown>;
-    expect(entry).toEqual({ at: expect.any(String), level: "info", message: "server_started" });
-    expect(entry).not.toHaveProperty("meta");
+    expect(lines[0]).not.toContain("pw@h");
   });
 
   it("writes to stdout by default", () => {
     const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
-    createLogger().info("server_started");
+    createLogger({ level: "info" }).info("server_started");
 
     expect(write).toHaveBeenCalledTimes(1);
     const [line] = write.mock.calls[0] ?? [];
