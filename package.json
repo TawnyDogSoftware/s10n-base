@@ -86,7 +86,8 @@
     "vitest": "catalog:"
   },
   "overrides": {
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "minimatch": "^11.0.8"
   },
   "engines": {
     "bun": ">=1.4.4",
