@@ -24,7 +24,9 @@ const healthyServer = fixture(
   `import http from "node:http";
 const server = http.createServer((request, response) => {
   response.setHeader("Content-Type", "application/json");
-  response.end(JSON.stringify(request.url === "/health" ? { ok: true, status: "ok" } : {}));
+  const ok = request.url === "/health" || request.url === "/ready";
+  response.statusCode = ok ? 200 : 404;
+  response.end(JSON.stringify(ok ? { ok: true, status: "ok" } : {}));
 });
 server.listen(Number(process.env.PORT), "127.0.0.1", () => console.log("listening"));
 process.on("SIGTERM", () => server.close(() => process.exit(0)));
@@ -43,7 +45,7 @@ describe("checkHealthBody", () => {
 });
 
 describe("runSmoke", () => {
-  it("passes when the server answers /health and then stops", async () => {
+  it("passes when the server answers /health and /ready and exits 0 on SIGTERM", async () => {
     const result = await runSmoke({ serverEntry: healthyServer, deadlineMs: 10_000 });
 
     expect(result).toMatchObject({ ok: true });
@@ -114,4 +116,94 @@ process.on("SIGTERM", () => process.exit(0));
 
     expect(result).toMatchObject({ ok: false, reason: "/health did not answer within 500 ms" });
   });
+
+  it("fails when /ready does not answer 200", async () => {
+    const notReady = fixture(
+      "not-ready",
+      `import http from "node:http";
+const server = http.createServer((request, response) => {
+  response.statusCode = request.url === "/health" ? 200 : 503;
+  response.end(request.url === "/health" ? '{"ok":true}' : '{"ok":false,"status":"database_unavailable"}');
+});
+server.listen(Number(process.env.PORT), "127.0.0.1");
+process.on("SIGTERM", () => server.close(() => process.exit(0)));
+`,
+    );
+
+    const result = await runSmoke({ serverEntry: notReady, deadlineMs: 10_000 });
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: '/ready answered 503: {"ok":false,"status":"database_unavailable"}',
+    });
+  });
+
+  it("passes the database settings and its own APP_URL, PORT and deadline to the server", async () => {
+    const echo = fixture(
+      "echo-env",
+      `import http from "node:http";
+const server = http.createServer((_request, response) => response.end('{"ok":true}'));
+server.listen(Number(process.env.PORT), "127.0.0.1", () =>
+  console.log(JSON.stringify({ app: process.env.APP_URL, db: process.env.DATABASE_URL, deadline: process.env.SHUTDOWN_TIMEOUT_MS, port: process.env.PORT })),
+);
+process.on("SIGTERM", () => server.close(() => process.exit(0)));
+`,
+    );
+
+    const result = await runSmoke({
+      serverEntry: echo,
+      deadlineMs: 10_000,
+      shutdownDeadlineMs: 3000,
+      env: { DATABASE_URL: "postgres://u:p@h/db" },
+    });
+
+    expect(result.ok).toBe(true);
+    const seen = JSON.parse(result.output.trim().split("\n")[0] ?? "") as Record<string, string>;
+    expect(seen).toEqual({
+      app: `http://127.0.0.1:${seen.port}`,
+      db: "postgres://u:p@h/db",
+      deadline: "3000",
+      port: seen.port,
+    });
+  });
+
+  it("fails when the server exits with a non-zero code after SIGTERM", async () => {
+    const forced = fixture(
+      "forced-exit",
+      `import http from "node:http";
+const server = http.createServer((_request, response) => response.end('{"ok":true}'));
+server.listen(Number(process.env.PORT), "127.0.0.1");
+process.on("SIGTERM", () => process.exit(1));
+`,
+    );
+
+    const result = await runSmoke({ serverEntry: forced, deadlineMs: 10_000 });
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "the server exited with code 1 after SIGTERM, not 0",
+    });
+  });
+
+  it("fails and kills the server when it ignores SIGTERM past its deadline", async () => {
+    const stubborn = fixture(
+      "ignores-sigterm",
+      `import http from "node:http";
+const server = http.createServer((_request, response) => response.end('{"ok":true}'));
+server.listen(Number(process.env.PORT), "127.0.0.1");
+process.on("SIGTERM", () => {});
+`,
+    );
+
+    const result = await runSmoke({
+      serverEntry: stubborn,
+      deadlineMs: 10_000,
+      shutdownDeadlineMs: 200,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "the server did not exit within 200 ms of SIGTERM",
+    });
+  }, 10_000);
 });

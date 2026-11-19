@@ -1,7 +1,10 @@
 /**
  * Starts the built server (`node apps/server/dist/bin.mjs`) on a free port, waits for
- * `/health` to answer, checks the body and stops the server. Exits non-zero with the
- * server's output when anything goes wrong. Run with `bun run smoke` after `bun run build`.
+ * `/health` to answer, checks that `/ready` answers 200 (so the database is reachable), then
+ * sends SIGTERM and checks the server exits with code 0 within its shutdown deadline. Exits
+ * non-zero with the server's output when anything goes wrong. Run with `bun run smoke` after
+ * `bun run build`; it needs DATABASE_URL (from the environment, `.env` or `.env.example`) and a
+ * running database (`bun run db:up`).
  */
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -12,6 +15,10 @@ import { setTimeout as delay } from "node:timers/promises";
 export interface SmokeOptions {
   readonly serverEntry: string;
   readonly deadlineMs: number;
+  /** Extra environment for the server, such as DATABASE_URL. */
+  readonly env?: Readonly<Record<string, string>>;
+  /** How long the server may take to exit after SIGTERM; its SHUTDOWN_TIMEOUT_MS. */
+  readonly shutdownDeadlineMs?: number;
   readonly pollIntervalMs?: number;
 }
 
@@ -21,9 +28,9 @@ export interface SmokeResult {
   readonly output: string;
 }
 
-const STOP_GRACE_MS = 5_000;
+const DEFAULT_SHUTDOWN_DEADLINE_MS = 10_000;
 
-/** Returns undefined when the body is the server's healthy response, otherwise why not. */
+/** Returns undefined when the body is `{"ok":true,...}`, otherwise why not. */
 export function checkHealthBody(text: string): string | undefined {
   let body: unknown;
   try {
@@ -79,11 +86,32 @@ async function probeHealth(url: string): Promise<Probe> {
     : { done: true, reason: `/health answered 200 but ${problem}` };
 }
 
+async function checkReady(url: string): Promise<string | undefined> {
+  let response: Response;
+  try {
+    response = await fetch(url, { signal: AbortSignal.timeout(5_000) });
+  } catch (error) {
+    return `/ready did not answer: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  const text = await response.text().catch(() => "(body could not be read)");
+  if (response.status !== 200) return `/ready answered ${response.status}: ${text}`;
+  const problem = checkHealthBody(text);
+  return problem === undefined ? undefined : `/ready answered 200 but ${problem}`;
+}
+
 export async function runSmoke(options: SmokeOptions): Promise<SmokeResult> {
   const port = await findFreePort();
+  const shutdownDeadlineMs = options.shutdownDeadlineMs ?? DEFAULT_SHUTDOWN_DEADLINE_MS;
   // Always Node, never bun: the built server must run on the runtime it ships for.
   const child = spawn("node", [options.serverEntry], {
-    env: { ...process.env, HOST: "127.0.0.1", PORT: String(port), S10N_BASE_PORT: String(port) },
+    env: {
+      ...process.env,
+      ...options.env,
+      HOST: "127.0.0.1",
+      PORT: String(port),
+      APP_URL: `http://127.0.0.1:${port}`,
+      SHUTDOWN_TIMEOUT_MS: String(shutdownDeadlineMs),
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
 
@@ -96,7 +124,7 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeResult> {
     exitCode = code as number | null;
   });
 
-  const url = `http://127.0.0.1:${port}/health`;
+  const base = `http://127.0.0.1:${port}`;
   const deadline = Date.now() + options.deadlineMs;
   let reason: string | undefined = `/health did not answer within ${options.deadlineMs} ms`;
 
@@ -106,21 +134,31 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeResult> {
         reason = `the server exited with code ${exitCode} before /health answered`;
         break;
       }
-      const probe = await probeHealth(url);
+      const probe = await probeHealth(`${base}/health`);
       if (probe.done) {
         reason = probe.reason;
         break;
       }
       await delay(options.pollIntervalMs ?? 100);
     }
+    if (reason === undefined) reason = await checkReady(`${base}/ready`);
   } finally {
     // Whatever happened above, never leave the server running.
     if (exitCode === undefined) {
       child.kill("SIGTERM");
-      const stopped = await Promise.race([exited.then(() => true), delay(STOP_GRACE_MS, false)]);
-      if (!stopped) child.kill("SIGKILL");
+      const stopped = await Promise.race([
+        exited.then(() => true),
+        delay(shutdownDeadlineMs + 2_000, false),
+      ]);
+      if (!stopped) {
+        child.kill("SIGKILL");
+        reason ??= `the server did not exit within ${shutdownDeadlineMs} ms of SIGTERM`;
+      }
     }
     await exited;
+  }
+  if (reason === undefined && exitCode !== 0) {
+    reason = `the server exited with code ${exitCode} after SIGTERM, not 0`;
   }
 
   return reason === undefined ? { ok: true, output } : { ok: false, reason, output };
@@ -128,9 +166,17 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeResult> {
 
 if (import.meta.main) {
   const serverEntry = path.resolve(import.meta.dirname, "../apps/server/dist/bin.mjs");
-  const result = await runSmoke({ serverEntry, deadlineMs: 30_000 });
+  const result = await runSmoke({
+    serverEntry,
+    deadlineMs: 30_000,
+    ...(process.env.SHUTDOWN_TIMEOUT_MS
+      ? { shutdownDeadlineMs: Number(process.env.SHUTDOWN_TIMEOUT_MS) }
+      : {}),
+  });
   if (result.ok) {
-    console.log(`Smoke test passed: ${serverEntry} answered /health.`);
+    console.log(
+      `Smoke test passed: ${serverEntry} answered /health and /ready and exited 0 on SIGTERM.`,
+    );
   } else {
     console.error(`Smoke test failed: ${result.reason}`);
     console.error("Server output:");

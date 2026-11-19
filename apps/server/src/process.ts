@@ -1,0 +1,91 @@
+/**
+ * Process-level startup and shutdown. Signal handlers are registered before startup, so a signal
+ * during startup is not lost; the first SIGTERM or SIGINT stops the server, and later ones are
+ * logged and ignored. Exit codes: 0 after a clean stop, 1 after a forced stop, a failed stop or
+ * a failed startup.
+ */
+import type { Logger } from "./observability/logger";
+
+export interface ProcessRuntime {
+  exitCode: number | string | null | undefined;
+  on(signal: "SIGTERM" | "SIGINT", listener: () => void): unknown;
+  off(signal: "SIGTERM" | "SIGINT", listener: () => void): unknown;
+  exit(code: number): unknown;
+}
+
+export interface RunningServer {
+  readonly shutdownTimeoutMs: number;
+  readonly stop: () => Promise<{ readonly forced: boolean }>;
+}
+
+export interface ServerProcessOptions {
+  readonly start: () => Promise<RunningServer>;
+  readonly runtime: ProcessRuntime;
+  readonly logger: Logger;
+}
+
+const SIGNALS = ["SIGTERM", "SIGINT"] as const;
+/** Added to twice the deadline (HTTP drain, then pool close) before the process gives up. */
+const HARD_STOP_MARGIN_MS = 5_000;
+
+export async function runServerProcess(options: ServerProcessOptions): Promise<void> {
+  const { runtime, logger } = options;
+  let running: RunningServer | undefined;
+  let stopRequested = false;
+  let stopping = false;
+
+  const removeHandlers = () => {
+    for (const signal of SIGNALS) runtime.off(signal, onSignal);
+  };
+
+  const stop = (server: RunningServer) => {
+    if (stopping) return;
+    stopping = true;
+    // Until the stop completes cleanly, an exit for any reason is a failure.
+    runtime.exitCode = 1;
+    const hardStop = setTimeout(
+      () => {
+        logger.error("shutdown_timed_out");
+        runtime.exit(1);
+      },
+      2 * server.shutdownTimeoutMs + HARD_STOP_MARGIN_MS,
+    );
+    hardStop.unref?.();
+    server.stop().then(
+      (result) => {
+        clearTimeout(hardStop);
+        removeHandlers();
+        logger.info("shutdown_complete", { forced: result.forced });
+        runtime.exitCode = result.forced ? 1 : 0;
+      },
+      (error: unknown) => {
+        clearTimeout(hardStop);
+        removeHandlers();
+        logger.error("shutdown_failed", { error });
+        runtime.exitCode = 1;
+      },
+    );
+  };
+
+  function onSignal(signal?: string) {
+    if (stopRequested) {
+      logger.warn("shutdown_already_in_progress", { signal });
+      return;
+    }
+    stopRequested = true;
+    logger.info("shutdown_started", { signal });
+    if (running !== undefined) stop(running);
+  }
+
+  for (const signal of SIGNALS) runtime.on(signal, onSignal);
+
+  try {
+    running = await options.start();
+  } catch (error) {
+    removeHandlers();
+    logger.error("startup_failed", { error });
+    runtime.exitCode = 1;
+    return;
+  }
+  if (stopRequested) stop(running);
+}
