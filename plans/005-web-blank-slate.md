@@ -1,6 +1,6 @@
 # 005: Web blank slate
 
-> Status: not started.
+> Status: implemented on 2026-11-19, on branch `feature/001-strip-desktop-and-local-first` (PR #1, which carries the whole rework).
 
 Phase 5 of [000](000-hosted-starter-rework.md). Builds on [004](004-auth.md). Source labels such as `[S6]` are resolved in the private companion's README; nothing from that directory is copied into this repo.
 
@@ -119,4 +119,73 @@ Done when sections 4 to 9 are in, the above passes, nothing in section 2 was tou
 
 ## 11. How it was built
 
-Filled in by the implementor.
+Implemented on 2026-11-19 on Node 26.13.1 and bun 1.4.4, with Docker for the local Postgres. Registry data was read the same day.
+
+### Dependency versions
+
+| Package | Version | Published | Where |
+| --- | --- | --- | --- |
+| `i18next` | `^27.1.3` | 2026-11-16 | `packages/i18n` dependency, server dependency (the bundle keeps it external) |
+| `react-i18next` | `^18.0.2` | 2026-11-16 | `apps/web` dependency, `packages/i18n` peer |
+| `better-auth`, `@better-auth/passkey` | `1.7.25` (catalog) | 2026-11-14 | `apps/web` dependencies, for the browser client and its passkey plugin |
+
+Section 3 expected `i18next` 27.1.5: 27.1.4 and 27.1.5 were published on 2026-11-17, so on 2026-11-19 the 3-day rule allows 27.1.3; bun picked it from `^27.1.3` on its own. The lockfile gained three third-party packages (`i18next`, `react-i18next` and its dependency `html-parse-stringify`) and the three workspace packages; everything Better Auth's browser client needs (`@better-fetch/fetch`, `nanostores`, `@simplewebauthn/browser`) was already there for the server. `bun audit`: no vulnerabilities (333 packages). Nothing else was added: no form library, component kit, class-name helper, date library or user-event library.
+
+### What Uniwind needs from the theme file
+
+Read from Uniwind's documentation on 2026-11-19 (`docs.uniwind.dev`: theming basics, custom themes, global CSS, quickstart, monorepos) and from the 1.14.0 package; Uniwind itself was not installed or run, which is phase 6's job.
+
+- **Per-mode values go in `@layer theme { :root { @variant light { … } @variant dark { … } } }`**, and **every theme must define the same variables** (Uniwind warns in development when one is missing). `theme.css` does exactly that, and the test checks both modes have the same eight colours.
+- **`@theme` holds design tokens** (radii, fonts, and colours used for utilities). The docs warn that `@theme` variables only customise utility classes. On the web, Tailwind generates `bg-primary` and friends only from `@theme` variables, so `theme.css` also declares every colour in `@theme` with its light value; a test checks the two agree. Whether Uniwind accepts a colour declared in both places is not documented, so phase 6 must confirm it on a device.
+- **Colours are hex**, which the docs show (along with OKLCH). The contrast test needs hex anyway.
+- **The `light` variant:** Uniwind defines `light` and `dark` itself. Tailwind on the web knows only `dark` (as `prefers-color-scheme: dark`), so `apps/web/src/index.css` defines `@custom-variant light (@media (prefers-color-scheme: light))`. The theme file does not define it, so it does not clash with Uniwind's.
+- **Importing the file from another package** (`@import "@s10n-base/theme/theme.css"`) is not documented. The monorepos page covers only `@source` for scanning class names in shared packages. The metro config's `cssEntryFile` must be a relative path to the app's own CSS file, which then imports the theme. Phase 6 must check that the import resolves under Metro, and the monorepos page says a package that depends on free `uniwind` needs Uniwind Pro 1.8.0 or later in the app, which matters if a shared UI package is ever added.
+- **Fonts and radii in React Native:** the docs show `--radius-*` in `@theme` but say nothing about font stacks; a CSS fallback list such as `--font-sans` has no meaning on a phone, so phase 6 will likely override `--font-sans` with a single family.
+- **`--color-*: initial`** clears Tailwind's default palette so that only the theme's colours exist. Uniwind's handling of it is not documented; if it objects, phase 6 can move that line into the web app's CSS.
+
+### Departures from this plan, with reasons
+
+- **Email links are built from the token** (`authEmailLink` in `apps/server/src/auth/options.ts`): `<APP_URL>/verify-email?token=…` and `<APP_URL>/reset-password?token=…`. Better Auth's own `url` is ignored, so the client never passes `callbackURL` or `redirectTo` (plan 004's note), and `GET /api/auth/reset-password/:token`, which only redirected to the web page, moved to the unexposed list.
+- **`profile.update` goes through `internalAdapter.updateUser`** on Better Auth's context, which runs Better Auth's user hooks and refreshes any session storage. Cookie caching is off, so the session route reads the user row each time; the live test shows the new name at once.
+- **A new error code, `rpc.invalid_cursor`** (400), so an invalid cursor has its own message instead of the generic payload error. The cursor is base64url JSON of the last row's `created_at`, formatted by Postgres with microseconds, and its id: a JavaScript `Date` would round to milliseconds and could skip or repeat users created in the same millisecond.
+- **The gate purges on a change of role too**, not only of user, so an admin demoted to user loses the admin list's cached pages. The session query is never purged, whatever its `meta`: `setQueryData` creates it without one.
+- **Better Auth's passkey client swallows network failures.** Its sign-in turns any error from its last request into `AUTH_CANCELLED`, and its registration turns one into `UNKNOWN_ERROR`. So the adapter counts requests that got no answer in the `fetch` it hands Better Auth, and reports a `NetworkError` when one failed during the call, whatever the client returned. Every security action also trusts the session read afterwards, not the action's own result.
+- **A proxy's 502, 503 or 504 without our envelope is a `NetworkError`**, in the RPC client and the auth adapter: the request may have reached the server, so the outcome is unknown.
+- **`apps/web/src/config.ts` imports nothing.** `vite.config.ts` calls it to fail the build on a bad `VITE_API_BASE_URL`, and Vite loads its config through Node, which cannot load the workspace packages' TypeScript source (`ERR_MODULE_NOT_FOUND`, the same cause as plan 000's defect 1). The origin check is written out there rather than imported from `packages/client`.
+- **The signed-in layout does not navigate.** Its first version rendered `<Navigate to="/sign-in" search={{redirect: location.href}}>` when the session became null. After signing out, the location was already the pending `/sign-in`, so it redirected to `/sign-in?redirect=/sign-in`, then again, until the test worker ran out of memory. It now calls `router.invalidate()`, and `requireSession` redirects from the location the guard matched. The sign-out tests cover it.
+- **Search parsing:** a literal `+` stays `+` (our links percent-encode, so a `+` came from a token), the first of repeated keys wins, the result has no prototype, and writing anything but a string, number or boolean throws.
+- **`/` sends a signed-out visitor to `/sign-in`** without a `redirect`, since home is where sign-in goes anyway.
+- **`/forgot-password`** shows the same "check your email" answer whatever the server says, except for a rate limit or a lost answer, neither of which reveals whether the address exists.
+- **Security actions do not use `useMutation`.** Each screen runs its action through `gate.settle` with a small `usePending` hook that also ignores a second submit before React has re-rendered the disabled button. The profile name uses `useMutation` with a protected key, since it is not a security action.
+- **The footer no longer shows the version**, which the old app read from `/config` with a relative URL. The `/config` endpoint and its contract remain; nothing in the web app needs them now.
+- **The page has an empty `data:` icon**: the browser run found one console error on every page, a 404 for `/favicon.ico`.
+- **`@s10n-base/i18n/react`** holds the React initialiser, with `react-i18next` as a peer dependency, so the server imports only `i18next`.
+- **The admin list loads 25 users a page** (`ADMIN_USERS_PAGE_SIZE`).
+- **Web tests run the whole app** against an in-memory fake of the server's routes (`apps/web/src/test/fake-backend.ts`) with the real Better Auth browser client, rather than mocking modules.
+
+### The browser run (section 8)
+
+On 2026-11-19, a throwaway script (not committed) drove headless Chrome for Testing 156 through Playwright 1.65.1, installed in a scratch directory outside the repo; the browser was the one Playwright had already cached on this machine. It ran against `node apps/server/dist/bin.mjs` serving the built web app (`APP_URL=http://localhost:4210`, the phase 3 security headers and Content-Security-Policy in force) and `bun run ses:local`. Steps, all passing:
+
+1. `/` signed out redirects to `/sign-in`; sign up; read the verification email from `/store`; open its link (`/verify-email?token=…`); sign in with the password; the cookie is `s10n-base.session_token`, `HttpOnly`, `SameSite=Lax`.
+2. Edit the profile name; the greeting shows it.
+3. **Passkeys, through a virtual authenticator** (Chrome DevTools Protocol `WebAuthn.addVirtualAuthenticator`, CTAP2, internal transport, resident key, user verification): add a passkey on the profile page (the authenticator then held one credential), sign out, sign in with the passkey, remove it.
+4. Sign out (the session route then answers `null`); request a password reset; read the email; open its link (`/reset-password?token=…`); set a new password; the old password is refused; sign in with the new one.
+5. `/admin/users` shows the not-allowed page; after `bun run auth:set-role <email> admin` it lists the user.
+
+Observed: **no Content-Security-Policy violation** (a `securitypolicyviolation` listener on every page), no page error, no failed request, and Better Auth's client never called `/api/auth/get-session`. The console showed one error, `Failed to load resource: … 401`, which is Chrome logging the deliberate wrong-password sign-in in step 4. The first run also logged a 404 for `/favicon.ico`, fixed as above. **No header change was needed.**
+
+### Claims in plans 000 to 005 that did not hold
+
+- `i18next` 27.1.5 (plans 000 and 005): too young on the day; 27.1.3.
+- "The default turns a numeric-looking token into a number and corrupts it": true of a raw token in a link (`123456` becomes the number 123456, `1e5` becomes 100000, `null` becomes null, `12345678901234567890` becomes 12345678901234567000), but not of TanStack Router's own round trip, which quotes such strings when it writes them. Only `1e5`, `null` and the long number change the value sent to the server; `123456` arrives as a number and happens to print back the same. The tests use all of them.
+- Plan 004's note that sign-up should pass `callbackURL` and reset `redirectTo`: unnecessary once the links are built from the token.
+
+### For later phases
+
+- **Phase 6 (Expo):** reuse `@s10n-base/client/rpc`, `/session` and `/query-state` as they are: they take `fetch` and `credentials` options, and a native app passes the cookie through Better Auth's Expo client, so check whether `credentials: "include"` matters there. `useSession` and `useProtectedQuery` need only `SessionGateProvider`. React Native has no `BroadcastChannel` or focus events, so wire TanStack Query's `focusManager` and `onlineManager` to `AppState` and NetInfo, or the session is never re-read on return to the app. Import `createReactI18n` from `@s10n-base/i18n/react` with the device's locales. The theme points above are what to verify on a device. `apps/web/src/lib/auth.ts` is the pattern for the Expo auth adapter, including the network-failure tracking.
+- **Phase 7:** the `no-literal-string` rule should find nothing in `apps/web/src`: a scan for JSX text and literal labels found only comments, and the one piece of punctuation-only JSX was removed. Coverage was not measured in this phase. For dependency-cruiser, `apps/web` imports `contracts`, `client`, `theme` (CSS only) and `i18n`, and not `shared` or anything under `apps/server`. The Playwright journey can start from section 8's steps: reuse the virtual authenticator setup, leave 10 seconds or vary `X-Forwarded-For` between more than three sign-ins from one address, and expect Chrome to log a 401 for a deliberate wrong password. The web bundle is 553 kB before gzip (176 kB gzipped) and Vite warns about chunks over 500 kB; Effect Schema, Better Auth's client and i18next are most of it, and route-level code splitting is the fix if it matters.
+
+### Verification on the final commit (section 10)
+
+Filled in on the final commit; see below and the PR description.

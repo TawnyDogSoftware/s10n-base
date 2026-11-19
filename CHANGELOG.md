@@ -4,6 +4,19 @@ Scaffold-level changes to S10N Base, newest first. Projects created from an earl
 
 ## Unreleased
 
+### Added: the web blank slate (auth screens, profile, admin user list) and the client, theme and i18n packages
+
+A new project starts with a working web app: sign up, verify the email, sign in with a password or a passkey, reset a password, a signed-in home, a profile page and an admin-only user list. Details and reasons are in `plans/005-web-blank-slate.md`; how the client state works is in `docs/client.md`, translations in `docs/i18n.md`.
+
+- **RPC methods:** `profile.get` and `profile.update` (session; a trimmed name of 1 to 100 characters, saved through Better Auth's adapter so the session shows it at once) and `admin.listUsers` (admin role; newest first, keyset pagination on `(created_at, id)` with an opaque cursor, 1 to 100 per page). New error code `rpc.invalid_cursor`. `rpcHandlers` became `createRpcHandlers({db, auth})`.
+- **Email links** open the web app's `/verify-email?token=…` and `/reset-password?token=…` pages instead of Better Auth's routes, and Better Auth's `GET /reset-password/:token` is no longer exposed. The email text moved from `apps/server/src/auth/email/text.ts` (deleted) to `packages/i18n`.
+- **`packages/client`:** `createRpcClient({baseUrl})` with an explicit origin (relative URLs are gone) and three failure kinds, `RpcError`, `DecodeError` and `NetworkError` (no answer: the outcome is unknown); a session client and `useSession()`; and a session gate that keys protected queries by user, purges every non-public query and mutation when the user changes, discards answers that arrive for a previous user, re-reads the session after `auth.unauthenticated`, and settles security actions by re-reading the session, even offline.
+- **`packages/theme`:** one Tailwind 4 token file (semantic colours for light and dark, radii, font stack) in the format Uniwind requires, with Tailwind's default palette cleared and a test that checks WCAG AA contrast for every pair the components use.
+- **`packages/i18n`:** i18next 27.1.3 and react-i18next 18.0.2, English catalogs in six namespaces with typed keys (a mistyped key fails `typecheck`), `createTranslator` for emails, `createReactI18n` for the apps, `resolveLocale`, and a message for every `AppError` code (a test checks).
+- **Web app:** `VITE_API_BASE_URL` (optional bare origin, checked at build), Better Auth's browser client with the passkey plugin, `beforeLoad` guards with a same-origin redirect check, search params that stay strings, accessible forms, and a "could not confirm" state for every security action whose answer is lost. `apps/web/src/lib/http.ts` and `apps/web/src/rpc/` are gone, and the footer no longer shows the version from `/config` (the endpoint remains).
+- **Dependencies:** `i18next` and `react-i18next` (new); `apps/web` also depends on `better-auth` and `@better-auth/passkey` at the catalog's 1.7.25. The lockfile gained three third-party packages: `i18next`, `react-i18next` and its dependency `html-parse-stringify`.
+- A real headless browser ran the whole journey once against the built server with the local inbox, passkeys included through a virtual authenticator, with no CSP violation.
+
 ### Added: auth (Better Auth, our own SES sender, a local inbox)
 
 Users can sign up, verify their email, sign in, reset their password and add passkeys, over HTTP; there is no UI yet. Details and reasons are in `plans/004-auth.md`; how it works is in `docs/auth.md`.

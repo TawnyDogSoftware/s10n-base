@@ -2,7 +2,7 @@
 
 How sign-up and sign-in work, how the pieces fit, and how to change them. The design and its reasons are in [plans/004-auth.md](../plans/004-auth.md).
 
-Auth is [Better Auth](https://www.better-auth.com/) 1.7.25 on the server, with email and password (verification required), the `expo` plugin for the mobile app, the `admin` plugin and passkeys. There is no auth UI yet: web screens arrive in phase 5 and mobile screens in phase 6.
+Auth is [Better Auth](https://www.better-auth.com/) 1.7.25 on the server, with email and password (verification required), the `expo` plugin for the mobile app, the `admin` plugin and passkeys. The web app has the screens (sign-up, sign-in with a password or a passkey, email verification, password reset, profile with passkey management, an admin user list); mobile screens arrive in phase 6. How the clients keep cached data per user is in [client.md](client.md).
 
 ## How a request flows
 
@@ -22,9 +22,9 @@ browser / app
 
 ### Exposed and unexposed routes
 
-Exposed: email sign-up, sign-in and sign-out, the session, email verification and resending it, password reset (request, link, set), changing the password and the name or image, listing and ending one's own sessions, all passkey routes, and these admin routes: list and get users, set role, ban and unban, list and end a user's sessions, check a permission.
+Exposed: email sign-up, sign-in and sign-out, the session, email verification and resending it, password reset (request and set), changing the password and the name or image, listing and ending one's own sessions, all passkey routes, and these admin routes: list and get users, set role, ban and unban, list and end a user's sessions, check a permission.
 
-Not exposed: social sign-in and every OAuth route, account deletion, email change, `update-session`, `verify-password`, Better Auth's `/ok` and `/error`, and the admin routes that create users, change arbitrary user fields, set a user's password or impersonate. `/admin/remove-user` is turned off in Better Auth itself (`disabledPaths`), because removing a user needs cleanup only a product knows about.
+Not exposed: social sign-in and every OAuth route, Better Auth's own reset link (`GET /reset-password/:token`, since reset emails open the web page), account deletion, email change, `update-session`, `verify-password`, Better Auth's `/ok` and `/error`, and the admin routes that create users, change arbitrary user fields, set a user's password or impersonate. `/admin/remove-user` is turned off in Better Auth itself (`disabledPaths`), because removing a user needs cleanup only a product knows about.
 
 To expose a route, move it to `EXPOSED_AUTH_ROUTES` with the reason a client needs it. To add your own guarded user removal, add an RPC method with `auth: { role: "admin" }` that does the product's cleanup and then deletes the `ba_user` row (sessions, accounts and passkeys cascade).
 
@@ -42,7 +42,9 @@ Better Auth's limits are on in every environment and kept in the `ba_rate_limit`
 
 ## Email
 
-Better Auth calls `AuthEmailSender` (`apps/server/src/auth/email/sender.ts`) for the verification and password reset emails; nothing else knows how email is delivered. The text is in `apps/server/src/auth/email/text.ts` (phase 5 moves it to `packages/i18n`). Both links work for one hour. The verification link is Better Auth's own `/api/auth/verify-email`; the reset link is `/api/auth/reset-password/<token>`, which redirects to the `redirectTo` the client passed with the token in the query.
+Better Auth calls `AuthEmailSender` (`apps/server/src/auth/email/sender.ts`) for the verification and password reset emails; nothing else knows how email is delivered. The text is the `email` namespace of `packages/i18n` ([i18n.md](i18n.md#the-email-namespace)). Both links work for one hour.
+
+**The links open web pages, not Better Auth's routes:** `<APP_URL>/verify-email?token=…` and `<APP_URL>/reset-password?token=…` (`authEmailLink` in `apps/server/src/auth/options.ts` builds them from the token Better Auth passes; its own `url` is not used). The page reads the token and calls Better Auth: `GET /api/auth/verify-email?token=` and `POST /api/auth/reset-password` with `{token, newPassword}`. So the client does not pass `callbackURL` or `redirectTo`, and the links work the same when the API is on another origin. The web app keeps search values as strings, so a token that looks like a number or `null` reaches Better Auth unchanged.
 
 The sender is our own Amazon SES v2 client (`apps/server/src/infra/email/`): a SigV4 signer on `node:crypto`, verified against the AWS test suite, and one `fetch` per email. Retries happen only when SES certainly did not accept the email (a refused connection, throttling, a 5xx); a timeout is never retried, because SES has no idempotency key and a retry could send twice. Errors carry a kind (`rejected`, `not_verified`, `throttled`, `credentials`, `unavailable`) and never the keys, signature, address or link.
 
@@ -96,5 +98,5 @@ Add `socialProviders` (for example `google: { clientId, clientSecret }`) to `bui
 
 - **Read the clock after taking row locks, not before.** An expiry or "signed in recently" check that reads `now()` before waiting for a lock judges a moment that has passed.
 - **Recheck the session inside a transaction that acts on its authority.** A session can be revoked between the check at the start of a request and the write; check it again inside the transaction that relies on it.
-- **Treat a lost response to a security action as an unknown outcome, not a failure.** If sign-out, a password change or a revocation times out on the client, it may have happened. Re-read the state before telling the user it failed.
+- **Treat a lost response to a security action as an unknown outcome, not a failure.** If sign-out, a password change or a revocation times out on the client, it may have happened. Re-read the state before telling the user it failed. **As implemented in the web app:** every security action (sign-up, sign-in with a password or a passkey, sign-out, email verification, password reset and its request, adding or removing a passkey) runs through `gate.settle` from `@s10n-base/client/query-state`, which re-reads the session afterwards, even while the browser reports offline. A request with no answer (or a proxy's 502 to 504) is a `NetworkError`; the Better Auth adapter (`apps/web/src/lib/auth.ts`) detects one even when Better Auth's passkey client reports it as a cancellation. The screen then says the result is not known and what the session is now, and acts on that session: a sign-in that did happen goes on, a sign-out that did happen goes to `/sign-in`, and a passkey list is read again. See [client.md](client.md#session-gated-query-state).
 - **Clean up after a failed multi-step security action.** If a project adds steps around password reset (or any action that creates sessions), make sure a session created by an attempt that then fails is revoked, not left behind.

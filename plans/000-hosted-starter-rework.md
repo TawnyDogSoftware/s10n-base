@@ -1,6 +1,6 @@
 # 000: Rework s10n-base into a hosted web and mobile starter
 
-> Status: approved by the owner on 2026-11-18. Phase 1 implemented on 2026-11-19 ([001](001-strip-desktop-and-local-first.md)). Phase 2 implemented on 2026-11-19 ([002](002-toolchain-upgrade-and-ci.md)). Phase 3 implemented on 2026-11-19 ([003](003-hosted-server-core.md)). Phase 4 implemented on 2026-11-19 ([004](004-auth.md)).
+> Status: approved by the owner on 2026-11-18. Phase 1 implemented on 2026-11-19 ([001](001-strip-desktop-and-local-first.md)). Phase 2 implemented on 2026-11-19 ([002](002-toolchain-upgrade-and-ci.md)). Phase 3 implemented on 2026-11-19 ([003](003-hosted-server-core.md)). Phase 4 implemented on 2026-11-19 ([004](004-auth.md)). Phase 5 implemented on 2026-11-19 ([005](005-web-blank-slate.md)).
 
 Written 2026-11-18 from a review of three private projects built on this base (called Project A, B and C here), of s10n-base itself, of T3 Code upstream, and of the npm registry.
 
@@ -60,7 +60,7 @@ These are bugs, separate from the desktop assumptions. The first one was found b
 3. **No auth on `/rpc`, `/ws` or `/config`**, CORS is `*`, there is no request body limit, and 500 responses leak error messages. **Partly fixed in phase 3:** CORS allows only `APP_URL`'s origin, bodies are limited, a 500 sends a fixed message, every RPC method declares an auth level that one dispatcher enforces, and `/config` no longer trusts request headers; `/ws` went in phase 1. **Fixed in phase 4:** the RPC caller comes from the Better Auth session, `/rpc` and `/api/app-auth/*` refuse untrusted `Origin` headers, and `/api/auth` sits behind a route allow-list.
 4. **The database closes before requests drain** on shutdown, and there is no shutdown deadline. **Fixed in phase 3:** Effect layers release the HTTP server (drain, then force-close at `SHUTDOWN_TIMEOUT_MS`) before the pool.
 5. **SQLite tables are created on every boot** with no migrations and no owner column. **Fixed in phases 1 and 3:** SQLite went in phase 1; Postgres has numbered migrations run by a separate entry point, and the server never migrates on startup. Owner columns arrive with the first tables (phase 4 onwards).
-6. **The web client uses relative URLs**, which a mobile app can't use.
+6. **The web client uses relative URLs**, which a mobile app can't use. **Fixed in phase 5:** `packages/client` takes an explicit base URL (`VITE_API_BASE_URL` on the web, the page's origin by default), and the relative-URL client is gone.
 7. **Lockfile versions carry known advisories:** `ws` 8.20.0, vite 7.3.2, vitest 4.1.4, turbo 2.9.6, effect beta.45 and electron 40.6.0. **Fixed in phases 1 and 2:** electron went in phase 1; `ws` left the lockfile with jsdom 31; the rest moved past their advisories. Phase 2 also cleared a `source-map-js` advisory the old lockfile kept, and `bun audit` reports nothing.
 8. **Docs are wrong.** `EXTRACTION_REPORT.md` describes path helpers and log rotation that don't exist, and the rename checklist misses the `S10N_BASE_*` env vars, the localStorage key, the page title and the bin name.
 9. **Uses the deprecated `vitest.workspace` file** and leaves `packages/shared` out of it. **Fixed in phase 2:** a root `vitest.config.ts` with `test.projects`, and `packages/shared` has tests.
@@ -245,7 +245,8 @@ Project B has the smallest clean versions of the options builder and the bridge 
 - Route guards as `beforeLoad` (`requireSession`, `redirectSignedIn`) with a safe-redirect check.
 - Override TanStack Router's default search parsing so opaque tokens aren't turned into numbers.
 - `packages/theme`: one Tailwind 4 token file, with a contrast test.
-- `packages/i18n` (owner decision, 2026-11-18: every app will support multiple languages): `i18next` 27.1.5 and `react-i18next` 18.0.2 with typed keys so a mistyped key fails the build, English as the only locale to start, and `eslint-plugin-i18next` to stop hard-coded strings. Web, mobile and server emails all read from it. Copy the shape from Project B's i18n package `[S6]`.
+- `packages/i18n` (owner decision, 2026-11-18: every app will support multiple languages): `i18next` 27.1.5 and `react-i18next` 18.0.2 with typed keys so a mistyped key fails the build, English as the only locale to start. Web, mobile and server emails all read from it. Copy the shape from Project B's i18n package `[S6]`. **Moved to phase 7 (plan 005, section 2):** `eslint-plugin-i18next`, because ESLint itself arrives in phase 7 (D4). Phase 5 still ships no hard-coded user-visible string; phase 7 makes that a gate.
+- **Phase 5 outcome (2026-11-19):** done as planned, with the departures recorded in plan 005, section 11. Corrections to this section: `i18next` is 27.1.3, not 27.1.5 (27.1.4 and 27.1.5 were published on 2026-11-17, too young for the 3-day rule on 2026-11-19); TanStack Router 1.171's default search parsing does corrupt raw tokens (`1e5` becomes 100000, `null` becomes null, a 20-digit number is rounded), though its own write-then-read round trip is safe because it quotes such strings; and a real browser ran the whole journey, passkeys included, against the built server with no CSP violation and no header change.
 
 ### Phase 6: mobile blank slate
 
@@ -265,7 +266,8 @@ Copy from Project B `[S7]`; it is the only one of our projects with verified nat
 
 - One `agent:check` script that runs everything CI runs.
 - Root Vitest config with `test.projects` and one merged coverage report (100% threshold, D5).
-- oxlint with a real config and no-suppression check; type-checked ESLint with sonarjs (D4); knip; dependency-cruiser rules that keep clients to `contracts`, `shared`, `client` and `theme`.
+- oxlint with a real config and no-suppression check; type-checked ESLint with sonarjs (D4); knip; dependency-cruiser rules that keep clients to `contracts`, `shared`, `client`, `theme` and `i18n`.
+- `eslint-plugin-i18next`'s `no-literal-string` rule, moved here from phase 5 (plan 005, section 2): no hard-coded user-visible string in a component.
 - One Playwright journey (sign up, verify, sign in, sign out) with an axe check, at 1.65.1.
 - `bun audit` step with a triage file, and the `deepmerge` patch and overrides Project B needed `[S2]`, if they still apply.
 

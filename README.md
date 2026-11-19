@@ -11,8 +11,11 @@ It was derived from [`t3code`](https://github.com/pingdotgg/t3code), keeping the
 - Bun workspaces + Turbo
 - Strict TypeScript across apps and packages
 - `apps/server`: Node HTTP server with a typed RPC endpoint, Better Auth (email and password, passkeys, admin roles), Postgres through Kysely, and Effect layers for startup and shutdown
-- `apps/web`: React 19 + Vite + Tailwind CSS v4 + TanStack Router + TanStack Query
+- `apps/web`: React 19 + Vite + Tailwind CSS v4 + TanStack Router + TanStack Query: sign-up, sign-in (password or passkey), email verification, password reset, a profile page and an admin user list
 - `packages/contracts`: shared Effect schemas and RPC contracts
+- `packages/client`: the RPC client with an explicit base URL, the session client and session-gated query state, for web and mobile ([docs/client.md](docs/client.md))
+- `packages/theme`: the Tailwind 4 design tokens shared by web and mobile
+- `packages/i18n`: i18next catalogs with typed keys, for the apps and the server's emails ([docs/i18n.md](docs/i18n.md))
 - `packages/shared`: small cross-runtime helpers
 - Oxlint + Oxfmt + Vitest
 
@@ -23,8 +26,11 @@ apps/
   server/
   web/
 packages/
+  client/
   contracts/
+  i18n/
   shared/
+  theme/
 ```
 
 ## Requirements
@@ -51,7 +57,7 @@ Start Postgres, apply migrations, and run the server, the web app and the local 
 bun dev
 ```
 
-Emails are captured, not sent: read them at [http://127.0.0.1:8005/](http://127.0.0.1:8005/), the local inbox.
+Open [http://localhost:5173](http://localhost:5173) and create an account. Emails are captured, not sent: read the verification link at [http://127.0.0.1:8005/](http://127.0.0.1:8005/), the local inbox. The web app calls the API on its own origin; set `VITE_API_BASE_URL` when the API is elsewhere ([docs/setup.md](docs/setup.md#environment-variables)).
 
 Run individual apps (start the database first with `bun run db:up`):
 
@@ -61,7 +67,7 @@ bun run dev:web
 bun run ses:local   # the local SES capture server and inbox
 ```
 
-Make a user an admin:
+Make a user an admin, then open **Users** in the header (`/admin/users`):
 
 ```bash
 bun run auth:set-role you@example.com admin

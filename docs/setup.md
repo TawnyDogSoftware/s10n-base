@@ -27,7 +27,7 @@ bun dev
 3. runs the local SES capture server (when `SES_ENDPOINT` is set, as in `.env.example`), the API server in watch mode and the Vite dev server,
 4. stops them all when you press Ctrl-C, or when any of them exits.
 
-Open `APP_URL` (`http://localhost:5173` by default). Emails the server sends (verification, password reset) are captured, not delivered: read them in the local inbox at `http://127.0.0.1:8005/`, which `bun dev` prints when it starts. [docs/auth.md](auth.md) explains how auth works. The browser talks only to Vite, which proxies `/rpc`, `/api`, `/config`, `/health` and `/ready` to the API server on `PORT`. The database keeps running after `bun dev` stops; `bun run db:down` stops it.
+Open `APP_URL` (`http://localhost:5173` by default). You land on the sign-in page: create an account, open the verification link from the inbox, and sign in to reach the signed-in home page, your profile (name, passkeys, sign-out) and, as an admin, the user list. Emails the server sends (verification, password reset) are captured, not delivered: read them in the local inbox at `http://127.0.0.1:8005/`, which `bun dev` prints when it starts. [docs/auth.md](auth.md) explains how auth works. The browser talks only to Vite, which proxies `/rpc`, `/api`, `/config`, `/health` and `/ready` to the API server on `PORT`. The database keeps running after `bun dev` stops; `bun run db:down` stops it.
 
 To run the parts on their own: `bun run dev:server`, `bun run dev:web` and `bun run ses:local` (start the database first with `bun run db:up`).
 
@@ -59,6 +59,14 @@ The server reads these once at startup and refuses to start if any is invalid, l
 
 The live tests also read `TEST_DATABASE_URL` (below).
 
+The web app reads one variable at build time (Vite exposes `VITE_*` variables to the browser, so never put a secret in one):
+
+| Variable            | Rule                                                                                                                | Default               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| `VITE_API_BASE_URL` | The API's origin (`https://api.example.com`), with no path, query or credentials. The build fails on anything else. | the page's own origin |
+
+Leave it unset when the server serves the web app (the built server does) or, in development, when Vite proxies the API. Set it when the web app is hosted on its own origin. The server then has to accept that page: its `APP_URL` must be the web app's origin (CORS and Better Auth's origin checks allow only `APP_URL`), the session cookie must reach the API (same site, or `SameSite=None` with `Secure`), and the HTML's Content-Security-Policy, which allows `connect-src 'self'`, must list the API origin if the server still serves the page.
+
 `.env.example` lists all of them with values that work with the compose file. `bun dev` and the `db:*`, `test:live` and `smoke` scripts read `.env` if it exists and `.env.example` otherwise; a variable set in your shell wins over both. To change a value, copy `.env.example` to `.env` and edit it. `.env` is ignored by git.
 
 Notes:
@@ -75,7 +83,7 @@ Notes:
 
 ## The first admin
 
-Sign up, follow the link in the inbox, then run `bun run auth:set-role you@example.com admin`.
+Sign up, follow the link in the inbox, then run `bun run auth:set-role you@example.com admin`. Reload the app: the header shows **Users**, which opens the admin user list at `/admin/users`. A signed-in user who is not an admin sees a "no access" page there.
 
 ## Health checks
 
