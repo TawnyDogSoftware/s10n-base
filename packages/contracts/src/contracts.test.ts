@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import * as contracts from "./index";
 import {
   AppError,
+  AppSession,
+  AppSessionResponse,
   BootstrapConfig,
   ERROR_CODES,
   Role,
@@ -21,6 +23,39 @@ describe("AppError", () => {
       code: "rpc.method_not_found",
       message: "Unknown method",
     });
+  });
+});
+
+describe("AppSession", () => {
+  const session = {
+    userId: "6f1c2b9e-0000-4000-8000-000000000001",
+    email: "user@example.com",
+    name: "User",
+    image: null,
+    role: "user",
+    emailVerified: true,
+  };
+
+  it("has exactly the fields clients rely on", () => {
+    expect(Object.keys(AppSession.fields).sort()).toEqual([
+      "email",
+      "emailVerified",
+      "image",
+      "name",
+      "role",
+      "userId",
+    ]);
+  });
+
+  it("decodes a session and a signed-out response", () => {
+    const decode = Schema.decodeUnknownSync(AppSessionResponse);
+
+    expect(decode({ session })).toEqual({ session });
+    expect(decode({ session: null })).toEqual({ session: null });
+  });
+
+  it("rejects an unknown role", () => {
+    expect(() => Schema.decodeUnknownSync(AppSession)({ ...session, role: "owner" })).toThrow();
   });
 });
 
