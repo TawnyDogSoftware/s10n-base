@@ -1,0 +1,4 @@
+[install]
+# The 3-day rule: install nothing published less than 3 days (259200 seconds) ago.
+# How to take a bug-fix patch early is in docs/dependencies.md.
+minimumReleaseAge = 259200
