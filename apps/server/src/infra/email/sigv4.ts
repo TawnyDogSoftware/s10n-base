@@ -112,7 +112,7 @@ function canonicalQuery(query: string): string {
       const value = equals === -1 ? "" : pair.slice(equals + 1);
       return [uriEncode(decodeComponent(key)), uriEncode(decodeComponent(value))] as const;
     })
-    .sort(([keyA, valueA], [keyB, valueB]) =>
+    .toSorted(([keyA, valueA], [keyB, valueB]) =>
       keyA === keyB ? (valueA < valueB ? -1 : 1) : keyA < keyB ? -1 : 1,
     )
     .map(([key, value]) => `${key}=${value}`)
@@ -130,7 +130,7 @@ function canonicalHeaders(headers: SignableRequest["headers"]): Map<string, stri
   }
   return new Map(
     [...byName.entries()]
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([name, values]) => [name, values.join(",")]),
   );
 }

@@ -274,11 +274,11 @@ describe("password reset", () => {
   });
 });
 
-describe("the route guard and rate limits", () => {
-  async function rateLimitRows() {
-    return app.schema.db.selectFrom("ba_rate_limit").select(["key", "count"]).execute();
-  }
+async function rateLimitRows() {
+  return app.schema.db.selectFrom("ba_rate_limit").select(["key", "count"]).execute();
+}
 
+describe("the route guard and rate limits", () => {
   it("answers 404 to an unknown /api/auth path and adds no rate-limit row", async () => {
     const browser = client();
     const before = await rateLimitRows();

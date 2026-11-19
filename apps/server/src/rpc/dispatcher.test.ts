@@ -10,6 +10,7 @@ import {
   createRpcDispatcher,
   defineHandler,
   type RpcCallContext,
+  type ActorResolver,
   type RpcHandlerContext,
 } from "./dispatcher";
 
@@ -47,7 +48,7 @@ function setup(
   actor: Actor,
   handlers = [double(publicEcho), double(sessionEcho), double(adminEcho)],
 ) {
-  const resolveActor = vi.fn(() => Promise.resolve(actor));
+  const resolveActor = vi.fn<ActorResolver>(() => Promise.resolve(actor));
   const dispatch = createRpcDispatcher({ handlers, resolveActor });
   const context = { requestId: "r1" } as RpcCallContext;
   return {
@@ -164,9 +165,9 @@ describe("createRpcDispatcher", () => {
   });
 
   it("passes the caller and request to the handler", async () => {
-    const handle = vi.fn((_payload: { count: number }, _context: RpcHandlerContext) =>
-      Promise.resolve({ doubled: 0 }),
-    );
+    const handle = vi.fn<
+      (payload: { count: number }, context: RpcHandlerContext) => Promise<{ doubled: number }>
+    >(() => Promise.resolve({ doubled: 0 }));
     const { dispatch, resolveActor } = setup(user, [defineHandler(sessionEcho, handle)]);
 
     await dispatch("fixture.session", { count: "0" });

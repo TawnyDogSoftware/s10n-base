@@ -37,19 +37,17 @@ export function SignUpScreen() {
   const [outcome, setOutcome] = useState<SettledAction<AuthResult> | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [pending, run] = usePending();
-  const refs = {
-    name: useRef<TextInputInstance>(null),
-    email: useRef<TextInputInstance>(null),
-    password: useRef<TextInputInstance>(null),
-  };
+  const nameRef = useRef<TextInputInstance>(null);
+  const emailRef = useRef<TextInputInstance>(null);
+  const passwordRef = useRef<TextInputInstance>(null);
 
   const submit = () =>
     run(async () => {
       setOutcome(null);
       const checked = checkFields<Name>([
-        ["name", validateName(name), refs.name],
-        ["email", validateEmail(email), refs.email],
-        ["password", validateNewPassword(password), refs.password],
+        ["name", validateName(name), nameRef],
+        ["email", validateEmail(email), emailRef],
+        ["password", validateNewPassword(password), passwordRef],
       ]);
       if (!checked.ok) {
         setErrors(checked.errors);
@@ -93,7 +91,7 @@ export function SignUpScreen() {
         ) : null}
         <Field
           label={t("fields.name")}
-          inputRef={refs.name}
+          inputRef={nameRef}
           value={name}
           onChangeText={setName}
           error={fieldError("name")}
@@ -103,7 +101,7 @@ export function SignUpScreen() {
         />
         <Field
           label={t("fields.email")}
-          inputRef={refs.email}
+          inputRef={emailRef}
           value={email}
           onChangeText={setEmail}
           error={fieldError("email")}
@@ -114,7 +112,7 @@ export function SignUpScreen() {
         />
         <Field
           label={t("fields.password")}
-          inputRef={refs.password}
+          inputRef={passwordRef}
           value={password}
           onChangeText={setPassword}
           error={fieldError("password")}

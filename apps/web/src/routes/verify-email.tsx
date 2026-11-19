@@ -1,5 +1,5 @@
 import { createRoute, Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { errorMessageKey } from "@s10n-base/client/messages";
@@ -67,27 +67,28 @@ function VerifyEmailPage() {
   );
   const started = useRef<string | null>(null);
 
-  const verify = async (value: string) => {
-    setState({ kind: "pending" });
-    const result = await gate.settle(() => auth.verifyEmail(value));
-    if (result.kind === "unknown") setState({ kind: "unknown", outcome: result });
-    else setState(result.value.ok ? { kind: "verified" } : { kind: "invalid" });
-  };
+  const verify = useCallback(
+    async (value: string) => {
+      setState({ kind: "pending" });
+      const result = await gate.settle(() => auth.verifyEmail(value));
+      if (result.kind === "unknown") setState({ kind: "unknown", outcome: result });
+      else setState(result.value.ok ? { kind: "verified" } : { kind: "invalid" });
+    },
+    [auth, gate],
+  );
 
   useEffect(() => {
     // Once per token, also under React's development double effects.
     if (token === undefined || started.current === token) return;
     started.current = token;
     void verify(token);
-  }, [token]);
+  }, [token, verify]);
 
   switch (state.kind) {
     case "pending":
       return (
         <PageShell title={t("verifyEmail.pending")}>
-          <p role="status" className="text-muted">
-            {tCommon("loading")}
-          </p>
+          <output className="text-muted block">{tCommon("loading")}</output>
         </PageShell>
       );
     case "verified":

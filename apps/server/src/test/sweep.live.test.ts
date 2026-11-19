@@ -34,7 +34,9 @@ describe("sweepFixtureSchemas", () => {
         "select nspname from pg_catalog.pg_namespace where nspname = any($1)",
         [created],
       );
-      expect(remaining.rows.map((row) => row.nspname).sort()).toEqual([fresh, other].sort());
+      expect(remaining.rows.map((row) => row.nspname).toSorted()).toEqual(
+        [fresh, other].toSorted(),
+      );
     } finally {
       await client.end();
     }

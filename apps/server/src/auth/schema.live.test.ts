@@ -6,6 +6,7 @@ import { migrateDown } from "../infra/postgres/migrator";
 import { migrations } from "../infra/postgres/migrations";
 import { createLogger } from "../observability/logger";
 import { createMigratedSchema, type MigratedSchema } from "../test/auth-database";
+import type { AuthEmailSender } from "./email/sender";
 import { buildAuthOptions } from "./options";
 import { authSchemaDifferences, expectedAuthTables, readAuthTables } from "./schema-check";
 
@@ -23,7 +24,10 @@ function options() {
     },
     {
       db: schema.db,
-      emailSender: { sendVerificationEmail: vi.fn(), sendPasswordResetEmail: vi.fn() },
+      emailSender: {
+        sendVerificationEmail: vi.fn<AuthEmailSender["sendVerificationEmail"]>(),
+        sendPasswordResetEmail: vi.fn<AuthEmailSender["sendPasswordResetEmail"]>(),
+      },
       logger: createLogger({ level: "error", write: () => {} }),
     },
   );
@@ -41,7 +45,7 @@ describe("the auth migration against Better Auth's schema", () => {
   it("has every table, column, type, nullability, unique column, index and foreign key Better Auth expects for our options, and nothing else", async () => {
     const actual = await readAuthTables(schema.db as Kysely<unknown>, schema.fixture.schema);
 
-    expect(Object.keys(actual).sort()).toEqual([
+    expect(Object.keys(actual).toSorted()).toEqual([
       "ba_account",
       "ba_passkey",
       "ba_rate_limit",
@@ -136,7 +140,7 @@ describe("the auth migration against Better Auth's schema", () => {
   it("rolls back to an empty schema", async () => {
     const target = { db: schema.db as Kysely<unknown>, schema: schema.fixture.schema, migrations };
 
-    for (const _name of Object.keys(migrations)) await migrateDown(target);
+    for (let left = Object.keys(migrations).length; left > 0; left -= 1) await migrateDown(target);
 
     expect(await readAuthTables(schema.db as Kysely<unknown>, schema.fixture.schema)).toEqual({});
   });

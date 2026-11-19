@@ -10,7 +10,7 @@ function setup(sendEmail: (email: SesEmail) => Promise<{ messageId: string }>) {
     level: "debug",
     write: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
   });
-  const send = vi.fn(sendEmail);
+  const send = vi.fn<typeof sendEmail>(sendEmail);
   const sender = createSesAuthEmailSender({
     ses: { sendEmail: send },
     from: "no-reply@example.com",

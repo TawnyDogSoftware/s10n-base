@@ -37,19 +37,17 @@ function SignUpPage() {
   const [outcome, setOutcome] = useState<SettledAction<AuthResult> | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [pending, run] = usePending();
-  const refs = {
-    name: useRef<HTMLInputElement>(null),
-    email: useRef<HTMLInputElement>(null),
-    password: useRef<HTMLInputElement>(null),
-  };
+  const nameRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
 
   const submit = () =>
     run(async () => {
       setOutcome(null);
       const checked = checkFields<Name>([
-        ["name", validateName(name), refs.name],
-        ["email", validateEmail(email), refs.email],
-        ["password", validateNewPassword(password), refs.password],
+        ["name", validateName(name), nameRef],
+        ["email", validateEmail(email), emailRef],
+        ["password", validateNewPassword(password), passwordRef],
       ]);
       if (!checked.ok) {
         setErrors(checked.errors);
@@ -103,7 +101,7 @@ function SignUpPage() {
             label={t("fields.name")}
             name="name"
             autoComplete="name"
-            inputRef={refs.name}
+            inputRef={nameRef}
             value={name}
             onValueChange={setName}
             error={fieldError("name")}
@@ -113,7 +111,7 @@ function SignUpPage() {
             name="email"
             type="email"
             autoComplete="username"
-            inputRef={refs.email}
+            inputRef={emailRef}
             value={email}
             onValueChange={setEmail}
             error={fieldError("email")}
@@ -124,7 +122,7 @@ function SignUpPage() {
             type="password"
             autoComplete="new-password"
             hint={t("fields.passwordHint", { min: PASSWORD_MIN })}
-            inputRef={refs.password}
+            inputRef={passwordRef}
             value={password}
             onValueChange={setPassword}
             error={fieldError("password")}

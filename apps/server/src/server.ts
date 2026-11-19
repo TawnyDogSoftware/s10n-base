@@ -121,8 +121,8 @@ const databaseLayer = (options: ServerLayerOptions) =>
       let closeTimedOut = false;
       const db = yield* Effect.acquireRelease(
         Effect.sync(() => createDb((options.createPool ?? defaultPool)(config, logger))),
-        (db) =>
-          Effect.promise(() => db.destroy()).pipe(
+        (opened) =>
+          Effect.promise(() => opened.destroy()).pipe(
             // A query still running holds its connection; do not wait on it forever.
             Effect.timeoutOption(Duration.millis(config.shutdownTimeoutMs)),
             Effect.tap((closed) =>

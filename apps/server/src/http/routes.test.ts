@@ -20,6 +20,7 @@ import {
   createRpcDispatcher,
   defineHandler,
   type RpcDispatcher,
+  type RpcHandlerContext,
 } from "../rpc/dispatcher";
 import { HTML_CONTENT_SECURITY_POLICY } from "./security-headers";
 import { UNEXPECTED_ERROR_BODY, createRequestHandler, type HttpContext } from "./routes";
@@ -278,7 +279,7 @@ describe("CORS", () => {
 
 describe("health, readiness and config", () => {
   it("answers /health without checking the database", async () => {
-    const checkReadiness = vi.fn(() => Promise.resolve(false));
+    const checkReadiness = vi.fn<HttpContext["checkReadiness"]>(() => Promise.resolve(false));
     const base = await start({ checkReadiness });
 
     const response = await fetch(`${base}/health`);
@@ -303,7 +304,7 @@ describe("health, readiness and config", () => {
   });
 
   it("answers /ready 503 while shutting down, without checking the database", async () => {
-    const checkReadiness = vi.fn(() => Promise.resolve(true));
+    const checkReadiness = vi.fn<HttpContext["checkReadiness"]>(() => Promise.resolve(true));
     const base = await start({ checkReadiness, isShuttingDown: () => true });
 
     const response = await fetch(`${base}/ready`);
@@ -533,7 +534,9 @@ describe("the web app", () => {
 
 describe("cross-site requests", () => {
   it("refuses /rpc from an origin that is not trusted, before any work is done", async () => {
-    const handle = vi.fn(() => Promise.resolve({ text: "hi" }));
+    const handle = vi.fn<
+      (payload: unknown, context: RpcHandlerContext) => Promise<{ text: string }>
+    >(() => Promise.resolve({ text: "hi" }));
     const dispatcher = createRpcDispatcher({
       handlers: [defineHandler(echo, handle)],
       resolveActor: anonymousActorResolver,
@@ -579,7 +582,9 @@ describe("cross-site requests", () => {
   });
 
   it("refuses /api/app-auth/* from an origin that is not trusted", async () => {
-    const readSession = vi.fn(() => Promise.resolve({ session: null, setCookies: [] }));
+    const readSession = vi.fn<AppAuth["readSession"]>(() =>
+      Promise.resolve({ session: null, setCookies: [] }),
+    );
     const base = await start({ auth: { readSession } });
 
     const response = await fetch(`${base}/api/app-auth/session`, {
@@ -602,7 +607,9 @@ describe("GET /api/app-auth/session", () => {
   };
 
   it("answers the session as an AppSession, uncached, reading the request's cookie", async () => {
-    const readSession = vi.fn((_headers: Headers) => Promise.resolve({ session, setCookies: [] }));
+    const readSession = vi.fn<AppAuth["readSession"]>(() =>
+      Promise.resolve({ session, setCookies: [] }),
+    );
     const base = await start({ auth: { readSession } });
 
     const response = await fetch(`${base}/api/app-auth/session`, {
@@ -617,7 +624,7 @@ describe("GET /api/app-auth/session", () => {
   });
 
   it("passes on the cookies Better Auth sets while reading the session, such as a renewal", async () => {
-    const readSession = vi.fn((_headers: Headers) =>
+    const readSession = vi.fn<AppAuth["readSession"]>(() =>
       Promise.resolve({
         session,
         setCookies: [
@@ -656,8 +663,8 @@ describe("GET /api/app-auth/session", () => {
 
 describe("/api/auth", () => {
   it("answers 404 JSON for a route the guard refuses, without reading the body or calling Better Auth", async () => {
-    const handler = vi.fn(() => Promise.resolve(new Response("{}")));
-    const guard = vi.fn((_method: string, _url: URL) => Promise.resolve(false));
+    const handler = vi.fn<AppAuth["handler"]>(() => Promise.resolve(new Response("{}")));
+    const guard = vi.fn<AppAuth["guard"]>(() => Promise.resolve(false));
     const base = await start({ auth: { handler, guard } });
 
     const response = await fetch(`${base}/api/auth/not-a-route?x=1`, {
@@ -676,7 +683,7 @@ describe("/api/auth", () => {
   });
 
   it("passes an admitted request to Better Auth under APP_URL, with the body and the resolved client IP", async () => {
-    const handler = vi.fn((_request: Request) => {
+    const handler = vi.fn<AppAuth["handler"]>(() => {
       const headers = new Headers({ "content-type": "application/json" });
       headers.append("set-cookie", "a=1; Path=/");
       headers.append("set-cookie", "b=2; Path=/");
@@ -705,7 +712,7 @@ describe("/api/auth", () => {
   });
 
   it("refuses a body over the limit with 413, without calling Better Auth", async () => {
-    const handler = vi.fn(() => Promise.resolve(new Response("{}")));
+    const handler = vi.fn<AppAuth["handler"]>(() => Promise.resolve(new Response("{}")));
     const base = await start({ auth: { handler, guard: () => Promise.resolve(true) } });
 
     const response = await fetch(`${base}/api/auth/sign-up/email`, {
@@ -719,7 +726,7 @@ describe("/api/auth", () => {
   });
 
   it("sends a GET without a body", async () => {
-    const handler = vi.fn((_request: Request) => Promise.resolve(new Response("null")));
+    const handler = vi.fn<AppAuth["handler"]>(() => Promise.resolve(new Response("null")));
     const base = await start({ auth: { handler, guard: () => Promise.resolve(true) } });
 
     await fetch(`${base}/api/auth/get-session`);

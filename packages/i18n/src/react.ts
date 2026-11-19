@@ -2,7 +2,7 @@
  * The apps' i18next instance, wired to React through `react-i18next`. Wrap the app in
  * `<I18nextProvider i18n={createReactI18n(navigator.languages)}>` and call `useTranslation(ns)`.
  */
-import i18next, { type i18n } from "i18next";
+import { createInstance, type i18n } from "i18next";
 import { initReactI18next } from "react-i18next";
 
 import { baseInitOptions, resolveLocale } from "./index";
@@ -13,7 +13,7 @@ import { baseInitOptions, resolveLocale } from "./index";
  * already translated.
  */
 export function createReactI18n(languages: readonly string[]): i18n {
-  const instance = i18next.createInstance();
+  const instance = createInstance();
   void instance.use(initReactI18next).init(baseInitOptions(resolveLocale(languages), "common"));
   return instance;
 }

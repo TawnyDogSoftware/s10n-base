@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createLogger } from "./observability/logger";
-import { runServerProcess, type ProcessRuntime } from "./process";
+import { runServerProcess, type ProcessRuntime, type RunningServer } from "./process";
 
 function createRuntime() {
   const emitter = new EventEmitter();
@@ -31,9 +31,11 @@ function capture() {
   return { lines, logger, messages: () => lines.map((line) => line.message) };
 }
 
+const noop = () => {};
+
 function deferred<T>() {
-  let resolve: (value: T) => void = () => {};
-  let reject: (error: unknown) => void = () => {};
+  let resolve: (value: T) => void = noop;
+  let reject: (error: unknown) => void = noop;
   const promise = new Promise<T>((res, rej) => {
     resolve = res;
     reject = rej;
@@ -72,7 +74,7 @@ describe("runServerProcess", () => {
   it("stops on SIGTERM and exits 0 after a clean stop", async () => {
     const { runtime, listeners } = createRuntime();
     const output = capture();
-    const stop = vi.fn(() => Promise.resolve({ forced: false }));
+    const stop = vi.fn<RunningServer["stop"]>(() => Promise.resolve({ forced: false }));
     await runServerProcess({
       runtime,
       logger: output.logger,
@@ -109,7 +111,7 @@ describe("runServerProcess", () => {
     const { runtime } = createRuntime();
     const output = capture();
     const stopping = deferred<{ forced: boolean }>();
-    const stop = vi.fn(() => stopping.promise);
+    const stop = vi.fn<RunningServer["stop"]>(() => stopping.promise);
     await runServerProcess({
       runtime,
       logger: output.logger,
@@ -157,7 +159,7 @@ describe("runServerProcess", () => {
       shutdownTimeoutMs: number;
       stop: () => Promise<{ forced: boolean }>;
     }>();
-    const stop = vi.fn(() => Promise.resolve({ forced: false }));
+    const stop = vi.fn<RunningServer["stop"]>(() => Promise.resolve({ forced: false }));
     const running = runServerProcess({
       runtime,
       logger: capture().logger,

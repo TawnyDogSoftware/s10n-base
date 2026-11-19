@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { DB } from "../infra/postgres/generated/db";
 import { createLogger } from "../observability/logger";
 import { AUTH_EMAIL_LINK_SECONDS } from "./email/render";
+import type { AuthEmailSender } from "./email/sender";
 import {
   authEmailLink,
   AUTH_COOKIE_PREFIX,
@@ -25,8 +26,10 @@ const config: AuthOptionsConfig = {
 function setup(overrides: Partial<AuthOptionsConfig> = {}) {
   const lines: Array<Record<string, unknown>> = [];
   const emailSender = {
-    sendVerificationEmail: vi.fn(() => Promise.resolve()),
-    sendPasswordResetEmail: vi.fn(() => Promise.resolve()),
+    sendVerificationEmail: vi.fn<AuthEmailSender["sendVerificationEmail"]>(() => Promise.resolve()),
+    sendPasswordResetEmail: vi.fn<AuthEmailSender["sendPasswordResetEmail"]>(() =>
+      Promise.resolve(),
+    ),
   };
   // Never connected: the options only hold the instance.
   const db = new Kysely<DB>({

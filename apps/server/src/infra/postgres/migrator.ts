@@ -128,7 +128,7 @@ export function resetSchema(target: MigrationTarget): Promise<ReadonlyArray<stri
 
 /** Applied, pending and unknown migrations. Read-only: it never creates Kysely's tables. */
 export async function migrationStatus(target: MigrationTarget): Promise<MigrationStatus> {
-  const expected = Object.keys(target.migrations).sort();
+  const expected = Object.keys(target.migrations).toSorted();
   const applied = await target.db
     .transaction()
     .setAccessMode("read only")

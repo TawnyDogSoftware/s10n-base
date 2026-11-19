@@ -43,7 +43,7 @@ const byName = <T extends { readonly name: string }>(a: T, b: T) => a.name.local
 
 function changeTable(changes: readonly IndirectChange[]): string {
   const rows = [...changes]
-    .sort(byName)
+    .toSorted(byName)
     .map((change) => `| ${change.name} | ${change.from} | ${change.to} |`);
   return ["| Package | From | To |", "| --- | --- | --- |", ...rows].join("\n");
 }
@@ -97,7 +97,7 @@ export function buildPrBody(input: PrBodyInput): string {
 
   if (input.heldByAge.length > 0) {
     const rows = [...input.heldByAge]
-      .sort(byName)
+      .toSorted(byName)
       .map(
         (pkg) =>
           `| ${pkg.name} | ${pkg.current} | ${pkg.newest ?? "(unknown)"} | ${pkg.publishedAt?.slice(0, 10) ?? "(unknown)"} |`,

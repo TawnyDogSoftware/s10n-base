@@ -64,7 +64,7 @@ function parseSuiteRequest(text: string): SuiteRequest {
 const cases = readdirSync(SUITE, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .map((entry) => entry.name)
-  .sort();
+  .toSorted();
 
 function read(name: string, file: string): string {
   return readFileSync(path.join(SUITE, name, file), "utf8");

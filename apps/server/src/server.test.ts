@@ -13,6 +13,8 @@ import { defineHandler } from "./rpc/dispatcher";
 import { startServer, type StartedServer } from "./server";
 import { testServerConfig } from "./test/config";
 
+const noop = () => {};
+
 /** A stand-in for pg.Pool that records what happens to it and can hold queries back. */
 function createFakePool(events: string[]) {
   let gate: Promise<void> | undefined;
@@ -33,7 +35,7 @@ function createFakePool(events: string[]) {
       return Promise.resolve();
     },
     holdQueries: () => {
-      let release = () => {};
+      let release: () => void = noop;
       gate = new Promise((resolve) => {
         release = resolve;
       });
@@ -66,8 +68,8 @@ afterEach(async () => {
 /** Starts a server with a handler for fixture.slow that waits until `finish` is called. */
 async function startWithSlowMethod(events: string[], config: Partial<ServerConfig> = {}) {
   const pool = createFakePool(events);
-  let finish = () => {};
-  const handlerStarted = vi.fn();
+  let finish: () => void = noop;
+  const handlerStarted = vi.fn<() => void>();
   const handler = defineHandler(slow, async () => {
     events.push("request:start");
     handlerStarted();
@@ -137,7 +139,7 @@ describe("startServer", () => {
 
     await server.stop();
 
-    await expect(fetch(`${base}/health`)).rejects.toThrow();
+    await expect(fetch(`${base}/health`)).rejects.toThrow("fetch failed");
   });
 
   it("answers /ready 503 when shutdown starts while the check is running", async () => {

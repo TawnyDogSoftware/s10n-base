@@ -37,7 +37,7 @@ export function decodeUserCursor(cursor: string): UserCursor | null {
   }
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  const keys = Object.keys(record).sort();
+  const keys = Object.keys(record).toSorted();
   if (keys.length !== 2 || keys[0] !== "at" || keys[1] !== "id") return null;
   const { at, id } = record;
   if (typeof at !== "string" || typeof id !== "string") return null;

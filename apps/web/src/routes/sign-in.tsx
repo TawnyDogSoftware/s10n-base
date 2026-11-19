@@ -34,7 +34,8 @@ function SignInPage() {
   const [unverified, setUnverified] = useState<string | null>(null);
   const [pending, run] = usePending();
   const [passkeyPending, runPasskey] = usePending();
-  const refs = { email: useRef<HTMLInputElement>(null), password: useRef<HTMLInputElement>(null) };
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
 
   /** Whatever the action reported, the session read afterwards decides. */
   const finish = async (result: SettledAction<AuthResult>) => {
@@ -49,8 +50,8 @@ function SignInPage() {
     run(async () => {
       setOutcome(null);
       const checked = checkFields<Name>([
-        ["email", validateEmail(email), refs.email],
-        ["password", validatePassword(password), refs.password],
+        ["email", validateEmail(email), emailRef],
+        ["password", validatePassword(password), passwordRef],
       ]);
       if (!checked.ok) {
         setErrors(checked.errors);
@@ -119,7 +120,7 @@ function SignInPage() {
             name="email"
             type="email"
             autoComplete="username webauthn"
-            inputRef={refs.email}
+            inputRef={emailRef}
             value={email}
             onValueChange={setEmail}
             error={fieldError("email")}
@@ -129,7 +130,7 @@ function SignInPage() {
             name="password"
             type="password"
             autoComplete="current-password"
-            inputRef={refs.password}
+            inputRef={passwordRef}
             value={password}
             onValueChange={setPassword}
             error={fieldError("password")}

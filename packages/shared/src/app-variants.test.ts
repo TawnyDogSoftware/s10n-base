@@ -5,7 +5,7 @@ import { APP_VARIANTS, appVariants } from "./app-variants";
 describe("appVariants", () => {
   it("describes development, preview and production", () => {
     expect(APP_VARIANTS).toEqual(["development", "preview", "production"]);
-    expect(Object.keys(appVariants).sort()).toEqual([...APP_VARIANTS].sort());
+    expect(Object.keys(appVariants).toSorted()).toEqual([...APP_VARIANTS].toSorted());
   });
 
   it("gives each variant its own valid URL scheme and display name", () => {

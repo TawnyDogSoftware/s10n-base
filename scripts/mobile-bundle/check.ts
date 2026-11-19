@@ -74,7 +74,7 @@ export function checkBundleSources(
   const problems: string[] = [];
   const instances = packageInstances(sources, resolve);
   for (const name of SINGLETONS) {
-    const found = [...(instances.get(name) ?? [])].sort();
+    const found = [...(instances.get(name) ?? [])].toSorted();
     if (found.length > 1) problems.push(`${found.length} copies of ${name}: ${found.join(", ")}`);
   }
   for (const source of sources) {

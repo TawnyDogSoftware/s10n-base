@@ -3,6 +3,21 @@ import { describe, expect, it } from "vitest";
 import { runAuthAction, trackNetworkFailures } from "./auth";
 import { NetworkError } from "./transport";
 
+/** A fetch whose headers arrive and whose body stream then fails. */
+function bodyLostFetch() {
+  return Promise.resolve(
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"status":'));
+          controller.error(new TypeError("Network connection was lost"));
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    ),
+  );
+}
+
 describe("runAuthAction", () => {
   it("passes a success through as data", async () => {
     const tracker = trackNetworkFailures(() => Promise.resolve(new Response()));
@@ -38,19 +53,7 @@ describe("runAuthAction", () => {
 
   it("throws a NetworkError when the connection drops while the answer's body is read", async () => {
     // The headers arrived, so fetch resolved; then the body stream failed.
-    const broken = () =>
-      Promise.resolve(
-        new Response(
-          new ReadableStream({
-            start(controller) {
-              controller.enqueue(new TextEncoder().encode('{"status":'));
-              controller.error(new TypeError("Network connection was lost"));
-            },
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        ),
-      );
-    const tracker = trackNetworkFailures(broken);
+    const tracker = trackNetworkFailures(bodyLostFetch);
     const action = async () => {
       const response = await tracker.fetch("https://api.example.com/reset-password");
       return { data: (await response.json()) as unknown, error: null };

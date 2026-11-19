@@ -107,7 +107,7 @@ function columnProblem(wanted: ColumnShape, found: ColumnShape): string | undefi
 export function authSchemaDifferences(expected: TableShapes, actual: TableShapes): string[] {
   const problems: string[] = [];
   const tableNames = new Set([...Object.keys(expected), ...Object.keys(actual)]);
-  for (const table of [...tableNames].sort()) {
+  for (const table of [...tableNames].toSorted()) {
     const want = expected[table];
     const have = actual[table];
     if (want === undefined) {
@@ -119,7 +119,7 @@ export function authSchemaDifferences(expected: TableShapes, actual: TableShapes
       continue;
     }
     const columnNames = new Set([...Object.keys(want), ...Object.keys(have)]);
-    for (const column of [...columnNames].sort()) {
+    for (const column of [...columnNames].toSorted()) {
       const wanted = want[column];
       const found = have[column];
       if (wanted === undefined) {

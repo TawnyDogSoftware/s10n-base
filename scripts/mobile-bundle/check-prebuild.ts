@@ -20,7 +20,7 @@ export interface PrebuildFiles {
 }
 
 const all = (text: string, pattern: RegExp) =>
-  [...new Set([...text.matchAll(pattern)].map((match) => match[1] ?? ""))].sort();
+  [...new Set([...text.matchAll(pattern)].map((match) => match[1] ?? ""))].toSorted();
 
 /** Everything that does not match the variant, as sentences; empty when it all matches. */
 export function checkPrebuild(files: PrebuildFiles, variant: AppVariant): string[] {

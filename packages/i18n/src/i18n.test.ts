@@ -29,13 +29,13 @@ describe("catalogs", () => {
 
   it("have the six namespaces", () => {
     expect(NAMESPACES).toEqual(["common", "auth", "profile", "admin", "errors", "email"]);
-    expect(Object.keys(resources.en).sort()).toEqual([...NAMESPACES].sort());
+    expect(Object.keys(resources.en).toSorted()).toEqual([...NAMESPACES].toSorted());
   });
 
   it("give every locale exactly the keys English has", () => {
-    const english = keys(resources.en).sort();
+    const english = keys(resources.en).toSorted();
     for (const catalog of Object.values(resources)) {
-      expect(keys(catalog).sort()).toEqual(english);
+      expect(keys(catalog).toSorted()).toEqual(english);
     }
   });
 

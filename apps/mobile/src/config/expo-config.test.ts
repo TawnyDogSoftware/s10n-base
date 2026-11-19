@@ -15,6 +15,12 @@ const buildExpoConfig = (env: ExpoConfigEnv) => build(env, COLORS);
 
 const HTTPS = "https://api.example.com";
 
+function devClient(env: ExpoConfigEnv) {
+  return buildExpoConfig(env).plugins?.find(
+    (plugin) => Array.isArray(plugin) && plugin[0] === "expo-dev-client",
+  );
+}
+
 describe("buildExpoConfig", () => {
   it.each(["development", "preview", "production"] as const)(
     "takes the %s variant's name, scheme and bundle identifier from the shared table",
@@ -141,11 +147,6 @@ describe("buildExpoConfig", () => {
   it("gives only the development variant the dev client's own URL scheme", () => {
     // The dev client's scheme comes from the slug, which every variant shares, so two installed
     // variants would both claim it.
-    const devClient = (env: ExpoConfigEnv) =>
-      buildExpoConfig(env).plugins?.find(
-        (plugin) => Array.isArray(plugin) && plugin[0] === "expo-dev-client",
-      );
-
     expect(devClient({})).toEqual(["expo-dev-client", { addGeneratedScheme: true }]);
     expect(devClient({ APP_VARIANT: "preview", EXPO_PUBLIC_API_BASE_URL: HTTPS })).toEqual([
       "expo-dev-client",

@@ -13,6 +13,13 @@ const WORKSPACE = [
   "/apps/mobile/src/global.css",
 ];
 
+/** Resolves the app's `expo` symlink into bun's store, and leaves every other directory as is. */
+function resolveExpoLink(directory: string) {
+  return directory === "/apps/mobile/node_modules/expo"
+    ? "/node_modules/.bun/expo@58.0.25+abc/node_modules/expo"
+    : directory;
+}
+
 describe("packageInstances", () => {
   it("groups files by the package directory they come from", () => {
     const instances = packageInstances([
@@ -46,12 +53,8 @@ describe("checkBundleSources", () => {
   it("counts a package reached through a symlink once", () => {
     const linked = "/apps/mobile/node_modules/expo/internal/async-require-module.js";
     const real = store("expo@58.0.25+abc", "expo", "src/Expo.ts");
-    const resolve = (directory: string) =>
-      directory === "/apps/mobile/node_modules/expo"
-        ? "/node_modules/.bun/expo@58.0.25+abc/node_modules/expo"
-        : directory;
 
-    expect(checkBundleSources([linked, real, ...WORKSPACE], resolve)).toEqual([]);
+    expect(checkBundleSources([linked, real, ...WORKSPACE], resolveExpoLink)).toEqual([]);
     expect(checkBundleSources([linked, real, ...WORKSPACE])).toHaveLength(1);
   });
 

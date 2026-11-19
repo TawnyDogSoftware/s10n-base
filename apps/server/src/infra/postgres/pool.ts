@@ -1,5 +1,5 @@
 import { Kysely, PostgresDialect, type PostgresPool } from "kysely";
-import pg from "pg";
+import { Pool } from "pg";
 
 import type { DB } from "./generated/db";
 
@@ -49,8 +49,8 @@ export function withSearchPath(connectionString: string, searchPath: string | un
  * Node would crash the process. The pool has already discarded that connection and opens a new
  * one on the next query, so the listener only reports it.
  */
-export function createPool(options: PoolOptions): pg.Pool {
-  const pool = new pg.Pool({
+export function createPool(options: PoolOptions): Pool {
+  const pool = new Pool({
     connectionString: withSearchPath(options.connectionString, options.searchPath),
     max: options.max,
     connectionTimeoutMillis: options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,

@@ -1,3 +1,61 @@
 {
-  "ignorePatterns": ["dist", "node_modules", ".turbo"]
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // Every rule change below is an allowance a framework or library needs, with its reason.
+  // Inline disable comments are refused by scripts/check-lint-directives.ts; see docs/quality.md.
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "react", "import", "jsx-a11y", "vitest"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error"
+  },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "error",
+    // React 17's automatic JSX runtime: JSX no longer needs React in scope.
+    "react/react-in-jsx-scope": "off",
+    // Effect's tagged unions are told apart by `_tag`; AWS's JSON errors name their type `__type`.
+    "eslint/no-underscore-dangle": ["error", { "allow": ["_tag", "__type"] }],
+    // Vitest's expect takes an optional message as its second argument.
+    "vitest/valid-expect": ["error", { "maxArgs": 2 }],
+    // The web tests' waitForLocation asserts the router reached a location.
+    "vitest/expect-expect": [
+      "error",
+      { "assertFunctionNames": ["expect", "expectTypeOf", "waitForLocation"] }
+    ],
+    // Stylesheets and the jest-dom matchers are imported for their side effects.
+    "import/no-unassigned-import": [
+      "error",
+      { "allow": ["**/*.css", "@testing-library/jest-dom/vitest"] }
+    ],
+    // expo-status-bar's StatusBar takes `style` as a string ("auto", "light", "dark").
+    "react/style-prop-object": ["error", { "allow": ["StatusBar"] }],
+    // Off for the whole repo: the loops it finds wait on purpose, one step at a time, because each
+    // step depends on the one before. Cursor pagination, rolling back one migration at a time,
+    // counting rate-limited attempts in order and polling a server until it answers cannot run in
+    // parallel. Independent work uses Promise.all. Plan 007, section 11.
+    "eslint/no-await-in-loop": "off"
+  },
+  "overrides": [
+    {
+      // React Native has no HTML elements and no aria-level: `role` on a View or Text is how a
+      // native app names a heading, button, link or list item.
+      "files": ["apps/mobile/**"],
+      "rules": {
+        "jsx-a11y/prefer-tag-over-role": "off",
+        "jsx-a11y/role-has-required-aria-props": "off"
+      }
+    }
+  ],
+  // Generated output only.
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/coverage/**",
+    "**/.turbo/**",
+    "apps/mobile/.expo/**",
+    "apps/mobile/expo-env.d.ts",
+    "apps/mobile/src/uniwind-types.d.ts",
+    "apps/server/src/infra/postgres/generated/**",
+    "e2e/test-results/**",
+    "e2e/report/**"
+  ]
 }

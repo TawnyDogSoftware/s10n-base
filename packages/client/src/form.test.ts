@@ -4,7 +4,7 @@ import { checkFields } from "./form";
 import { validateEmail, validateName } from "./validation";
 
 function field() {
-  const focus = vi.fn();
+  const focus = vi.fn<() => void>();
   return { ref: { current: { focus } }, focus };
 }
 

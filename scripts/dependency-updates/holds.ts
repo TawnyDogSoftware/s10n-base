@@ -54,12 +54,13 @@ export function parseHolds(json: unknown): Hold[] {
     if (group !== undefined && typeof group !== "string")
       throw new Error(`${label}: group must be a string`);
     if (range !== undefined) satisfies("0.0.0", range);
-    return {
+    const hold: { -readonly [Key in keyof Hold]: Hold[Key] } = {
       packages: packages as string[],
       reason,
-      ...(range === undefined ? {} : { range }),
-      ...(group === undefined ? {} : { group }),
     };
+    if (range !== undefined) hold.range = range;
+    if (group !== undefined) hold.group = group;
+    return hold;
   });
 }
 

@@ -149,7 +149,9 @@ describe("createRpcClient", () => {
     const { fetch, requests } = fakeFetch(() => json({ ok: true, data: { total: "1" } }));
     const client = createRpcClient({ baseUrl: "https://api.example.com", fetch });
 
-    await expect(client.call(count, { n: "x" as unknown as number })).rejects.toThrow();
+    await expect(client.call(count, { n: "x" as unknown as number })).rejects.toThrow(
+      'Expected number\n  at ["n"]',
+    );
     expect(requests).toEqual([]);
   });
 });

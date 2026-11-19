@@ -33,7 +33,7 @@ describe("waitForDatabase", () => {
       .mockRejectedValueOnce(errorWithCode("ECONNREFUSED"))
       .mockRejectedValueOnce(errorWithCode("57P03"))
       .mockResolvedValue(undefined);
-    const onAttemptFailed = vi.fn();
+    const onAttemptFailed = vi.fn<(error: unknown) => void>();
 
     await Effect.runPromise(waitForDatabase(ping, { schedule: fastRetry, onAttemptFailed }));
 

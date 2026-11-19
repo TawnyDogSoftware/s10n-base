@@ -136,14 +136,15 @@ export function createSessionGate(options: {
   let accepted: AppSession | null | typeof NOT_SEEN = NOT_SEEN;
   let epoch = 0;
 
+  // The session query is always kept, even when it was created without its meta (as
+  // `setQueryData` does): it is what the next screen renders from.
+  const predicate = (query: {
+    readonly queryHash: string;
+    readonly meta: Record<string, unknown> | undefined;
+  }) => query.queryHash !== sessionHash && !isPublic(query.meta);
+
   const purge = () => {
     epoch += 1;
-    // The session query is always kept, even when it was created without its meta (as
-    // `setQueryData` does): it is what the next screen renders from.
-    const predicate = (query: {
-      readonly queryHash: string;
-      readonly meta: Record<string, unknown> | undefined;
-    }) => query.queryHash !== sessionHash && !isPublic(query.meta);
     // Cancelling aborts each request's signal synchronously; the promise is only bookkeeping.
     void queryClient.cancelQueries({ predicate });
     queryClient.removeQueries({ predicate });

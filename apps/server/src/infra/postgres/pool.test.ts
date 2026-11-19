@@ -45,7 +45,7 @@ describe("createPool", () => {
   });
 
   it("reports an idle connection's error instead of crashing", () => {
-    const onIdleError = vi.fn();
+    const onIdleError = vi.fn<(error: Error) => void>();
     const pool = createPool({ connectionString: URL, max: 1, onIdleError });
 
     // With no listener, an "error" event would throw and take the process down.

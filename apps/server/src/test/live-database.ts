@@ -6,7 +6,7 @@
  */
 import { randomBytes } from "node:crypto";
 
-import pg from "pg";
+import { Client } from "pg";
 
 export interface TestDatabaseTarget {
   readonly url: string;
@@ -74,9 +74,9 @@ export function fixtureSchemaCreatedAt(name: string): number | undefined {
 /** Opens a guarded connection to the test database. */
 export async function connectToTestDatabase(
   env: Record<string, string | undefined> = process.env,
-): Promise<{ readonly client: pg.Client; readonly target: TestDatabaseTarget }> {
+): Promise<{ readonly client: Client; readonly target: TestDatabaseTarget }> {
   const target = testDatabaseUrl(env);
-  const client = new pg.Client({ connectionString: target.url, connectionTimeoutMillis: 5_000 });
+  const client = new Client({ connectionString: target.url, connectionTimeoutMillis: 5_000 });
   await client.connect();
   try {
     await assertConnectedToTestDatabase(client, target.database);
@@ -92,7 +92,7 @@ export interface FixtureSchema {
   readonly url: string;
   readonly schema: string;
   /** A connection outside the pool under test, for setup and inspection. */
-  readonly admin: pg.Client;
+  readonly admin: Client;
   /** Drops the schema and closes `admin`. */
   readonly drop: () => Promise<void>;
 }

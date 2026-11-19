@@ -2,6 +2,7 @@ import type { IncomingMessage } from "node:http";
 
 import { describe, expect, it, vi } from "vitest";
 
+import type { AppAuth } from "./instance";
 import { createSessionActorResolver } from "./session-actor";
 
 const session = {
@@ -15,7 +16,7 @@ const session = {
 
 describe("createSessionActorResolver", () => {
   it("is the signed-in user with their role, looked up from the request's cookie", async () => {
-    const getSession = vi.fn((_headers: Headers) => Promise.resolve(session));
+    const getSession = vi.fn<AppAuth["getSession"]>(() => Promise.resolve(session));
     const resolve = createSessionActorResolver({ getSession });
 
     const actor = await resolve({
@@ -27,7 +28,7 @@ describe("createSessionActorResolver", () => {
   });
 
   it("is anonymous without a session or without a request", async () => {
-    const getSession = vi.fn(() => Promise.resolve(null));
+    const getSession = vi.fn<AppAuth["getSession"]>(() => Promise.resolve(null));
     const resolve = createSessionActorResolver({ getSession });
 
     expect(await resolve({ headers: {} } as IncomingMessage)).toEqual({ kind: "anonymous" });

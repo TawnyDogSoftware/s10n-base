@@ -40,7 +40,7 @@ describe("profile.get", () => {
   });
 
   it("has exactly the profile fields", () => {
-    expect(Object.keys(Profile.fields).sort()).toEqual([
+    expect(Object.keys(Profile.fields).toSorted()).toEqual([
       "createdAt",
       "email",
       "emailVerified",

@@ -20,9 +20,10 @@ export async function sweepFixtureSchemas(
       const createdAt = fixtureSchemaCreatedAt(name);
       return createdAt !== undefined && options.now - createdAt >= options.minAgeMs;
     });
-  for (const name of stale) {
-    // The name matched the fixture pattern, so it is a plain lowercase identifier.
-    await client.query(`drop schema if exists "${name}" cascade`);
+  if (stale.length > 0) {
+    // Each name matched the fixture pattern, so it is a plain lowercase identifier.
+    const names = stale.map((name) => `"${name}"`).join(", ");
+    await client.query(`drop schema if exists ${names} cascade`);
   }
   return stale;
 }

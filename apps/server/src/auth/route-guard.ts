@@ -42,7 +42,7 @@ export function authRouteInventory(
     const methods = [options?.method ?? []].flat();
     for (const method of methods) routes.push({ method, path });
   }
-  return routes.sort((a, b) =>
+  return routes.toSorted((a, b) =>
     a.path === b.path ? a.method.localeCompare(b.method) : a.path.localeCompare(b.path),
   );
 }

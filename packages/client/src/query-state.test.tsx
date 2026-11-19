@@ -59,10 +59,11 @@ afterEach(() => {
   onlineManager.setOnline(true);
 });
 
+const fetcher = () => Promise.resolve("x");
+
 describe("protected queries", () => {
   it("put the signed-in user's id in the key, and are disabled without a session", () => {
     const { gate } = setup();
-    const fetcher = () => Promise.resolve("x");
 
     expect(gate.protectedQueryOptions(alice, ["profile"], fetcher)).toMatchObject({
       queryKey: ["user", "alice", "profile"],

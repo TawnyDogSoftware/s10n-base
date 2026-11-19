@@ -105,28 +105,44 @@ export const auth: Migration = {
       .execute();
 
     // The lookups Better Auth makes. The unique columns above already have their indexes.
-    const indexes = [
-      ["ba_session_user_id_idx", "ba_session", "user_id"],
-      ["ba_session_impersonated_by_idx", "ba_session", "impersonated_by"],
-      ["ba_account_user_id_idx", "ba_account", "user_id"],
-      ["ba_verification_identifier_idx", "ba_verification", "identifier"],
-      ["ba_passkey_user_id_idx", "ba_passkey", "user_id"],
-      ["ba_passkey_credential_id_idx", "ba_passkey", "credential_id"],
-    ] as const;
-    for (const [name, table, column] of indexes) {
-      await db.schema.createIndex(name).on(table).column(column).execute();
-    }
+    await db.schema
+      .createIndex("ba_session_user_id_idx")
+      .on("ba_session")
+      .column("user_id")
+      .execute();
+    await db.schema
+      .createIndex("ba_session_impersonated_by_idx")
+      .on("ba_session")
+      .column("impersonated_by")
+      .execute();
+    await db.schema
+      .createIndex("ba_account_user_id_idx")
+      .on("ba_account")
+      .column("user_id")
+      .execute();
+    await db.schema
+      .createIndex("ba_verification_identifier_idx")
+      .on("ba_verification")
+      .column("identifier")
+      .execute();
+    await db.schema
+      .createIndex("ba_passkey_user_id_idx")
+      .on("ba_passkey")
+      .column("user_id")
+      .execute();
+    await db.schema
+      .createIndex("ba_passkey_credential_id_idx")
+      .on("ba_passkey")
+      .column("credential_id")
+      .execute();
   },
   async down(db: Kysely<unknown>) {
-    for (const table of [
-      "ba_passkey",
-      "ba_rate_limit",
-      "ba_verification",
-      "ba_account",
-      "ba_session",
-      "ba_user",
-    ]) {
-      await db.schema.dropTable(table).execute();
-    }
+    // Children before the user table they reference.
+    await db.schema.dropTable("ba_passkey").execute();
+    await db.schema.dropTable("ba_rate_limit").execute();
+    await db.schema.dropTable("ba_verification").execute();
+    await db.schema.dropTable("ba_account").execute();
+    await db.schema.dropTable("ba_session").execute();
+    await db.schema.dropTable("ba_user").execute();
   },
 };

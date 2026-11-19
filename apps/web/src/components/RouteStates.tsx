@@ -28,9 +28,5 @@ export function RouteError() {
 
 export function Loading() {
   const { t } = useTranslation("common");
-  return (
-    <p role="status" className="text-muted py-10 text-center">
-      {t("loading")}
-    </p>
-  );
+  return <output className="text-muted block py-10 text-center">{t("loading")}</output>;
 }

@@ -43,13 +43,13 @@ describe("testDatabaseUrl", () => {
   });
 });
 
-describe("assertConnectedToTestDatabase", () => {
-  function client(currentDatabase: string) {
-    return {
-      query: () => Promise.resolve({ rows: [{ current_database: currentDatabase }] }),
-    };
-  }
+function client(currentDatabase: string) {
+  return {
+    query: () => Promise.resolve({ rows: [{ current_database: currentDatabase }] }),
+  };
+}
 
+describe("assertConnectedToTestDatabase", () => {
   it("passes when the open connection is on the expected database", async () => {
     await expect(
       assertConnectedToTestDatabase(client("app_test"), "app_test"),

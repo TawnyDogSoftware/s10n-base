@@ -33,17 +33,15 @@ export function SignInScreen() {
   const [outcome, setOutcome] = useState<SettledAction<AuthResult> | null>(null);
   const [unverified, setUnverified] = useState<string | null>(null);
   const [pending, run] = usePending();
-  const refs = {
-    email: useRef<TextInputInstance>(null),
-    password: useRef<TextInputInstance>(null),
-  };
+  const emailRef = useRef<TextInputInstance>(null);
+  const passwordRef = useRef<TextInputInstance>(null);
 
   const submit = () =>
     run(async () => {
       setOutcome(null);
       const checked = checkFields<Name>([
-        ["email", validateEmail(email), refs.email],
-        ["password", validatePassword(password), refs.password],
+        ["email", validateEmail(email), emailRef],
+        ["password", validatePassword(password), passwordRef],
       ]);
       if (!checked.ok) {
         setErrors(checked.errors);
@@ -98,7 +96,7 @@ export function SignInScreen() {
         ) : null}
         <Field
           label={t("fields.email")}
-          inputRef={refs.email}
+          inputRef={emailRef}
           value={email}
           onChangeText={setEmail}
           error={fieldError("email")}
@@ -109,7 +107,7 @@ export function SignInScreen() {
         />
         <Field
           label={t("fields.password")}
-          inputRef={refs.password}
+          inputRef={passwordRef}
           value={password}
           onChangeText={setPassword}
           error={fieldError("password")}

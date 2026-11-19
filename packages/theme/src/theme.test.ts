@@ -39,7 +39,9 @@ describe("theme.css", () => {
     ["light", light],
     ["dark", dark],
   ] as const)("defines every semantic colour in %s mode, and nothing else", (_mode, values) => {
-    expect(Object.keys(values).sort()).toEqual(COLOURS.map((name) => `--color-${name}`).sort());
+    expect(Object.keys(values).toSorted()).toEqual(
+      COLOURS.map((name) => `--color-${name}`).toSorted(),
+    );
   });
 
   it("defaults each colour to its light value, so utilities exist before a mode applies", () => {

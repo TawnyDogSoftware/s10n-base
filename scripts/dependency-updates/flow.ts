@@ -107,12 +107,11 @@ async function readManifests(io: Io): Promise<ManifestFile[]> {
       : [];
   const paths = (await Promise.all(patterns.map((pattern) => io.glob(`${pattern}/package.json`))))
     .flat()
-    .sort();
-  const files: ManifestFile[] = [{ path: "package.json", json: root }];
-  for (const path of paths) {
-    files.push({ path, json: JSON.parse(await io.readFile(path)) as Manifest });
-  }
-  return files;
+    .toSorted();
+  const workspaceFiles = await Promise.all(
+    paths.map(async (path) => ({ path, json: JSON.parse(await io.readFile(path)) as Manifest })),
+  );
+  return [{ path: "package.json", json: root }, ...workspaceFiles];
 }
 
 async function findOpenPr(io: Io, label: string): Promise<OpenPr | undefined> {
@@ -127,7 +126,7 @@ async function findOpenPr(io: Io, label: string): Promise<OpenPr | undefined> {
     "number,headRefName,url",
   ]);
   const prs = JSON.parse(result.stdout) as OpenPr[];
-  return prs.sort((a, b) => b.number - a.number)[0];
+  return prs.toSorted((a, b) => b.number - a.number)[0];
 }
 
 interface Start {
@@ -179,11 +178,15 @@ async function readAtCommit(io: Io, sha: string, path: string): Promise<string |
 }
 
 async function readBase(io: Io, sha: string): Promise<BaseSnapshot> {
-  const files: ManifestFile[] = [];
-  for (const { path } of await readManifests(io)) {
-    const text = await readAtCommit(io, sha, path);
-    if (text !== undefined) files.push({ path, json: JSON.parse(text) as Manifest });
-  }
+  const read = await Promise.all(
+    (await readManifests(io)).map(async ({ path }) => ({
+      path,
+      text: await readAtCommit(io, sha, path),
+    })),
+  );
+  const files: ManifestFile[] = read.flatMap(({ path, text }) =>
+    text === undefined ? [] : [{ path, json: JSON.parse(text) as Manifest }],
+  );
   const root = files.find((file) => file.path === "package.json")?.json;
   return {
     specs: collectSpecs(files),
@@ -235,9 +238,11 @@ async function updatePackages(
     const restored = new Map(
       restorations.map((restoration) => [restoration.name, restoration.restoredTo]),
     );
-    for (const file of applySpecs(updated, restored)) {
-      await io.writeFile(file.path, formatManifest(file.json));
-    }
+    await Promise.all(
+      applySpecs(updated, restored).map((file) =>
+        io.writeFile(file.path, formatManifest(file.json)),
+      ),
+    );
     await mustRun(io, "bun", ["install", "--ignore-scripts"]);
   }
   return restorations;
@@ -311,12 +316,13 @@ async function packagesHeldByAge(io: Io): Promise<AgeHeldPackage[]> {
         };
         const newest = doc["dist-tags"]?.latest;
         const publishedAt = newest === undefined ? undefined : doc.time?.[newest];
-        return {
+        const held: { -readonly [Key in keyof AgeHeldPackage]: AgeHeldPackage[Key] } = {
           name: row.name,
           current: row.current,
-          ...(newest === undefined ? {} : { newest }),
-          ...(publishedAt === undefined ? {} : { publishedAt }),
         };
+        if (newest !== undefined) held.newest = newest;
+        if (publishedAt !== undefined) held.publishedAt = publishedAt;
+        return held;
       } catch {
         return { name: row.name, current: row.current };
       }

@@ -64,6 +64,10 @@ const startLock = {
   oxlint: "1.93.0",
 };
 
+function ok(stdout = ""): Promise<CommandResult> {
+  return Promise.resolve({ code: 0, stdout, stderr: "" });
+}
+
 class FakeIo implements Io {
   files = new Map<string, string>();
   readonly commands: string[] = [];
@@ -100,8 +104,6 @@ class FakeIo implements Io {
     const line = [command, ...args].join(" ");
     this.commands.push(line);
     if (options?.input !== undefined) this.inputs.set(line, options.input);
-    const ok = (stdout = ""): Promise<CommandResult> =>
-      Promise.resolve({ code: 0, stdout, stderr: "" });
 
     this.atBase ??= new Map(this.files);
     const revParse = /^git rev-parse --verify (.+)\^\{commit\}$/.exec(line);

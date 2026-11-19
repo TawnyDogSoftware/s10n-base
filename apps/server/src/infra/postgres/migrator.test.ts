@@ -28,7 +28,7 @@ describe("runMigrationCommand", () => {
   const db = {} as Kysely<unknown>;
 
   it.each(["down", "reset"] as const)("refuses %s when NODE_ENV is production", async (command) => {
-    const log = vi.fn();
+    const log = vi.fn<(message: string) => void>();
 
     await expect(
       runMigrationCommand(command, {

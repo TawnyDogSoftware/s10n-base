@@ -25,10 +25,6 @@ export class RpcError extends Error {
  */
 export class DecodeError extends Error {
   override readonly name = "DecodeError";
-
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-  }
 }
 
 /**
@@ -38,10 +34,6 @@ export class DecodeError extends Error {
  */
 export class NetworkError extends Error {
   override readonly name = "NetworkError";
-
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-  }
 }
 
 export interface TransportOptions {

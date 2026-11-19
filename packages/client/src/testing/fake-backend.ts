@@ -146,7 +146,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       }
       case "admin.listUsers": {
         if (user.role !== "admin") return rpcError(403, "auth.forbidden");
-        const all = [...users.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        const all = [...users.values()].toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
         const start = typeof body.payload.cursor === "string" ? Number(body.payload.cursor) : 0;
         const limit = Number(body.payload.limit);
         const page = all.slice(start, start + limit);
@@ -344,9 +344,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     liveSessions: () => sessions.size,
     /** The latest unused token of a kind for an address, as the email would carry it. */
     tokenFor(email: string, kind: "verify" | "reset") {
-      return [...tokens]
-        .filter(([, entry]) => entry.email === email && entry.kind === kind)
-        .at(-1)?.[0];
+      return [...tokens].findLast(([, entry]) => entry.email === email && entry.kind === kind)?.[0];
     },
     /** Makes the next request to `path` fail. */
     failNext(path: string, failure: Failure) {

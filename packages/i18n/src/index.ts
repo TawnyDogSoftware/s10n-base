@@ -2,7 +2,7 @@
  * The catalogs and i18next setup shared by the web app, the mobile app and the server's emails.
  * Keys are typed: a key that does not exist in English is a compile error.
  */
-import i18next, { type InitOptions, type TFunction } from "i18next";
+import { createInstance, type InitOptions, type TFunction } from "i18next";
 
 import { type Catalog, en } from "./locales/en";
 
@@ -75,7 +75,7 @@ export function createTranslator<N extends Namespace>(
   namespace: N,
   locale: Locale = DEFAULT_LOCALE,
 ): TFunction<N> {
-  const instance = i18next.createInstance();
+  const instance = createInstance();
   void instance.init(baseInitOptions(locale, namespace));
   return instance.getFixedT(locale, namespace);
 }

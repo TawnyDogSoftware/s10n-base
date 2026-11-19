@@ -16,7 +16,7 @@ export interface NodeIndexEntry {
 }
 
 function newest(versions: readonly string[]): string | undefined {
-  return [...versions].sort(compareVersions).at(-1);
+  return [...versions].toSorted(compareVersions).at(-1);
 }
 
 /** The newest stable bun release (tag `bun-vX.Y.Z`) published at least 3 days before `now`. */

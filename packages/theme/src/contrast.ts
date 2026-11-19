@@ -19,12 +19,14 @@ export function parseHexColor(value: string): Rgb {
   ) as unknown as Rgb;
 }
 
+/** One sRGB channel (0 to 255) on the linear scale WCAG's luminance formula uses. */
+function linear(channel: number): number {
+  const value = channel / 255;
+  return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+}
+
 /** WCAG 2 relative luminance of an sRGB colour. */
 export function relativeLuminance([red, green, blue]: Rgb): number {
-  const linear = (channel: number) => {
-    const value = channel / 255;
-    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-  };
   return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue);
 }
 
@@ -33,7 +35,7 @@ export function contrastRatio(first: string, second: string): number {
   const [lighter, darker] = [
     relativeLuminance(parseHexColor(first)),
     relativeLuminance(parseHexColor(second)),
-  ].sort((left, right) => right - left) as [number, number];
+  ].toSorted((left, right) => right - left) as [number, number];
   return (lighter + 0.05) / (darker + 0.05);
 }
 

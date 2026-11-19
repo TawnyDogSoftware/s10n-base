@@ -37,7 +37,7 @@ describe("AppSession", () => {
   };
 
   it("has exactly the fields clients rely on", () => {
-    expect(Object.keys(AppSession.fields).sort()).toEqual([
+    expect(Object.keys(AppSession.fields).toSorted()).toEqual([
       "email",
       "emailVerified",
       "image",
@@ -55,7 +55,9 @@ describe("AppSession", () => {
   });
 
   it("rejects an unknown role", () => {
-    expect(() => Schema.decodeUnknownSync(AppSession)({ ...session, role: "owner" })).toThrow();
+    expect(() => Schema.decodeUnknownSync(AppSession)({ ...session, role: "owner" })).toThrow(
+      'Expected "user" | "admin"\n  at ["role"]',
+    );
   });
 });
 
@@ -69,11 +71,13 @@ describe("BootstrapConfig", () => {
   });
 
   it("rejects a value missing a field", () => {
-    expect(() => decode({ appName: "S10N Base", appVersion: "0.0.0" })).toThrow();
+    expect(() => decode({ appName: "S10N Base", appVersion: "0.0.0" })).toThrow(
+      'Missing key\n  at ["apiBaseUrl"]',
+    );
   });
 
   it("has exactly the three fields, without the removed desktop and live-stream fields", () => {
-    expect(Object.keys(BootstrapConfig.fields).sort()).toEqual([
+    expect(Object.keys(BootstrapConfig.fields).toSorted()).toEqual([
       "apiBaseUrl",
       "appName",
       "appVersion",
@@ -92,15 +96,15 @@ describe("RpcRequest", () => {
   });
 
   it("rejects a non-string method", () => {
-    expect(() => decode({ method: 42, payload: {} })).toThrow();
+    expect(() => decode({ method: 42, payload: {} })).toThrow('Expected string\n  at ["method"]');
   });
 
   it("rejects an envelope without a payload key", () => {
-    expect(() => decode({ method: "example.get" })).toThrow();
+    expect(() => decode({ method: "example.get" })).toThrow('Missing key\n  at ["payload"]');
   });
 
   it("rejects a value that is not an object", () => {
-    expect(() => decode("example.get")).toThrow();
+    expect(() => decode("example.get")).toThrow("Expected object");
   });
 });
 
@@ -129,15 +133,6 @@ describe("defineRpc", () => {
     expect(decoded).toEqual({ n: 1 });
     expect(encoded).toBe("2");
   });
-
-  it("requires an auth level", () => {
-    // @ts-expect-error auth is required: there is no default level.
-    defineRpc({
-      method: "example.none",
-      payload: Schema.Struct({}),
-      success: Schema.Struct({}),
-    });
-  });
 });
 
 describe("RpcAuth", () => {
@@ -150,8 +145,8 @@ describe("RpcAuth", () => {
   });
 
   it("rejects an unknown level or role", () => {
-    expect(() => decode("anyone")).toThrow();
-    expect(() => decode({ role: "owner" })).toThrow();
+    expect(() => decode("anyone")).toThrow('Expected "public" | "session"');
+    expect(() => decode({ role: "owner" })).toThrow('Expected "user" | "admin"\n  at ["role"]');
   });
 });
 

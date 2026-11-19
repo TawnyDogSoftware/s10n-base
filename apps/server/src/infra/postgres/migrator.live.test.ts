@@ -13,6 +13,8 @@ import {
 } from "./migrator";
 import { createDb, createPool } from "./pool";
 
+const noop = () => {};
+
 function createTable(name: string): Migration {
   return {
     up: async (db) => {
@@ -152,7 +154,7 @@ describe("migrator against Postgres", () => {
 
   it("makes two concurrent runs take turns on the lock", async () => {
     const events: string[] = [];
-    let release = () => {};
+    let release: () => void = noop;
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
@@ -184,6 +186,6 @@ describe("migrator against Postgres", () => {
       migrateUp({ db: openDb(1), schema: fixture.schema, migrations: fixtureMigrations }),
     ]);
 
-    expect(runs.flat().sort()).toEqual(["001_create_widget", "002_create_gadget"]);
+    expect(runs.flat().toSorted()).toEqual(["001_create_widget", "002_create_gadget"]);
   });
 });

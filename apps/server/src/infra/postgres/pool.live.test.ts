@@ -38,7 +38,7 @@ describe("createPool against Postgres", () => {
   });
 
   it("survives an idle connection being killed, reports it, and reconnects", async () => {
-    const onIdleError = vi.fn();
+    const onIdleError = vi.fn<(error: Error) => void>();
     const pool = createPool({ connectionString: fixture.url, max: 1, onIdleError });
     const db = createDb(pool);
     try {

@@ -76,11 +76,13 @@ export function localInboxUrl(
   return `${new URL(endpoint).origin}/`;
 }
 
+const noop = () => {};
+
 async function main(): Promise<number> {
   const { source, env } = loadLocalEnv(ROOT, process.env);
   console.log(`bun dev: using ${source}`);
 
-  let requestStop = () => {};
+  let requestStop: () => void = noop;
   const stop = new Promise<void>((resolve) => {
     requestStop = resolve;
   });

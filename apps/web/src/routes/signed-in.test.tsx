@@ -242,19 +242,19 @@ describe("a session that ends while a page is open", () => {
   });
 });
 
-describe("/admin/users", () => {
-  function withUsers(count: number) {
-    const backend = signedIn("admin@example.com", "admin");
-    for (let index = 0; index < count; index += 1) {
-      backend.addUser({
-        email: `user${index}@example.com`,
-        name: `User ${index}`,
-        verified: index % 2 === 0,
-      });
-    }
-    return backend;
+function withUsers(count: number) {
+  const backend = signedIn("admin@example.com", "admin");
+  for (let index = 0; index < count; index += 1) {
+    backend.addUser({
+      email: `user${index}@example.com`,
+      name: `User ${index}`,
+      verified: index % 2 === 0,
+    });
   }
+  return backend;
+}
 
+describe("/admin/users", () => {
   it("lists users for an admin, and loads more", async () => {
     const backend = withUsers(ADMIN_USERS_PAGE_SIZE + 5);
     renderApp("/admin/users", backend);

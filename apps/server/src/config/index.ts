@@ -431,7 +431,7 @@ function inVariableOrder(problems: Array<ConfigProblem>): Array<ConfigProblem> {
   const order = serverVariables.map((entry) => entry.name);
   return problems
     .map((problem, index) => ({ problem, index }))
-    .sort(
+    .toSorted(
       (a, b) =>
         order.indexOf(a.problem.variable) - order.indexOf(b.problem.variable) || a.index - b.index,
     )
