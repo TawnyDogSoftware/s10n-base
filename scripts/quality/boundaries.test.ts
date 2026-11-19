@@ -7,12 +7,18 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { cruise, type ICruiseResult, type IForbiddenRuleType } from "dependency-cruiser";
+import {
+  cruise,
+  type ICruiseOptions,
+  type ICruiseResult,
+  type IForbiddenRuleType,
+} from "dependency-cruiser";
 import { afterAll, describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
 const config = require("../../.dependency-cruiser.cjs") as {
   forbidden: IForbiddenRuleType[];
+  options: ICruiseOptions;
 };
 
 const roots: string[] = [];
@@ -37,10 +43,11 @@ async function violations(files: Record<string, string>): Promise<string[]> {
   const root = tree(files);
   const tops = [...new Set(Object.keys(files).map((file) => file.split("/")[0] ?? ""))];
   const result = await cruise(tops, {
+    // The config's own options, so what it leaves out of the graph is left out here too.
+    ...config.options,
     baseDir: root,
     ruleSet: { forbidden: config.forbidden },
     validate: true,
-    tsPreCompilationDeps: true,
   });
   const output = result.output as ICruiseResult;
   return output.summary.violations
@@ -85,6 +92,17 @@ describe("the boundary rules", () => {
     expect(await violations(importing("apps/web/src/a.ts", "apps/server/src/b.ts", true))).toEqual([
       "apps-never-import-each-other",
     ]);
+  });
+
+  it("fires no-unresolvable for an import that resolves to nothing", async () => {
+    // A workspace package the importer does not declare resolves to nothing: bun links each
+    // workspace's own dependencies only. Without this rule, the package rules could not see it.
+    const found = await violations({
+      "apps/server/src/a.ts":
+        'import { thing } from "@s10n-base/client";\nexport const a = thing;\n',
+    });
+
+    expect(found).toEqual(["no-unresolvable"]);
   });
 
   it("fires no-circular for two modules that import each other", async () => {

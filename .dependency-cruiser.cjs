@@ -9,7 +9,7 @@
 //   packages/shared        nothing
 //   packages/theme         nothing
 //   packages/i18n          nothing; its tests read the error codes from contracts
-// Packages never import apps, and apps never import each other.
+// Packages never import apps, apps never import each other, and every import must resolve.
 
 /** Test files and test support, which may reach further than the code they test. */
 const TESTS = "(\\.test\\.tsx?$|/src/test/|/src/testing/|/src/test-fetch\\.ts$)";
@@ -40,6 +40,14 @@ module.exports = {
       comment: "Source imports source, never build output, which may be stale or missing.",
       from: {},
       to: { path: "(^|/)(dist|build|coverage|\\.expo)/", pathNot: "(^|/)node_modules/" },
+    },
+    {
+      name: "no-unresolvable",
+      severity: "error",
+      comment:
+        "An import that resolves to nothing, such as a workspace package the importer does not declare, would slip past the rules below.",
+      from: {},
+      to: { couldNotResolve: true },
     },
     {
       name: "packages-never-import-apps",
@@ -93,8 +101,10 @@ module.exports = {
     ),
   ],
   options: {
-    doNotFollow: { path: "node_modules" },
-    exclude: { path: "(^|/)(node_modules|dist|coverage|\\.expo|ios|android)/" },
+    // Build output stays in the graph, so no-build-output can see an import of it, but what it
+    // imports in turn is not followed.
+    doNotFollow: { path: "(^|/)(node_modules|dist|coverage|\\.expo)/" },
+    exclude: { path: "(^|/)(node_modules|ios|android)/" },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: "tsconfig.base.json" },
     enhancedResolveOptions: {
