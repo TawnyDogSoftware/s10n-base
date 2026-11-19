@@ -82,9 +82,72 @@ function NameForm(props: { readonly profile: Profile }) {
   );
 }
 
-function Passkeys() {
+type PasskeyMessage =
+  | { readonly kind: "done"; readonly text: string }
+  | { readonly kind: "error"; readonly text: string }
+  | { readonly kind: "unknown"; readonly outcome: SettledAction<AuthResult> };
+
+/** What the profile shows while a query has no data: loading, or the reason it failed. */
+function QueryFallback(props: { readonly failed: boolean; readonly message: string }) {
+  return props.failed ? <Notice tone="danger">{props.message}</Notice> : <Loading />;
+}
+
+function PasskeyList(props: {
+  readonly passkeys: readonly Passkey[];
+  readonly pending: boolean;
+  readonly onRemove: (passkey: Passkey) => void;
+}) {
   const { t, i18n } = useTranslation("profile");
-  const { t: tCommon } = useTranslation("common");
+  if (props.passkeys.length === 0) return <p>{t("passkeys.empty")}</p>;
+  return (
+    <ul className="flex flex-col gap-3">
+      {props.passkeys.map((passkey) => {
+        const name = passkey.name ?? t("passkeys.unnamed");
+        return (
+          <li
+            key={passkey.id}
+            className="border-border flex items-center justify-between gap-4 rounded-md border px-4 py-3"
+          >
+            <div>
+              <p className="font-medium">{name}</p>
+              <p className="text-muted text-sm">
+                {t("passkeys.addedOn", { date: formatDate(passkey.createdAt, i18n.language) })}
+              </p>
+            </div>
+            <Button
+              variant="secondary"
+              disabled={props.pending}
+              aria-label={t("passkeys.removeLabel", { name })}
+              onClick={() => {
+                props.onRemove(passkey);
+              }}
+            >
+              {t("passkeys.remove")}
+            </Button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function PasskeyNotice(props: { readonly message: PasskeyMessage | null }) {
+  const { t } = useTranslation("common");
+  const { message } = props;
+  if (message === null) return null;
+  if (message.kind === "unknown") {
+    return (
+      <UnknownOutcome
+        session={message.outcome.session}
+        signedInText={t("unknownOutcome.stillSignedIn")}
+      />
+    );
+  }
+  return <Notice tone={message.kind === "done" ? "success" : "danger"}>{message.text}</Notice>;
+}
+
+function Passkeys() {
+  const { t } = useTranslation("profile");
   const { t: tError } = useTranslation("errors");
   const { auth, gate } = useServices();
   const { query } = useProtectedQuery(["passkeys"], async () => {
@@ -93,12 +156,7 @@ function Passkeys() {
     return result.data;
   });
   const [pending, run] = usePending();
-  const [message, setMessage] = useState<
-    | { kind: "done"; text: string }
-    | { kind: "error"; text: string }
-    | { kind: "unknown"; outcome: SettledAction<AuthResult> }
-    | null
-  >(null);
+  const [message, setMessage] = useState<PasskeyMessage | null>(null);
   const supported = typeof window.PublicKeyCredential === "function";
 
   /** Adds or removes a passkey, then reads the list again: it is the truth either way. */
@@ -112,45 +170,19 @@ function Passkeys() {
       else setMessage({ kind: "error", text: tError(errorMessageKey(result.value)) });
     });
 
-  const list: readonly Passkey[] = query.data ?? [];
   return (
     <Card title={t("passkeys.title")}>
       <p className="text-muted">{t("passkeys.intro")}</p>
-      {query.isPending ? (
-        <Loading />
-      ) : query.isError ? (
-        <Notice tone="danger">{tError("generic")}</Notice>
-      ) : list.length === 0 ? (
-        <p>{t("passkeys.empty")}</p>
+      {query.isSuccess ? (
+        <PasskeyList
+          passkeys={query.data}
+          pending={pending}
+          onRemove={(passkey) =>
+            void change(() => auth.deletePasskey(passkey.id), t("passkeys.removed"))
+          }
+        />
       ) : (
-        <ul className="flex flex-col gap-3">
-          {list.map((passkey) => {
-            const name = passkey.name ?? t("passkeys.unnamed");
-            return (
-              <li
-                key={passkey.id}
-                className="border-border flex items-center justify-between gap-4 rounded-md border px-4 py-3"
-              >
-                <div>
-                  <p className="font-medium">{name}</p>
-                  <p className="text-muted text-sm">
-                    {t("passkeys.addedOn", { date: formatDate(passkey.createdAt, i18n.language) })}
-                  </p>
-                </div>
-                <Button
-                  variant="secondary"
-                  disabled={pending}
-                  aria-label={t("passkeys.removeLabel", { name })}
-                  onClick={() =>
-                    void change(() => auth.deletePasskey(passkey.id), t("passkeys.removed"))
-                  }
-                >
-                  {t("passkeys.remove")}
-                </Button>
-              </li>
-            );
-          })}
-        </ul>
+        <QueryFallback failed={query.isError} message={tError("generic")} />
       )}
       {supported ? (
         <div>
@@ -165,54 +197,50 @@ function Passkeys() {
       ) : (
         <p className="text-muted">{t("passkeys.unsupported")}</p>
       )}
-      {message?.kind === "done" ? <Notice tone="success">{message.text}</Notice> : null}
-      {message?.kind === "error" ? <Notice tone="danger">{message.text}</Notice> : null}
-      {message?.kind === "unknown" ? (
-        <UnknownOutcome
-          session={message.outcome.session}
-          signedInText={tCommon("unknownOutcome.stillSignedIn")}
-        />
-      ) : null}
+      <PasskeyNotice message={message} />
     </Card>
   );
 }
 
-function ProfilePage() {
+function ProfileDetails(props: { readonly profile: Profile }) {
   const { t, i18n } = useTranslation("profile");
+  const { profile } = props;
+  return (
+    <>
+      {/* Keyed by user, so a form never keeps another user's typed name. */}
+      <NameForm key={profile.userId} profile={profile} />
+      <dl className="flex flex-col gap-1">
+        <dt className="font-medium">{t("emailLabel")}</dt>
+        <dd>
+          <span>{profile.email}</span>
+          <span
+            className={`ml-3 rounded-sm border px-2 text-sm ${profile.emailVerified ? "text-success border-success" : "text-danger border-danger"}`}
+          >
+            {profile.emailVerified ? t("verified") : t("unverified")}
+          </span>
+        </dd>
+      </dl>
+      <p className="text-muted">
+        {t("memberSince", { date: formatDate(profile.createdAt, i18n.language) })}
+      </p>
+    </>
+  );
+}
+
+function ProfilePage() {
+  const { t } = useTranslation("profile");
   const { t: tError } = useTranslation("errors");
   const { rpc } = useServices();
   const { query } = useProtectedQuery(["profile"], (signal) =>
     rpc.call(profileGet, {}, { signal }),
   );
-  const profile = query.data;
   return (
     <PageShell title={t("title")} width="wide">
       <Card title={t("details")}>
-        {profile === undefined ? (
-          query.isError ? (
-            <Notice tone="danger">{tError(errorMessageKey(query.error))}</Notice>
-          ) : (
-            <Loading />
-          )
+        {query.data === undefined ? (
+          <QueryFallback failed={query.isError} message={tError(errorMessageKey(query.error))} />
         ) : (
-          <>
-            {/* Keyed by user, so a form never keeps another user's typed name. */}
-            <NameForm key={profile.userId} profile={profile} />
-            <dl className="flex flex-col gap-1">
-              <dt className="font-medium">{t("emailLabel")}</dt>
-              <dd>
-                <span>{profile.email}</span>
-                <span
-                  className={`ml-3 rounded-sm border px-2 text-sm ${profile.emailVerified ? "text-success border-success" : "text-danger border-danger"}`}
-                >
-                  {profile.emailVerified ? t("verified") : t("unverified")}
-                </span>
-              </dd>
-            </dl>
-            <p className="text-muted">
-              {t("memberSince", { date: formatDate(profile.createdAt, i18n.language) })}
-            </p>
-          </>
+          <ProfileDetails profile={query.data} />
         )}
       </Card>
       <Passkeys />

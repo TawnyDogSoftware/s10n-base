@@ -7,7 +7,7 @@ import { Effect, Exit, Redacted, type Schedule } from "effect";
 import type { Kysely } from "kysely";
 import type { Migration } from "kysely/migration";
 
-import { databaseConfigFromEnv, ServerConfigError } from "./config";
+import { databaseConfigFromEnv, type DatabaseConfig, ServerConfigError } from "./config";
 import { pingDatabase, waitForDatabase } from "./infra/postgres/connect";
 import { migrations as committedMigrations } from "./infra/postgres/migrations";
 import {
@@ -17,7 +17,7 @@ import {
   runMigrationCommand,
 } from "./infra/postgres/migrator";
 import { createDb, createPool } from "./infra/postgres/pool";
-import { createLogger, type LogWriter } from "./observability/logger";
+import { createLogger, type Logger, type LogWriter } from "./observability/logger";
 
 export interface MigrateCliOptions {
   readonly args: ReadonlyArray<string>;
@@ -30,42 +30,28 @@ export interface MigrateCliOptions {
   readonly schema?: string;
 }
 
-export async function runMigrateCli(options: MigrateCliOptions): Promise<number> {
-  const startupLogger = createLogger({
-    level: "info",
-    ...(options.write ? { write: options.write } : {}),
+/** The database config from `env`, or undefined after logging why it is invalid. */
+function readDatabaseConfig(
+  env: MigrateCliOptions["env"],
+  logger: Logger,
+): DatabaseConfig | undefined {
+  const exit = Effect.runSyncExit(databaseConfigFromEnv(env));
+  if (Exit.isSuccess(exit)) return exit.value;
+  const error = exit.cause.reasons.find((reason) => reason._tag === "Fail")?.error;
+  logger.error("config_invalid", {
+    error:
+      error instanceof ServerConfigError ? { name: error._tag, message: error.message } : error,
   });
+  return undefined;
+}
 
-  let command: MigrationCommand;
-  try {
-    command = parseMigrationCommand(options.args);
-  } catch (error) {
-    startupLogger.error("migrate_usage", { usage: (error as Error).message });
-    return 1;
-  }
-
-  const configExit = Effect.runSyncExit(databaseConfigFromEnv(options.env));
-  if (Exit.isFailure(configExit)) {
-    const error = configExit.cause.reasons.find((reason) => reason._tag === "Fail")?.error;
-    startupLogger.error("config_invalid", {
-      error:
-        error instanceof ServerConfigError ? { name: error._tag, message: error.message } : error,
-    });
-    return 1;
-  }
-  const config = configExit.value;
-  const logger = createLogger({
-    level: config.logLevel,
-    ...(options.write ? { write: options.write } : {}),
-  });
-
-  try {
-    assertCommandAllowed(command, config.nodeEnv);
-  } catch (error) {
-    logger.error("migrate_refused", { error });
-    return 1;
-  }
-
+/** Connects with a pool of one, waits for the database, and runs `command`. */
+async function runWithDatabase(
+  command: MigrationCommand,
+  config: DatabaseConfig,
+  logger: Logger,
+  options: MigrateCliOptions,
+): Promise<number> {
   const schema = options.schema ?? "public";
   const pool = createPool({
     connectionString: Redacted.value(config.databaseUrl),
@@ -99,4 +85,29 @@ export async function runMigrateCli(options: MigrateCliOptions): Promise<number>
   } finally {
     await db.destroy();
   }
+}
+
+export async function runMigrateCli(options: MigrateCliOptions): Promise<number> {
+  const writer = options.write ? { write: options.write } : {};
+  const startupLogger = createLogger({ level: "info", ...writer });
+
+  let command: MigrationCommand;
+  try {
+    command = parseMigrationCommand(options.args);
+  } catch (error) {
+    startupLogger.error("migrate_usage", { usage: (error as Error).message });
+    return 1;
+  }
+
+  const config = readDatabaseConfig(options.env, startupLogger);
+  if (config === undefined) return 1;
+  const logger = createLogger({ level: config.logLevel, ...writer });
+
+  try {
+    assertCommandAllowed(command, config.nodeEnv);
+  } catch (error) {
+    logger.error("migrate_refused", { error });
+    return 1;
+  }
+  return runWithDatabase(command, config, logger, options);
 }

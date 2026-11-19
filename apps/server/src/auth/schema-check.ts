@@ -42,6 +42,15 @@ const TYPES: Readonly<Record<string, string>> = {
   json: "jsonb",
 };
 
+type FieldDefinition = ReturnType<typeof getSchema>[string]["fields"][string];
+
+/** The Postgres type a Better Auth field should have. A reference to a user id is a uuid. */
+function columnType(field: FieldDefinition): string {
+  if (field.references?.field === "id") return "uuid";
+  if (field.type === "number") return field.bigint === true ? "bigint" : "integer";
+  return TYPES[String(field.type)] ?? `unsupported:${String(field.type)}`;
+}
+
 /** The tables and columns Better Auth expects for `options`, as Postgres should hold them. */
 export function expectedAuthTables(options: BetterAuthOptions): TableShapes {
   const tables: Record<string, Record<string, ColumnShape>> = {};
@@ -51,16 +60,8 @@ export function expectedAuthTables(options: BetterAuthOptions): TableShapes {
     };
     for (const [column, field] of Object.entries(definition.fields)) {
       const reference = field.references;
-      const type =
-        reference?.field === "id"
-          ? "uuid"
-          : field.type === "number"
-            ? field.bigint === true
-              ? "bigint"
-              : "integer"
-            : (TYPES[String(field.type)] ?? `unsupported:${String(field.type)}`);
       columns[column] = {
-        type,
+        type: columnType(field),
         nullable: field.required === false,
         unique: field.unique === true,
         indexed: field.unique === true || field.index === true,
@@ -118,18 +119,28 @@ export function authSchemaDifferences(expected: TableShapes, actual: TableShapes
       problems.push(`${table}: Better Auth expects this table, but the database has none`);
       continue;
     }
-    const columnNames = new Set([...Object.keys(want), ...Object.keys(have)]);
-    for (const column of [...columnNames].toSorted((left, right) => left.localeCompare(right))) {
-      const wanted = want[column];
-      const found = have[column];
-      if (wanted === undefined) {
-        problems.push(`${table}.${column}: in the database, but Better Auth does not use it`);
-      } else if (found === undefined) {
-        problems.push(`${table}.${column}: Better Auth expects this column, but it is missing`);
-      } else {
-        const problem = columnProblem(wanted, found);
-        if (problem !== undefined) problems.push(`${table}.${column}: ${problem}`);
-      }
+    problems.push(...columnDifferences(table, want, have));
+  }
+  return problems;
+}
+
+function columnDifferences(
+  table: string,
+  want: Readonly<Record<string, ColumnShape>>,
+  have: Readonly<Record<string, ColumnShape>>,
+): string[] {
+  const problems: string[] = [];
+  const columnNames = new Set([...Object.keys(want), ...Object.keys(have)]);
+  for (const column of [...columnNames].toSorted((left, right) => left.localeCompare(right))) {
+    const wanted = want[column];
+    const found = have[column];
+    if (wanted === undefined) {
+      problems.push(`${table}.${column}: in the database, but Better Auth does not use it`);
+    } else if (found === undefined) {
+      problems.push(`${table}.${column}: Better Auth expects this column, but it is missing`);
+    } else {
+      const problem = columnProblem(wanted, found);
+      if (problem !== undefined) problems.push(`${table}.${column}: ${problem}`);
     }
   }
   return problems;

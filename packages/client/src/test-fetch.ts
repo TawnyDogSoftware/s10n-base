@@ -16,10 +16,15 @@ export function json(body: unknown, status = 200): Response {
   });
 }
 
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") return input;
+  return input instanceof URL ? input.href : input.url;
+}
+
 export function fakeFetch(handler: FakeHandler) {
   const requests: RecordedRequest[] = [];
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const url = requestUrl(input);
     const text = typeof init?.body === "string" ? init.body : undefined;
     const request: RecordedRequest = {
       url,

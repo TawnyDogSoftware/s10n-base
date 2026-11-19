@@ -25,6 +25,12 @@ export interface InventoryEndpoint {
     | undefined;
 }
 
+function servedPath(endpoint: InventoryEndpoint, disabledPaths: readonly string[]): string | null {
+  const { path, options } = endpoint;
+  if (path === undefined || path === "" || options?.metadata?.SERVER_ONLY === true) return null;
+  return disabledPaths.includes(path) ? null : path;
+}
+
 /**
  * Every route Better Auth serves over HTTP for these endpoints (`auth.api`): each method of each
  * endpoint with a path, leaving out server-only endpoints and `disabledPaths`. Sorted by path
@@ -36,10 +42,9 @@ export function authRouteInventory(
 ): AuthRoute[] {
   const routes: AuthRoute[] = [];
   for (const endpoint of Object.values(endpoints)) {
-    const { path, options } = endpoint;
-    if (path === undefined || path === "" || options?.metadata?.SERVER_ONLY === true) continue;
-    if (disabledPaths.includes(path)) continue;
-    const methods = [options?.method ?? []].flat();
+    const path = servedPath(endpoint, disabledPaths);
+    if (path === null) continue;
+    const methods = [endpoint.options?.method ?? []].flat();
     for (const method of methods) routes.push({ method, path });
   }
   return routes.toSorted((a, b) =>

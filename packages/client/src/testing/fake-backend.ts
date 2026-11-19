@@ -172,88 +172,128 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     }
   }
 
+  interface AuthCall {
+    readonly query: URLSearchParams;
+    /** A field of the JSON body, or "" when it is missing. */
+    readonly field: (name: string) => string;
+  }
+
+  function signUp({ field }: AuthCall): Response {
+    if (users.has(field("email"))) return authError(422, "USER_ALREADY_EXISTS");
+    addUser({
+      email: field("email"),
+      name: field("name"),
+      password: field("password"),
+      verified: false,
+    });
+    issueToken(field("email"), "verify");
+    return json({ token: null, user: { email: field("email") } });
+  }
+
+  function signInWithPassword({ field }: AuthCall): Response {
+    const user = users.get(field("email"));
+    if (user?.password !== field("password")) return authError(401, "INVALID_EMAIL_OR_PASSWORD");
+    if (!user.verified) {
+      issueToken(user.email, "verify");
+      return authError(403, "EMAIL_NOT_VERIFIED");
+    }
+    signedIn = user.id;
+    const token = `session-${String(nextId++)}`;
+    sessions.set(token, user.id);
+    return withCookie(
+      json({ redirect: false, token: "t", user: { id: user.id } }),
+      `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`,
+    );
+  }
+
+  function signOut(): Response {
+    signedIn = null;
+    sessions.delete(sessionToken(requestCookie) ?? "");
+    return withCookie(
+      json({ success: true }),
+      `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
+    );
+  }
+
+  function verifyEmail({ query }: AuthCall): Response {
+    const entry = tokens.get(query.get("token") ?? "");
+    if (entry?.kind !== "verify") return authError(401, "INVALID_TOKEN");
+    const user = users.get(entry.email);
+    if (user !== undefined) user.verified = true;
+    return json({ status: true, user: null });
+  }
+
+  function resetPassword({ field }: AuthCall): Response {
+    const entry = tokens.get(field("token"));
+    if (entry?.kind !== "reset") return authError(400, "INVALID_TOKEN");
+    const user = users.get(entry.email);
+    if (user !== undefined) user.password = field("newPassword");
+    tokens.delete(field("token"));
+    signedIn = null;
+    sessions.clear();
+    return json({ status: true });
+  }
+
+  function listPasskeys(): Response {
+    const user = current();
+    return user === undefined ? authError(401, "UNAUTHORIZED") : json(user.passkeys);
+  }
+
+  function deletePasskey({ field }: AuthCall): Response {
+    const user = current();
+    if (user === undefined) return authError(401, "UNAUTHORIZED");
+    user.passkeys = user.passkeys.filter((passkey) => passkey.id !== field("id"));
+    return json({ status: true });
+  }
+
+  const authRoutes: Readonly<Record<string, (call: AuthCall) => Response>> = {
+    "POST /sign-up/email": signUp,
+    "POST /sign-in/email": signInWithPassword,
+    "POST /sign-out": signOut,
+    "GET /verify-email": verifyEmail,
+    "POST /send-verification-email": ({ field }) => {
+      if (users.has(field("email"))) issueToken(field("email"), "verify");
+      return json({ status: true });
+    },
+    "POST /request-password-reset": ({ field }) => {
+      if (users.has(field("email"))) issueToken(field("email"), "reset");
+      return json({ status: true, message: "sent" });
+    },
+    "POST /reset-password": resetPassword,
+    "GET /passkey/list-user-passkeys": listPasskeys,
+    "POST /passkey/delete-passkey": deletePasskey,
+    // No authenticator in jsdom: the browser step fails and the client reports a cancellation.
+    "GET /passkey/generate-authenticate-options": () =>
+      json({ challenge: "c", allowCredentials: [], rpId: "localhost" }),
+  };
+
   function handleAuth(
     method: string,
     path: string,
     query: URLSearchParams,
     body: Record<string, string>,
   ): Response {
-    const route = `${method} ${path}`;
-    switch (route) {
-      case "POST /sign-up/email": {
-        if (users.has(body.email ?? "")) return authError(422, "USER_ALREADY_EXISTS");
-        addUser({
-          email: body.email ?? "",
-          name: body.name ?? "",
-          password: body.password ?? "",
-          verified: false,
-        });
-        issueToken(body.email ?? "", "verify");
-        return json({ token: null, user: { email: body.email } });
-      }
-      case "POST /sign-in/email": {
-        const user = users.get(body.email ?? "");
-        if (user === undefined || user.password !== body.password) {
-          return authError(401, "INVALID_EMAIL_OR_PASSWORD");
-        }
-        if (!user.verified) {
-          issueToken(user.email, "verify");
-          return authError(403, "EMAIL_NOT_VERIFIED");
-        }
-        signedIn = user.id;
-        const token = `session-${String(nextId++)}`;
-        sessions.set(token, user.id);
-        return withCookie(
-          json({ redirect: false, token: "t", user: { id: user.id } }),
-          `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`,
-        );
-      }
-      case "POST /sign-out":
-        signedIn = null;
-        sessions.delete(sessionToken(requestCookie) ?? "");
-        return withCookie(
-          json({ success: true }),
-          `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
-        );
-      case "GET /verify-email": {
-        const entry = tokens.get(query.get("token") ?? "");
-        if (entry?.kind !== "verify") return authError(401, "INVALID_TOKEN");
-        const user = users.get(entry.email);
-        if (user !== undefined) user.verified = true;
-        return json({ status: true, user: null });
-      }
-      case "POST /send-verification-email":
-        if (users.has(body.email ?? "")) issueToken(body.email ?? "", "verify");
-        return json({ status: true });
-      case "POST /request-password-reset":
-        if (users.has(body.email ?? "")) issueToken(body.email ?? "", "reset");
-        return json({ status: true, message: "sent" });
-      case "POST /reset-password": {
-        const entry = tokens.get(body.token ?? "");
-        if (entry?.kind !== "reset") return authError(400, "INVALID_TOKEN");
-        const user = users.get(entry.email);
-        if (user !== undefined) user.password = body.newPassword ?? "";
-        tokens.delete(body.token ?? "");
-        signedIn = null;
-        sessions.clear();
-        return json({ status: true });
-      }
-      case "GET /passkey/list-user-passkeys": {
-        const user = current();
-        return user === undefined ? authError(401, "UNAUTHORIZED") : json(user.passkeys);
-      }
-      case "POST /passkey/delete-passkey": {
-        const user = current();
-        if (user === undefined) return authError(401, "UNAUTHORIZED");
-        user.passkeys = user.passkeys.filter((passkey) => passkey.id !== body.id);
-        return json({ status: true });
-      }
-      case "GET /passkey/generate-authenticate-options":
-        // No authenticator in jsdom: the browser step fails and the client reports a cancellation.
-        return json({ challenge: "c", allowCredentials: [], rpId: "localhost" });
-      default:
-        return authError(404, "NOT_FOUND");
-    }
+    const handler = authRoutes[`${method} ${path}`];
+    if (handler === undefined) return authError(404, "NOT_FOUND");
+    return handler({ query, field: (name) => body[name] ?? "" });
+  }
+
+  /** The session route: answers the session, and renews the cookie once if asked to. */
+  function readSession(): Response {
+    const response = json({ ok: true, data: { session: sessionOf(current()) } });
+    const token = sessionToken(requestCookie);
+    const userId = sessions.get(token ?? "");
+    if (!renewNext || token === undefined || userId === undefined) return response;
+    // The renewed cookie carries a new token and the old one stops working, so only a client
+    // that stores the renewal stays signed in.
+    renewNext = false;
+    sessions.delete(token);
+    const renewed = `session-${String(nextId++)}`;
+    sessions.set(renewed, userId);
+    return withCookie(
+      response,
+      `${SESSION_COOKIE}=${renewed}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`,
+    );
   }
 
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -287,24 +327,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
   function answer(method: string, url: URL, body: unknown, cookie: string | null): Response {
     if (url.origin !== origin) throw new TypeError(`Unexpected origin ${url.origin}`);
     requestCookie = cookie;
-    if (url.pathname === "/api/app-auth/session" && method === "GET") {
-      const response = json({ ok: true, data: { session: sessionOf(current()) } });
-      const token = sessionToken(requestCookie);
-      const userId = sessions.get(token ?? "");
-      if (renewNext && token !== undefined && userId !== undefined) {
-        // The renewed cookie carries a new token and the old one stops working, so only a client
-        // that stores the renewal stays signed in.
-        renewNext = false;
-        sessions.delete(token);
-        const renewed = `session-${String(nextId++)}`;
-        sessions.set(renewed, userId);
-        return withCookie(
-          response,
-          `${SESSION_COOKIE}=${renewed}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`,
-        );
-      }
-      return response;
-    }
+    if (url.pathname === "/api/app-auth/session" && method === "GET") return readSession();
     if (url.pathname === "/rpc" && method === "POST") {
       return handleRpc(body as { method: string; payload: Record<string, unknown> });
     }

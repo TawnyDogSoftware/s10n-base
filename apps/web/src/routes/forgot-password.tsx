@@ -2,12 +2,11 @@ import { createRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { errorMessageKey } from "@s10n-base/client/messages";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 
 import { EmailForm } from "../components/EmailForm";
-import { UnknownOutcome } from "../components/UnknownOutcome";
+import { ActionOutcome } from "../components/UnknownOutcome";
 import { Card, linkClass, Notice, PageShell } from "../components/ui";
 import type { AuthResult } from "../lib/auth";
 import { useServices } from "../services";
@@ -17,7 +16,6 @@ import { rootRoute } from "./root";
 function ForgotPasswordPage() {
   const { t } = useTranslation("auth");
   const { t: tCommon } = useTranslation("common");
-  const { t: tError } = useTranslation("errors");
   const { auth, gate } = useServices();
   const [pending, run] = usePending();
   const [sentTo, setSentTo] = useState<string | null>(null);
@@ -37,14 +35,7 @@ function ForgotPasswordPage() {
   return (
     <PageShell title={t("forgotPassword.title")} intro={t("forgotPassword.intro")}>
       <Card>
-        {outcome?.kind === "unknown" ? (
-          <UnknownOutcome
-            session={outcome.session}
-            signedInText={tCommon("unknownOutcome.nowSignedIn")}
-          />
-        ) : outcome?.kind === "done" && !outcome.value.ok ? (
-          <Notice tone="danger">{tError(errorMessageKey(outcome.value))}</Notice>
-        ) : null}
+        <ActionOutcome outcome={outcome} signedInText={tCommon("unknownOutcome.nowSignedIn")} />
         <EmailForm
           submitLabel={t("forgotPassword.submit")}
           pendingLabel={t("forgotPassword.submitting")}

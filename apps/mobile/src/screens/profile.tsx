@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, type TextInputInstance, View } from "react-native";
 
@@ -69,47 +69,45 @@ function NameForm(props: { readonly profile: Profile }) {
   );
 }
 
+function ProfileDetails(props: { readonly profile: Profile }) {
+  const { t, i18n } = useTranslation("profile");
+  const { profile } = props;
+  return (
+    <>
+      {/* Keyed by user, so the form never keeps another user's typed name. */}
+      <NameForm key={profile.userId} profile={profile} />
+      <View className="gap-1">
+        <Text className="text-foreground font-medium">{t("emailLabel")}</Text>
+        <Body>{profile.email}</Body>
+        <Text
+          className={`self-start rounded-sm border px-2 text-sm ${
+            profile.emailVerified ? "text-success border-success" : "text-danger border-danger"
+          }`}
+        >
+          {profile.emailVerified ? t("verified") : t("unverified")}
+        </Text>
+      </View>
+      <Body muted>{t("memberSince", { date: formatDate(profile.createdAt, i18n.language) })}</Body>
+    </>
+  );
+}
+
 /** Edit the name, see the email, sign out. No passkeys on mobile yet (docs/mobile-dev.md). */
 export function ProfileScreen() {
-  const { t, i18n } = useTranslation("profile");
+  const { t } = useTranslation("profile");
   const { t: tError } = useTranslation("errors");
   const { rpc } = useServices();
   const { query } = useProtectedQuery(["profile"], (signal) =>
     rpc.call(profileGet, {}, { signal }),
   );
-  const profile = query.data;
+  let details: ReactNode;
+  if (query.data !== undefined) details = <ProfileDetails profile={query.data} />;
+  else if (query.isError) {
+    details = <Notice tone="danger">{tError(errorMessageKey(query.error))}</Notice>;
+  } else details = <Loading />;
   return (
     <Screen title={t("title")}>
-      <Card title={t("details")}>
-        {profile === undefined ? (
-          query.isError ? (
-            <Notice tone="danger">{tError(errorMessageKey(query.error))}</Notice>
-          ) : (
-            <Loading />
-          )
-        ) : (
-          <>
-            {/* Keyed by user, so the form never keeps another user's typed name. */}
-            <NameForm key={profile.userId} profile={profile} />
-            <View className="gap-1">
-              <Text className="text-foreground font-medium">{t("emailLabel")}</Text>
-              <Body>{profile.email}</Body>
-              <Text
-                className={`self-start rounded-sm border px-2 text-sm ${
-                  profile.emailVerified
-                    ? "text-success border-success"
-                    : "text-danger border-danger"
-                }`}
-              >
-                {profile.emailVerified ? t("verified") : t("unverified")}
-              </Text>
-            </View>
-            <Body muted>
-              {t("memberSince", { date: formatDate(profile.createdAt, i18n.language) })}
-            </Body>
-          </>
-        )}
-      </Card>
+      <Card title={t("details")}>{details}</Card>
       <Card title={t("session.title")}>
         <Body muted>{t("session.introApp")}</Body>
         <SignOutButton />

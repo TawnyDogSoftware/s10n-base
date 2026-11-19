@@ -163,20 +163,25 @@ async function awsErrorType(response: Response): Promise<{ type?: string; messag
   return { ...(type ? { type } : {}), ...(message === undefined ? {} : { message }) };
 }
 
+/** SES refuses to send from or to an address it has not verified (sandbox accounts too). */
+function isNotVerified(type: string, message: string | undefined): boolean {
+  if (NOT_VERIFIED_ERRORS.has(type)) return true;
+  return type === "MessageRejected" && /not verified/i.test(message ?? "");
+}
+
 function classify(status: number, type: string | undefined, message: string | undefined) {
   const base = { status, ...(type === undefined ? {} : { awsErrorType: type }) };
-  if (type !== undefined && CREDENTIAL_ERRORS.has(type)) {
+  // No AWS error type is the empty string, so "" matches none of the sets below.
+  const awsType = type ?? "";
+  if (CREDENTIAL_ERRORS.has(awsType)) {
     return { ...base, kind: "credentials" as const, retryable: false };
   }
-  if (status === 429 || (type !== undefined && THROTTLING_ERRORS.has(type))) {
+  if (status === 429 || THROTTLING_ERRORS.has(awsType)) {
     // A quota that is used up does not come back in a few hundred milliseconds.
     return { ...base, kind: "throttled" as const, retryable: type !== "LimitExceededException" };
   }
   if (status >= 500) return { ...base, kind: "unavailable" as const, retryable: true };
-  if (
-    (type !== undefined && NOT_VERIFIED_ERRORS.has(type)) ||
-    (type === "MessageRejected" && message !== undefined && /not verified/i.test(message))
-  ) {
+  if (isNotVerified(awsType, message)) {
     return { ...base, kind: "not_verified" as const, retryable: false };
   }
   if (status === 401 || status === 403) {

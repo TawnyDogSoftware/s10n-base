@@ -2,13 +2,12 @@ import { createRoute, Link } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { errorMessageKey } from "@s10n-base/client/messages";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 import { PASSWORD_MIN, validateNewPassword, fieldErrorText } from "@s10n-base/client/validation";
 
-import { UnknownOutcome } from "../components/UnknownOutcome";
-import { Button, Card, Field, linkClass, Notice, PageShell } from "../components/ui";
+import { ActionOutcome } from "../components/UnknownOutcome";
+import { Button, Card, Field, linkClass, PageShell } from "../components/ui";
 import type { AuthResult } from "../lib/auth";
 import { optionalString } from "../lib/search";
 import { useServices } from "../services";
@@ -17,7 +16,6 @@ import { rootRoute } from "./root";
 function ResetPasswordPage() {
   const { t } = useTranslation("auth");
   const { t: tCommon } = useTranslation("common");
-  const { t: tError } = useTranslation("errors");
   const { auth, gate } = useServices();
   const { token } = resetPasswordRoute.useSearch();
   const [password, setPassword] = useState("");
@@ -81,21 +79,13 @@ function ResetPasswordPage() {
             void submit();
           }}
         >
-          {outcome?.kind === "unknown" ? (
-            <UnknownOutcome
-              session={outcome.session}
-              signedInText={tCommon("unknownOutcome.nowSignedIn")}
-            />
-          ) : outcome?.kind === "done" && !outcome.value.ok ? (
-            <Notice tone="danger">
-              <p>{tError(errorMessageKey(outcome.value))}</p>
-              {refusedToken ? (
-                <Link to="/forgot-password" className={linkClass}>
-                  {t("resetPassword.requestNew")}
-                </Link>
-              ) : null}
-            </Notice>
-          ) : null}
+          <ActionOutcome outcome={outcome} signedInText={tCommon("unknownOutcome.nowSignedIn")}>
+            {refusedToken ? (
+              <Link to="/forgot-password" className={linkClass}>
+                {t("resetPassword.requestNew")}
+              </Link>
+            ) : null}
+          </ActionOutcome>
           <Field
             label={t("fields.newPassword")}
             name="password"

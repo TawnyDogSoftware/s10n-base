@@ -5,14 +5,13 @@ import type { TextInputInstance } from "react-native";
 
 import type { AuthResult } from "@s10n-base/client/auth";
 import { checkFields, type FieldErrors } from "@s10n-base/client/form";
-import { errorMessageKey } from "@s10n-base/client/messages";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 import { fieldErrorText, validateEmail, validatePassword } from "@s10n-base/client/validation";
 
 import { CheckEmail } from "../components/check-email";
 import { Body, Button, Card, Field, Notice, Screen, TextButton } from "../components/ui";
-import { UnknownOutcome } from "../components/unknown-outcome";
+import { ActionOutcome } from "../components/unknown-outcome";
 import { useServices } from "../services";
 
 type Name = "email" | "password";
@@ -85,17 +84,11 @@ export function SignInScreen() {
         {Object.keys(errors).length > 0 ? (
           <Notice tone="danger">{t("validation.summary")}</Notice>
         ) : null}
-        {outcome?.kind === "unknown" ? (
-          <UnknownOutcome
-            session={outcome.session}
-            signedInText={tCommon("unknownOutcome.nowSignedIn")}
-          />
-        ) : outcome?.kind === "done" && !outcome.value.ok ? (
-          <Notice tone="danger">{tError(errorMessageKey(outcome.value))}</Notice>
-        ) : outcome?.kind === "done" ? (
-          // Signed in, but the session could not be read to confirm it.
-          <Notice tone="danger">{tError("network")}</Notice>
-        ) : null}
+        <ActionOutcome
+          outcome={outcome}
+          signedInText={tCommon("unknownOutcome.nowSignedIn")}
+          unconfirmedText={tError("network")}
+        />
         <Field
           label={t("fields.email")}
           inputRef={emailRef}

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { inspect } from "node:util";
 
 import { Config, ConfigProvider, Effect, Exit, Redacted } from "effect";
 import { describe, expect, it } from "vitest";
@@ -243,7 +244,10 @@ describe("server config", () => {
       expect(JSON.stringify(error)).not.toContain("s3cret-password");
       expect(String(error)).not.toContain("s3cret-password");
     }
-    expect(String(load({ ...valid, DATABASE_URL: secret }).databaseUrl)).not.toContain("s3cret");
+    const databaseUrl = load({ ...valid, DATABASE_URL: secret }).databaseUrl;
+    expect(JSON.stringify(databaseUrl)).not.toContain("s3cret");
+    expect(inspect(databaseUrl)).not.toContain("s3cret");
+    expect(Redacted.value(databaseUrl)).toContain("s3cret");
   });
 
   it("reads the current ConfigProvider through Effect Config", () => {

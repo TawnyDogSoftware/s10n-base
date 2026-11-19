@@ -9,6 +9,7 @@
 import type { ExpoConfig } from "expo/config";
 
 import { APP_VARIANTS, type AppVariant, appVariants } from "@s10n-base/shared/app-variants";
+import { parseBareOrigin } from "@s10n-base/shared/origin";
 
 import type { NativeColors } from "./theme-colors.ts";
 
@@ -63,21 +64,8 @@ export function resolveApiBaseUrl(variant: AppVariant, value: string | undefined
     if (variant === "development") return DEVELOPMENT_API_BASE_URL;
     throw new Error(`EXPO_PUBLIC_API_BASE_URL is required for the ${variant} variant.`);
   }
-  let url: URL | undefined;
-  try {
-    url = new URL(raw);
-  } catch {
-    url = undefined;
-  }
-  if (
-    url === undefined ||
-    (url.protocol !== "http:" && url.protocol !== "https:") ||
-    url.pathname !== "/" ||
-    url.search !== "" ||
-    url.hash !== "" ||
-    url.username !== "" ||
-    url.password !== ""
-  ) {
+  const url = parseBareOrigin(raw);
+  if (url === null) {
     throw new Error(
       `EXPO_PUBLIC_API_BASE_URL must be a bare http(s) origin such as https://api.example.com; got "${raw}".`,
     );

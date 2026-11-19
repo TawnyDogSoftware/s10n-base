@@ -104,6 +104,7 @@
         "@s10n-base/client": "workspace:*",
         "@s10n-base/contracts": "workspace:*",
         "@s10n-base/i18n": "workspace:*",
+        "@s10n-base/shared": "workspace:*",
         "@s10n-base/theme": "workspace:*",
         "@tanstack/react-query": "catalog:",
         "@tanstack/react-router": "catalog:",

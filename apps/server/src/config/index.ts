@@ -10,6 +10,7 @@
 import { Config, ConfigProvider, Data, Effect, Option, Redacted, Schema } from "effect";
 
 import { APP_VARIANTS, type AppVariant } from "@s10n-base/shared/app-variants";
+import { parseBareOrigin } from "@s10n-base/shared/origin";
 
 import serverPackage from "../../package.json" with { type: "json" };
 import { LOCAL_SES_CREDENTIALS } from "../infra/email/local";
@@ -132,18 +133,7 @@ function parseUrl(value: string): URL | undefined {
  * a query, a fragment or credentials are not.
  */
 export function isBareOrigin(value: string): boolean {
-  const url = parseUrl(value);
-  return (
-    url !== undefined &&
-    (url.protocol === "http:" || url.protocol === "https:") &&
-    url.username === "" &&
-    url.password === "" &&
-    url.pathname === "/" &&
-    url.search === "" &&
-    url.hash === "" &&
-    !value.endsWith("?") &&
-    !value.endsWith("#")
-  );
+  return parseBareOrigin(value) !== null;
 }
 
 function isPostgresUrl(value: string): boolean {
@@ -369,6 +359,55 @@ function rawOf(
   );
 }
 
+interface ProductionRule {
+  readonly variable: string;
+  readonly problem: string;
+  /** Whether the rule is broken. A variable that is itself invalid breaks no rule here. */
+  readonly broken: (provider: ConfigProvider.ConfigProvider) => Effect.Effect<boolean>;
+}
+
+/** Breaks the rule when the variable has a valid value for which `test` holds. */
+function whenValid<A>(entry: Variable<A>, test: (value: A) => boolean): ProductionRule["broken"] {
+  return (provider) => valueOf(entry, provider).pipe(Effect.map(Option.exists(test)));
+}
+
+const PRODUCTION_RULES: ReadonlyArray<ProductionRule> = [
+  {
+    variable: "APP_URL",
+    problem: "must use https when NODE_ENV is production",
+    broken: whenValid(appUrl, (origin) => !origin.startsWith("https://")),
+  },
+  {
+    variable: "APP_VARIANT",
+    problem: `is required when NODE_ENV is production: it must ${appVariant.rule}`,
+    broken: whenValid(appVariant, Option.isNone),
+  },
+  {
+    variable: "BETTER_AUTH_SECRET",
+    problem: "must not be the example value from .env.example when NODE_ENV is production",
+    broken: whenValid(authSecret, (secret) => Redacted.value(secret) === EXAMPLE_AUTH_SECRET),
+  },
+  {
+    // Any value at all: production always uses the regional AWS endpoint.
+    variable: "SES_ENDPOINT",
+    problem: "must not be set when NODE_ENV is production",
+    broken: (provider) => rawOf("SES_ENDPOINT", provider).pipe(Effect.map(Option.isSome)),
+  },
+  {
+    variable: "AWS_ACCESS_KEY_ID",
+    problem: "must not be the local placeholder when NODE_ENV is production",
+    broken: whenValid(awsAccessKeyId, (id) => id === LOCAL_SES_CREDENTIALS.accessKeyId),
+  },
+  {
+    variable: "AWS_SECRET_ACCESS_KEY",
+    problem: "must not be the local placeholder when NODE_ENV is production",
+    broken: whenValid(
+      awsSecretAccessKey,
+      (key) => Redacted.value(key) === LOCAL_SES_CREDENTIALS.secretAccessKey,
+    ),
+  },
+];
+
 /**
  * Rules that involve more than one variable, which all depend on `NODE_ENV` being production.
  * Each is checked whenever the variables it reads are valid, even if others are not, so every
@@ -380,50 +419,8 @@ function crossVariableProblems(
   return Effect.gen(function* () {
     const env = yield* valueOf(nodeEnv, provider);
     if (Option.getOrUndefined(env) !== "production") return [];
-    const problems: Array<ConfigProblem> = [];
-    const origin = yield* valueOf(appUrl, provider);
-    if (Option.isSome(origin) && !origin.value.startsWith("https://")) {
-      problems.push({ variable: "APP_URL", problem: "must use https when NODE_ENV is production" });
-    }
-    const variant = yield* valueOf(appVariant, provider);
-    if (Option.isSome(variant) && Option.isNone(variant.value)) {
-      problems.push({
-        variable: "APP_VARIANT",
-        problem: `is required when NODE_ENV is production: it must ${appVariant.rule}`,
-      });
-    }
-    const secret = yield* valueOf(authSecret, provider);
-    if (Option.isSome(secret) && Redacted.value(secret.value) === EXAMPLE_AUTH_SECRET) {
-      problems.push({
-        variable: "BETTER_AUTH_SECRET",
-        problem: "must not be the example value from .env.example when NODE_ENV is production",
-      });
-    }
-    // Any value at all: production always uses the regional AWS endpoint.
-    if (Option.isSome(yield* rawOf("SES_ENDPOINT", provider))) {
-      problems.push({
-        variable: "SES_ENDPOINT",
-        problem: "must not be set when NODE_ENV is production",
-      });
-    }
-    const keyId = yield* valueOf(awsAccessKeyId, provider);
-    if (Option.isSome(keyId) && keyId.value === LOCAL_SES_CREDENTIALS.accessKeyId) {
-      problems.push({
-        variable: "AWS_ACCESS_KEY_ID",
-        problem: "must not be the local placeholder when NODE_ENV is production",
-      });
-    }
-    const secretKey = yield* valueOf(awsSecretAccessKey, provider);
-    if (
-      Option.isSome(secretKey) &&
-      Redacted.value(secretKey.value) === LOCAL_SES_CREDENTIALS.secretAccessKey
-    ) {
-      problems.push({
-        variable: "AWS_SECRET_ACCESS_KEY",
-        problem: "must not be the local placeholder when NODE_ENV is production",
-      });
-    }
-    return problems;
+    const broken = yield* Effect.filter(PRODUCTION_RULES, (rule) => rule.broken(provider));
+    return broken.map(({ variable, problem }) => ({ variable, problem }));
   });
 }
 

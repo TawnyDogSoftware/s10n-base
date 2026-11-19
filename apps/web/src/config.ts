@@ -1,9 +1,10 @@
 /**
  * The web app's build-time settings. Vite exposes `VITE_*` variables as `import.meta.env`;
  * `vite.config.ts` calls {@link readApiBaseUrl} too, so a malformed value fails the build rather
- * than the page. This file imports nothing: Vite loads the config through Node, which cannot load
- * the workspace packages' TypeScript source.
+ * than the page. Vite loads the config through Node, which can load a workspace file only if it
+ * imports nothing itself, so this file imports only `@s10n-base/shared/origin`, which does not.
  */
+import { parseBareOrigin } from "@s10n-base/shared/origin";
 
 export interface WebEnv {
   readonly VITE_API_BASE_URL?: string | undefined;
@@ -18,21 +19,8 @@ export interface WebEnv {
 export function readApiBaseUrl(env: WebEnv, pageOrigin: string): string {
   const value = env.VITE_API_BASE_URL?.trim() ?? "";
   if (value === "") return pageOrigin;
-  let url: URL | undefined;
-  try {
-    url = new URL(value);
-  } catch {
-    url = undefined;
-  }
-  if (
-    url === undefined ||
-    (url.protocol !== "http:" && url.protocol !== "https:") ||
-    url.pathname !== "/" ||
-    url.search !== "" ||
-    url.hash !== "" ||
-    url.username !== "" ||
-    url.password !== ""
-  ) {
+  const url = parseBareOrigin(value);
+  if (url === null) {
     throw new Error(`VITE_API_BASE_URL must be a bare http(s) origin; got "${value}".`);
   }
   return url.origin;

@@ -155,18 +155,44 @@ async function serveWebApp(state: RequestState, context: HttpContext): Promise<b
   return true;
 }
 
-async function route(state: RequestState, context: HttpContext): Promise<void> {
-  const { request, response, url } = state;
-  const cors = applyCors(request, response, context.config.appOrigin);
+/** Answers a CORS preflight; returns false for any other request. */
+function answeredPreflight(state: RequestState, context: HttpContext): boolean {
+  const cors = applyCors(state.request, state.response, context.config.appOrigin);
   if (cors === "preflight-denied") {
-    sendError(response, 403, ERROR_CODES.forbidden, "This origin is not allowed.");
-    return;
+    sendError(state.response, 403, ERROR_CODES.forbidden, "This origin is not allowed.");
+    return true;
   }
   if (cors === "preflight-allowed") {
-    response.statusCode = 204;
-    response.end();
-    return;
+    state.response.statusCode = 204;
+    state.response.end();
+    return true;
   }
+  return false;
+}
+
+/** Runs the handler for one of `routes`; returns false when the path is not one of them. */
+async function handledRoute(state: RequestState, context: HttpContext): Promise<boolean> {
+  const { request, response, url } = state;
+  const methods = routes[url.pathname];
+  if (methods === undefined) return false;
+  const handler = request.method === undefined ? undefined : methods[request.method];
+  if (handler === undefined) {
+    response.setHeader("Allow", Object.keys(methods).join(", "));
+    sendError(
+      response,
+      405,
+      ERROR_CODES.methodNotAllowed,
+      `${String(request.method)} is not allowed here.`,
+    );
+    return true;
+  }
+  await handler(state, context);
+  return true;
+}
+
+async function route(state: RequestState, context: HttpContext): Promise<void> {
+  const { request, response, url } = state;
+  if (answeredPreflight(state, context)) return;
 
   if (isCrossSiteGuarded(url.pathname) && !(await isAllowedOrigin(request, context.auth))) {
     request.resume();
@@ -183,22 +209,7 @@ async function route(state: RequestState, context: HttpContext): Promise<void> {
     return;
   }
 
-  const methods = routes[url.pathname];
-  if (methods !== undefined) {
-    const handler = request.method === undefined ? undefined : methods[request.method];
-    if (handler === undefined) {
-      response.setHeader("Allow", Object.keys(methods).join(", "));
-      sendError(
-        response,
-        405,
-        ERROR_CODES.methodNotAllowed,
-        `${String(request.method)} is not allowed here.`,
-      );
-      return;
-    }
-    await handler(state, context);
-    return;
-  }
+  if (await handledRoute(state, context)) return;
   if (isApiPath(url.pathname)) {
     sendError(response, 404, ERROR_CODES.notFound, "Not found.");
     return;

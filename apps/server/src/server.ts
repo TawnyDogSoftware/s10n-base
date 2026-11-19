@@ -215,6 +215,38 @@ function listen(server: http.Server, config: ServerConfig): Promise<number> {
   });
 }
 
+/** Stops accepting connections and resolves once every open one has closed. */
+function closeServer(server: http.Server): Promise<void> {
+  return new Promise((resolve) => {
+    server.close(() => {
+      resolve();
+    });
+  });
+}
+
+/**
+ * Lets requests in flight finish, up to the shutdown deadline, then cuts off whatever is left.
+ * Succeeds with whether it had to cut anything off.
+ */
+function drainAndClose(server: http.Server, config: ServerConfig, logger: Logger) {
+  return Effect.gen(function* () {
+    logger.info("http_server_draining", { deadlineMs: config.shutdownTimeoutMs });
+    const closed = closeServer(server);
+    server.closeIdleConnections();
+    const drained = yield* Effect.promise(() => closed).pipe(
+      Effect.timeoutOption(Duration.millis(config.shutdownTimeoutMs)),
+    );
+    const cutOff = Option.isNone(drained);
+    if (cutOff) {
+      logger.warn("http_server_forced_close", { deadlineMs: config.shutdownTimeoutMs });
+      server.closeAllConnections();
+      yield* Effect.promise(() => closed);
+    }
+    logger.info("http_server_closed");
+    return cutOff;
+  });
+}
+
 const httpServerLayer = (options: ServerLayerOptions) =>
   Layer.effect(
     HttpServer,
@@ -253,27 +285,14 @@ const httpServerLayer = (options: ServerLayerOptions) =>
 
       const port = yield* Effect.acquireRelease(
         Effect.tryPromise(() => listen(server, config)),
-        () =>
-          Effect.gen(function* () {
-            shuttingDown = true;
-            logger.info("http_server_draining", { deadlineMs: config.shutdownTimeoutMs });
-            const closed = new Promise<void>((resolve) =>
-              server.close(() => {
-                resolve();
-              }),
-            );
-            server.closeIdleConnections();
-            const drained = yield* Effect.promise(() => closed).pipe(
-              Effect.timeoutOption(Duration.millis(config.shutdownTimeoutMs)),
-            );
-            if (Option.isNone(drained)) {
-              forced = true;
-              logger.warn("http_server_forced_close", { deadlineMs: config.shutdownTimeoutMs });
-              server.closeAllConnections();
-              yield* Effect.promise(() => closed);
-            }
-            logger.info("http_server_closed");
-          }),
+        () => {
+          shuttingDown = true;
+          return drainAndClose(server, config, logger).pipe(
+            Effect.map((wasForced) => {
+              forced = wasForced;
+            }),
+          );
+        },
       );
       logger.info("server_started", { host: config.host, port, appOrigin: config.appOrigin });
       return { port, forced: () => forced };
@@ -314,12 +333,9 @@ export interface StartedServer {
 function failureOf(exit: Exit.Exit<unknown, unknown>): unknown {
   if (Exit.isSuccess(exit)) return undefined;
   const reason = exit.cause.reasons[0];
-  if (reason === undefined) return new Error("Server startup was interrupted.");
-  return reason._tag === "Fail"
-    ? reason.error
-    : reason._tag === "Die"
-      ? reason.defect
-      : new Error("Server startup was interrupted.");
+  if (reason?._tag === "Fail") return reason.error;
+  if (reason?._tag === "Die") return reason.defect;
+  return new Error("Server startup was interrupted.");
 }
 
 /**

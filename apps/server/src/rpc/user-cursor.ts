@@ -26,8 +26,8 @@ function isRealTime(value: string): boolean {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 19) === value.slice(0, 19);
 }
 
-/** The position in a cursor this server issued, or `null` when it is not one. */
-export function decodeUserCursor(cursor: string): UserCursor | null {
+/** The JSON object a base64url cursor holds, or null when it holds anything else. */
+function readCursorObject(cursor: string): Record<string, unknown> | null {
   if (!BASE64URL.test(cursor)) return null;
   let value: unknown;
   try {
@@ -36,10 +36,14 @@ export function decodeUserCursor(cursor: string): UserCursor | null {
     return null;
   }
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  const record = value as Record<string, unknown>;
-  const keys = Object.keys(record);
-  if (keys.length !== 2 || !Object.hasOwn(record, "at") || !Object.hasOwn(record, "id"))
-    return null;
+  return value as Record<string, unknown>;
+}
+
+/** The position in a cursor this server issued, or `null` when it is not one. */
+export function decodeUserCursor(cursor: string): UserCursor | null {
+  const record = readCursorObject(cursor);
+  if (record === null || Object.keys(record).length !== 2) return null;
+  // Two keys, and both of these are strings: so they are exactly `at` and `id`.
   const { at, id } = record;
   if (typeof at !== "string" || typeof id !== "string") return null;
   if (!isRealTime(at) || !UUID.test(id)) return null;

@@ -5,7 +5,6 @@ import type { TextInputInstance } from "react-native";
 
 import type { AuthResult } from "@s10n-base/client/auth";
 import { checkFields, type FieldErrors } from "@s10n-base/client/form";
-import { errorMessageKey } from "@s10n-base/client/messages";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 import {
@@ -18,7 +17,7 @@ import {
 
 import { CheckEmail } from "../components/check-email";
 import { Body, Button, Card, Field, Notice, Screen, TextButton } from "../components/ui";
-import { UnknownOutcome } from "../components/unknown-outcome";
+import { ActionOutcome } from "../components/unknown-outcome";
 import { useServices } from "../services";
 
 type Name = "name" | "email" | "password";
@@ -27,7 +26,6 @@ type Name = "name" | "email" | "password";
 export function SignUpScreen() {
   const { t } = useTranslation("auth");
   const { t: tCommon } = useTranslation("common");
-  const { t: tError } = useTranslation("errors");
   const { auth, gate } = useServices();
   const router = useRouter();
   const [name, setName] = useState("");
@@ -86,14 +84,7 @@ export function SignUpScreen() {
         {Object.keys(errors).length > 0 ? (
           <Notice tone="danger">{t("validation.summary")}</Notice>
         ) : null}
-        {outcome?.kind === "unknown" ? (
-          <UnknownOutcome
-            session={outcome.session}
-            signedInText={tCommon("unknownOutcome.nowSignedIn")}
-          />
-        ) : outcome?.kind === "done" && !outcome.value.ok ? (
-          <Notice tone="danger">{tError(errorMessageKey(outcome.value))}</Notice>
-        ) : null}
+        <ActionOutcome outcome={outcome} signedInText={tCommon("unknownOutcome.nowSignedIn")} />
         <Field
           label={t("fields.name")}
           inputRef={nameRef}

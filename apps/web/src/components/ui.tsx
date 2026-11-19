@@ -87,6 +87,12 @@ export function Field(
   );
 }
 
+const NOTICE_COLOURS = {
+  info: "text-foreground border-border",
+  success: "text-success border-success",
+  danger: "text-danger border-danger",
+} as const;
+
 /**
  * A message about what just happened. `danger` is an alert, read out at once; the others are
  * polite status messages.
@@ -97,12 +103,7 @@ export function Notice(props: {
   readonly children?: ReactNode;
 }) {
   const tone = props.tone ?? "info";
-  const colour =
-    tone === "danger"
-      ? "text-danger border-danger"
-      : tone === "success"
-        ? "text-success border-success"
-        : "text-foreground border-border";
+  const colour = NOTICE_COLOURS[tone];
   return (
     <div
       role={tone === "danger" ? "alert" : "status"}

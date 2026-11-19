@@ -4,13 +4,12 @@ import { useTranslation } from "react-i18next";
 import type { TextInputInstance } from "react-native";
 
 import type { AuthResult } from "@s10n-base/client/auth";
-import { errorMessageKey } from "@s10n-base/client/messages";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 import { fieldErrorText, validateEmail } from "@s10n-base/client/validation";
 
 import { Body, Button, Card, Field, Notice, Screen, TextButton } from "../components/ui";
-import { UnknownOutcome } from "../components/unknown-outcome";
+import { ActionOutcome } from "../components/unknown-outcome";
 import { useServices } from "../services";
 
 /**
@@ -20,7 +19,6 @@ import { useServices } from "../services";
 export function ForgotPasswordScreen() {
   const { t } = useTranslation("auth");
   const { t: tCommon } = useTranslation("common");
-  const { t: tError } = useTranslation("errors");
   const { auth, gate } = useServices();
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -71,14 +69,7 @@ export function ForgotPasswordScreen() {
   return (
     <Screen title={t("forgotPassword.title")} intro={t("forgotPassword.intro")}>
       <Card>
-        {outcome?.kind === "unknown" ? (
-          <UnknownOutcome
-            session={outcome.session}
-            signedInText={tCommon("unknownOutcome.nowSignedIn")}
-          />
-        ) : outcome?.kind === "done" && !outcome.value.ok ? (
-          <Notice tone="danger">{tError(errorMessageKey(outcome.value))}</Notice>
-        ) : null}
+        <ActionOutcome outcome={outcome} signedInText={tCommon("unknownOutcome.nowSignedIn")} />
         <Field
           label={t("fields.email")}
           inputRef={ref}

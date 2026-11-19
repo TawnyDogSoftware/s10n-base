@@ -3,13 +3,12 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { checkFields, type FieldErrors } from "@s10n-base/client/form";
-import { errorMessageKey } from "@s10n-base/client/messages";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 import { validateEmail, validatePassword, fieldErrorText } from "@s10n-base/client/validation";
 
 import { CheckEmail } from "../components/CheckEmail";
-import { UnknownOutcome } from "../components/UnknownOutcome";
+import { ActionOutcome } from "../components/UnknownOutcome";
 import { Button, Card, Field, linkClass, Notice, PageShell } from "../components/ui";
 import type { AuthResult } from "../lib/auth";
 import { safeRedirect } from "../lib/redirect";
@@ -104,17 +103,11 @@ function SignInPage() {
           {Object.keys(errors).length > 0 ? (
             <Notice tone="danger">{t("validation.summary")}</Notice>
           ) : null}
-          {outcome?.kind === "unknown" ? (
-            <UnknownOutcome
-              session={outcome.session}
-              signedInText={tCommon("unknownOutcome.nowSignedIn")}
-            />
-          ) : outcome?.kind === "done" && !outcome.value.ok ? (
-            <Notice tone="danger">{tError(errorMessageKey(outcome.value))}</Notice>
-          ) : outcome?.kind === "done" ? (
-            // Signed in, but the session could not be read to confirm it.
-            <Notice tone="danger">{tError("network")}</Notice>
-          ) : null}
+          <ActionOutcome
+            outcome={outcome}
+            signedInText={tCommon("unknownOutcome.nowSignedIn")}
+            unconfirmedText={tError("network")}
+          />
           <Field
             label={t("fields.email")}
             name="email"

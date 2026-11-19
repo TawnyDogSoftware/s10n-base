@@ -2,14 +2,13 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { errorMessageKey } from "@s10n-base/client/messages";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 
 import type { AuthResult } from "../lib/auth";
 import { useServices } from "../services";
-import { UnknownOutcome } from "./UnknownOutcome";
-import { Button, Notice } from "./ui";
+import { ActionOutcome } from "./UnknownOutcome";
+import { Button } from "./ui";
 
 /**
  * Signs out, then trusts only the session read afterwards: if the answer was lost, the server
@@ -17,7 +16,6 @@ import { Button, Notice } from "./ui";
  */
 export function SignOutButton(props: { readonly variant?: "primary" | "secondary" }) {
   const { t } = useTranslation("common");
-  const { t: tError } = useTranslation("errors");
   const { auth, gate } = useServices();
   const navigate = useNavigate();
   const [pending, run] = usePending();
@@ -50,16 +48,11 @@ export function SignOutButton(props: { readonly variant?: "primary" | "secondary
           {t("signOut")}
         </Button>
       </div>
-      {outcome?.kind === "unknown" ? (
-        <UnknownOutcome
-          session={outcome.session}
-          signedInText={t("unknownOutcome.stillSignedIn")}
-        />
-      ) : outcome?.kind === "done" && !outcome.value.ok ? (
-        <Notice tone="danger">{tError(errorMessageKey(outcome.value))}</Notice>
-      ) : outcome?.kind === "done" ? (
-        <Notice tone="danger">{t("unknownOutcome.stillSignedIn")}</Notice>
-      ) : null}
+      <ActionOutcome
+        outcome={outcome}
+        signedInText={t("unknownOutcome.stillSignedIn")}
+        unconfirmedText={t("unknownOutcome.stillSignedIn")}
+      />
     </div>
   );
 }

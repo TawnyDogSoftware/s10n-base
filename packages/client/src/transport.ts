@@ -5,6 +5,7 @@
 import { Schema } from "effect";
 
 import { AppError } from "@s10n-base/contracts";
+import { parseBareOrigin } from "@s10n-base/shared/origin";
 
 /** The server answered with an `AppError`. The request was handled and refused. */
 export class RpcError extends Error {
@@ -57,20 +58,8 @@ const LOST_ANSWER = new Set([502, 503, 504]);
  * @throws {Error} when it is not an absolute http(s) URL with no path, query or fragment.
  */
 export function parseBaseUrl(baseUrl: string): string {
-  let url: URL;
-  try {
-    url = new URL(baseUrl);
-  } catch {
-    throw new Error(`The API base URL must be an absolute http(s) origin; got "${baseUrl}".`);
-  }
-  if (
-    (url.protocol !== "http:" && url.protocol !== "https:") ||
-    url.pathname !== "/" ||
-    url.search !== "" ||
-    url.hash !== "" ||
-    url.username !== "" ||
-    url.password !== ""
-  ) {
+  const url = parseBareOrigin(baseUrl);
+  if (url === null) {
     throw new Error(`The API base URL must be an absolute http(s) origin; got "${baseUrl}".`);
   }
   return url.origin;
@@ -106,6 +95,29 @@ export interface Transport {
   ) => Promise<unknown>;
 }
 
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The data of a success envelope; any other answer becomes the error it means. */
+function unwrap(status: number, text: string): unknown {
+  const envelope = decodeEnvelope(parseJson(text));
+  if (envelope._tag === "None") {
+    if (LOST_ANSWER.has(status)) {
+      throw new NetworkError(`The server's answer was lost (HTTP ${String(status)}).`);
+    }
+    throw new DecodeError(`Unexpected answer from the server (HTTP ${String(status)}).`);
+  }
+  if (!envelope.value.ok) {
+    throw new RpcError(envelope.value.error.code, envelope.value.error.message, status);
+  }
+  return envelope.value.data;
+}
+
 export function createTransport(options: TransportOptions): Transport {
   const origin = parseBaseUrl(options.baseUrl);
   const credentials = options.credentials ?? "include";
@@ -132,23 +144,7 @@ export function createTransport(options: TransportOptions): Transport {
         if (isAbort(error, init.signal)) throw error;
         throw new NetworkError("No answer from the server.", { cause: error });
       }
-      let body: unknown;
-      try {
-        body = JSON.parse(text);
-      } catch {
-        body = undefined;
-      }
-      const envelope = decodeEnvelope(body);
-      if (envelope._tag === "None") {
-        if (LOST_ANSWER.has(status)) {
-          throw new NetworkError(`The server's answer was lost (HTTP ${String(status)}).`);
-        }
-        throw new DecodeError(`Unexpected answer from the server (HTTP ${String(status)}).`);
-      }
-      if (!envelope.value.ok) {
-        throw new RpcError(envelope.value.error.code, envelope.value.error.message, status);
-      }
-      return envelope.value.data;
+      return unwrap(status, text);
     },
   };
 }

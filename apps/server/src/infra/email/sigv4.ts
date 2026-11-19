@@ -102,6 +102,11 @@ function decodeComponent(value: string): string {
 }
 
 /** The canonical query: every parameter decoded, encoded once, and sorted by key then value. */
+/** AWS sorts by code unit (byte order for ASCII), not by locale. */
+function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : Number(left > right);
+}
+
 function canonicalQuery(query: string): string {
   return query
     .split("&")
@@ -112,8 +117,9 @@ function canonicalQuery(query: string): string {
       const value = equals === -1 ? "" : pair.slice(equals + 1);
       return [uriEncode(decodeComponent(key)), uriEncode(decodeComponent(value))] as const;
     })
-    .toSorted(([keyA, valueA], [keyB, valueB]) =>
-      keyA === keyB ? (valueA < valueB ? -1 : 1) : keyA < keyB ? -1 : 1,
+    .toSorted(
+      ([keyA, valueA], [keyB, valueB]) =>
+        compareCodeUnits(keyA, keyB) || compareCodeUnits(valueA, valueB),
     )
     .map(([key, value]) => `${key}=${value}`)
     .join("&");
@@ -130,7 +136,7 @@ function canonicalHeaders(headers: SignableRequest["headers"]): Map<string, stri
   }
   return new Map(
     [...byName.entries()]
-      .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .toSorted(([a], [b]) => compareCodeUnits(a, b))
       .map(([name, values]) => [name, values.join(",")]),
   );
 }
@@ -239,6 +245,60 @@ function headerValue(request: SignableRequest, name: string): string | undefined
   return request.headers.find(([key]) => key.toLowerCase() === name)?.[1];
 }
 
+interface SignedClaims {
+  readonly accessKeyId: string;
+  readonly region: string;
+  readonly service: string;
+  readonly signedNames: readonly string[];
+  readonly signature: string;
+  readonly amzDate: string;
+  readonly signedAt: number;
+}
+
+type ClaimsResult =
+  | { readonly ok: true; readonly claims: SignedClaims }
+  | Extract<VerifyResult, { ok: false }>;
+
+const MALFORMED = { ok: false, reason: "malformed_authorization" } as const;
+
+/** The parts of an `Authorization` header, or null when it is not a SigV4 header. */
+function parseAuthorization(authorization: string) {
+  const parsed = AUTHORIZATION.exec(authorization.trim());
+  if (parsed === null) return null;
+  const [
+    ,
+    accessKeyId = "",
+    dateStamp = "",
+    region = "",
+    service = "",
+    signedList = "",
+    signature = "",
+  ] = parsed;
+  return { accessKeyId, dateStamp, region, service, signedNames: signedList.split(";"), signature };
+}
+
+/** The time an `X-Amz-Date` value names, in milliseconds, or null when it is malformed. */
+function parseAmzDate(amzDate: string): number | null {
+  const parts = AMZ_DATE.exec(amzDate);
+  if (parts === null) return null;
+  const [, year = 0, month = 1, day, hour, minute, second] = parts.map(Number);
+  return Date.UTC(year, month - 1, day, hour, minute, second);
+}
+
+/** What the request's `Authorization` and `X-Amz-Date` headers claim, if they are well formed. */
+function readClaims(request: SignableRequest): ClaimsResult {
+  const authorization = headerValue(request, "authorization");
+  if (authorization === undefined) return { ok: false, reason: "missing_authorization" };
+  const parsed = parseAuthorization(authorization);
+  const amzDate = headerValue(request, "x-amz-date")?.trim() ?? "";
+  const signedAt = parseAmzDate(amzDate);
+  if (parsed === null || signedAt === null) return MALFORMED;
+  if (parsed.dateStamp !== amzDate.slice(0, 8) || !parsed.signedNames.includes("host")) {
+    return MALFORMED;
+  }
+  return { ok: true, claims: { ...parsed, amzDate, signedAt } };
+}
+
 /**
  * Checks a signed request against known credentials: the access key, a date within
  * `maxSkewMs` of `now` (15 minutes by default, as AWS allows), and the signature over the headers
@@ -252,35 +312,30 @@ export function verifySignature(
     readonly maxSkewMs?: number;
   },
 ): VerifyResult {
-  const authorization = headerValue(request, "authorization");
-  if (authorization === undefined) return { ok: false, reason: "missing_authorization" };
-  const parsed = AUTHORIZATION.exec(authorization.trim());
-  const amzDate = headerValue(request, "x-amz-date")?.trim() ?? "";
-  const dateParts = AMZ_DATE.exec(amzDate);
-  if (parsed === null || dateParts === null)
-    return { ok: false, reason: "malformed_authorization" };
-  const [, accessKeyId, dateStamp, region = "", service = "", signedHeaderList = "", signature] =
-    parsed;
-  const signedNames = signedHeaderList.split(";");
-  if (dateStamp !== amzDate.slice(0, 8) || !signedNames.includes("host")) {
-    return { ok: false, reason: "malformed_authorization" };
-  }
-  if (accessKeyId !== options.credentials.accessKeyId) {
+  const read = readClaims(request);
+  if (!read.ok) return read;
+  const { claims } = read;
+  if (claims.accessKeyId !== options.credentials.accessKeyId) {
     return { ok: false, reason: "unknown_access_key" };
   }
-  const [, year, month, day, hour, minute, second] = dateParts.map(Number);
-  const signedAt = Date.UTC(year ?? 0, (month ?? 1) - 1, day, hour, minute, second);
-  if (Math.abs(options.now.getTime() - signedAt) > (options.maxSkewMs ?? 15 * 60 * 1000)) {
+  if (Math.abs(options.now.getTime() - claims.signedAt) > (options.maxSkewMs ?? 15 * 60 * 1000)) {
     return { ok: false, reason: "clock_skew" };
   }
-  const headers = request.headers.filter(([name]) => signedNames.includes(name.toLowerCase()));
-  if (new Set(headers.map(([name]) => name.toLowerCase())).size !== signedNames.length) {
-    return { ok: false, reason: "malformed_authorization" };
+  const headers = request.headers.filter(([name]) =>
+    claims.signedNames.includes(name.toLowerCase()),
+  );
+  if (new Set(headers.map(([name]) => name.toLowerCase())).size !== claims.signedNames.length) {
+    return MALFORMED;
   }
   const expected = computeSignature(
     { ...request, headers },
-    { credentials: options.credentials, region, service, amzDate },
+    {
+      credentials: options.credentials,
+      region: claims.region,
+      service: claims.service,
+      amzDate: claims.amzDate,
+    },
   ).signature;
-  const matches = timingSafeEqual(Buffer.from(expected), Buffer.from(signature ?? ""));
+  const matches = timingSafeEqual(Buffer.from(expected), Buffer.from(claims.signature));
   return matches ? { ok: true } : { ok: false, reason: "signature_mismatch" };
 }

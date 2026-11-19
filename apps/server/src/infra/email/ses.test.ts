@@ -171,13 +171,8 @@ describe("createSesClient", () => {
   });
 
   it("retries a 5xx and a refused connection", async () => {
-    const { ses, calls } = client((attempt) =>
-      attempt === 1
-        ? awsError(503, "ServiceUnavailable")
-        : attempt === 2
-          ? connectionRefused()
-          : ok(),
-    );
+    const answers = [awsError(503, "ServiceUnavailable"), connectionRefused(), ok()];
+    const { ses, calls } = client((attempt) => answers[attempt - 1] ?? ok());
 
     await expect(ses.sendEmail(email)).resolves.toEqual({ messageId: "message-1" });
     expect(calls).toHaveLength(3);

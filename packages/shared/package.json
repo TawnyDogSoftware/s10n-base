@@ -16,13 +16,17 @@
       "types": "./src/id.ts",
       "import": "./src/id.ts"
     },
+    "./origin": {
+      "types": "./src/origin.ts",
+      "import": "./src/origin.ts"
+    },
     "./time": {
       "types": "./src/time.ts",
       "import": "./src/time.ts"
     }
   },
   "scripts": {
-    "build": "tsdown src/app-variants.ts src/auth.ts src/id.ts src/time.ts --format esm,cjs --dts --clean",
+    "build": "tsdown src/app-variants.ts src/auth.ts src/id.ts src/origin.ts src/time.ts --format esm,cjs --dts --clean",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts"
   },
