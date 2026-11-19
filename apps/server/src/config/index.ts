@@ -7,11 +7,10 @@
  * by fixed rule text, never by Effect's messages, which can quote the value: a value of
  * `DATABASE_URL` holds a password and must never reach a log.
  */
-import path from "node:path";
-
 import { Config, ConfigProvider, Data, Effect, Option, Redacted, Schema } from "effect";
 
 import serverPackage from "../../package.json" with { type: "json" };
+import { WEB_DIST_DIR } from "../paths";
 
 export const NODE_ENVS = ["development", "test", "production"] as const;
 export type NodeEnv = (typeof NODE_ENVS)[number];
@@ -228,8 +227,37 @@ function parseAll<const T extends ReadonlyArray<Variable<unknown>>>(
   });
 }
 
-function webDistDir(): string {
-  return path.resolve(import.meta.dirname, "../../../web/dist");
+/**
+ * Rules that involve more than one variable. Checked whenever the variables they read are valid,
+ * even if others are not, so every problem is still reported at once.
+ */
+function crossVariableProblems(
+  provider: ConfigProvider.ConfigProvider,
+): Effect.Effect<Array<ConfigProblem>> {
+  return Effect.gen(function* () {
+    const env = yield* Effect.result(nodeEnv.config.parse(provider));
+    const origin = yield* Effect.result(appUrl.config.parse(provider));
+    if (
+      env._tag === "Success" &&
+      origin._tag === "Success" &&
+      env.success === "production" &&
+      !origin.success.startsWith("https://")
+    ) {
+      return [{ variable: "APP_URL", problem: "must use https when NODE_ENV is production" }];
+    }
+    return [];
+  });
+}
+
+function inVariableOrder(problems: Array<ConfigProblem>): Array<ConfigProblem> {
+  const order = serverVariables.map((entry) => entry.name);
+  return problems
+    .map((problem, index) => ({ problem, index }))
+    .sort(
+      (a, b) =>
+        order.indexOf(a.problem.variable) - order.indexOf(b.problem.variable) || a.index - b.index,
+    )
+    .map(({ problem }) => problem);
 }
 
 /** Reads the server config from the current `ConfigProvider` (the environment by default). */
@@ -237,8 +265,12 @@ export const loadServerConfig: Effect.Effect<ServerConfig, ServerConfigError> = 
   function* () {
     const provider = yield* ConfigProvider.ConfigProvider;
     const parsed = yield* parseAll(serverVariables, provider);
-    if ("problems" in parsed) {
-      return yield* new ServerConfigError({ problems: parsed.problems });
+    const problems = [
+      ...("problems" in parsed ? parsed.problems : []),
+      ...(yield* crossVariableProblems(provider)),
+    ];
+    if (problems.length > 0 || "problems" in parsed) {
+      return yield* new ServerConfigError({ problems: inVariableOrder(problems) });
     }
     const [
       nodeEnvValue,
@@ -252,11 +284,6 @@ export const loadServerConfig: Effect.Effect<ServerConfig, ServerConfigError> = 
       shutdownMs,
       level,
     ] = parsed.values;
-    if (nodeEnvValue === "production" && !appOrigin.startsWith("https://")) {
-      return yield* new ServerConfigError({
-        problems: [{ variable: "APP_URL", problem: "must use https when NODE_ENV is production" }],
-      });
-    }
     return {
       appName: "S10N Base",
       version: serverPackage.version,
@@ -270,7 +297,7 @@ export const loadServerConfig: Effect.Effect<ServerConfig, ServerConfigError> = 
       requestBodyLimitBytes: bodyLimit,
       shutdownTimeoutMs: shutdownMs,
       logLevel: level,
-      webDistDir: webDistDir(),
+      webDistDir: WEB_DIST_DIR,
     };
   },
 );

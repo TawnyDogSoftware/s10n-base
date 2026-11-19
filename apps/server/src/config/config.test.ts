@@ -160,6 +160,15 @@ describe("server config", () => {
     expect(() => load({ ...valid, NODE_ENV: "test" })).not.toThrow();
   });
 
+  it("reports the production https rule together with other problems", () => {
+    const error = problems({ ...valid, NODE_ENV: "production", PORT: "x" });
+
+    expect(error.problems).toEqual([
+      { variable: "APP_URL", problem: "must use https when NODE_ENV is production" },
+      { variable: "PORT", problem: "must be an integer from 0 to 65535" },
+    ]);
+  });
+
   it("never prints a value of DATABASE_URL", () => {
     const secret = "postgres://app:s3cret-password@db:5432/app?sslmode=verify";
     const invalid = "mysql://app:s3cret-password@db/app";

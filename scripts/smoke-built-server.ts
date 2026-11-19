@@ -1,12 +1,14 @@
 /**
  * Starts the built server (`node apps/server/dist/bin.mjs`) on a free port, waits for
- * `/health` to answer, checks that `/ready` answers 200 (so the database is reachable), then
+ * `/health` to answer, checks that `/ready` answers 200 (so the database is reachable) and,
+ * when the web app is built, that `/` serves its HTML, then
  * sends SIGTERM and checks the server exits with code 0 within its shutdown deadline. Exits
  * non-zero with the server's output when anything goes wrong. Run with `bun run smoke` after
  * `bun run build`; it needs DATABASE_URL (from the environment, `.env` or `.env.example`) and a
  * running database (`bun run db:up`).
  */
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { once } from "node:events";
 import { createServer } from "node:net";
 import path from "node:path";
@@ -17,6 +19,8 @@ export interface SmokeOptions {
   readonly deadlineMs: number;
   /** Extra environment for the server, such as DATABASE_URL. */
   readonly env?: Readonly<Record<string, string>>;
+  /** Whether `/` must serve the web app's HTML (when `apps/web/dist` was built). */
+  readonly expectWebApp?: boolean;
   /** How long the server may take to exit after SIGTERM; its SHUTDOWN_TIMEOUT_MS. */
   readonly shutdownDeadlineMs?: number;
   readonly pollIntervalMs?: number;
@@ -99,6 +103,23 @@ async function checkReady(url: string): Promise<string | undefined> {
   return problem === undefined ? undefined : `/ready answered 200 but ${problem}`;
 }
 
+async function checkWebApp(url: string): Promise<string | undefined> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { accept: "text/html" },
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch (error) {
+    return `/ did not answer: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  await response.body?.cancel();
+  const type = response.headers.get("content-type")?.split(";", 1)[0] ?? "(no type)";
+  return response.status === 200 && type === "text/html"
+    ? undefined
+    : `/ answered ${response.status} ${type}, not the web app's HTML`;
+}
+
 export async function runSmoke(options: SmokeOptions): Promise<SmokeResult> {
   const port = await findFreePort();
   const shutdownDeadlineMs = options.shutdownDeadlineMs ?? DEFAULT_SHUTDOWN_DEADLINE_MS;
@@ -142,6 +163,9 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeResult> {
       await delay(options.pollIntervalMs ?? 100);
     }
     if (reason === undefined) reason = await checkReady(`${base}/ready`);
+    if (reason === undefined && options.expectWebApp === true) {
+      reason = await checkWebApp(`${base}/`);
+    }
   } finally {
     // Whatever happened above, never leave the server running.
     if (exitCode === undefined) {
@@ -166,16 +190,18 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeResult> {
 
 if (import.meta.main) {
   const serverEntry = path.resolve(import.meta.dirname, "../apps/server/dist/bin.mjs");
+  const webIndex = path.resolve(import.meta.dirname, "../apps/web/dist/index.html");
   const result = await runSmoke({
     serverEntry,
     deadlineMs: 30_000,
+    expectWebApp: existsSync(webIndex),
     ...(process.env.SHUTDOWN_TIMEOUT_MS
       ? { shutdownDeadlineMs: Number(process.env.SHUTDOWN_TIMEOUT_MS) }
       : {}),
   });
   if (result.ok) {
     console.log(
-      `Smoke test passed: ${serverEntry} answered /health and /ready and exited 0 on SIGTERM.`,
+      `Smoke test passed: ${serverEntry} answered /health and /ready${webIndex && existsSync(webIndex) ? ", served the web app" : ""} and exited 0 on SIGTERM.`,
     );
   } else {
     console.error(`Smoke test failed: ${result.reason}`);

@@ -206,4 +206,57 @@ process.on("SIGTERM", () => {});
       reason: "the server did not exit within 200 ms of SIGTERM",
     });
   }, 10_000);
+
+  it("fails when a web build exists but the server does not serve it at /", async () => {
+    const noWebApp = fixture(
+      "no-web-app",
+      `import http from "node:http";
+const server = http.createServer((request, response) => {
+  const api = request.url === "/health" || request.url === "/ready";
+  response.statusCode = api ? 200 : 404;
+  response.setHeader("Content-Type", api ? "application/json" : "text/plain; charset=utf-8");
+  response.end(api ? '{"ok":true}' : "Not Found");
+});
+server.listen(Number(process.env.PORT), "127.0.0.1");
+process.on("SIGTERM", () => server.close(() => process.exit(0)));
+`,
+    );
+
+    const result = await runSmoke({
+      serverEntry: noWebApp,
+      deadlineMs: 10_000,
+      expectWebApp: true,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "/ answered 404 text/plain, not the web app's HTML",
+    });
+  });
+
+  it("passes when the server serves the web app's HTML at /", async () => {
+    const withWebApp = fixture(
+      "with-web-app",
+      `import http from "node:http";
+const server = http.createServer((request, response) => {
+  if (request.url === "/") {
+    response.setHeader("Content-Type", "text/html; charset=utf-8");
+    response.end("<!doctype html>");
+    return;
+  }
+  response.end('{"ok":true}');
+});
+server.listen(Number(process.env.PORT), "127.0.0.1");
+process.on("SIGTERM", () => server.close(() => process.exit(0)));
+`,
+    );
+
+    const result = await runSmoke({
+      serverEntry: withWebApp,
+      deadlineMs: 10_000,
+      expectWebApp: true,
+    });
+
+    expect(result.ok).toBe(true);
+  });
 });
