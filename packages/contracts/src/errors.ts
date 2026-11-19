@@ -11,6 +11,8 @@ export const ERROR_CODES = {
   invalidRequest: "rpc.invalid_request",
   /** The payload does not match the method's contract (400). */
   invalidPayload: "rpc.invalid_payload",
+  /** A pagination cursor that the server did not issue, or that no longer parses (400). */
+  invalidCursor: "rpc.invalid_cursor",
   /** No method has that name (404). */
   methodNotFound: "rpc.method_not_found",
   /** No API route has that path (404). */

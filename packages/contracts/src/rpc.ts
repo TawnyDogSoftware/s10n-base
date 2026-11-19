@@ -53,10 +53,3 @@ export const RpcRequest = Schema.Struct({
   payload: Schema.Unknown,
 });
 export type RpcRequest = typeof RpcRequest.Type;
-
-/**
- * Every RPC method the server exposes. Empty until an application adds its own methods with
- * `defineRpc`; the element type accepts any contract, so adding entries does not change it. The
- * server's handler list must match it one to one (a server test checks that).
- */
-export const rpcContracts: ReadonlyArray<RpcContract> = [];

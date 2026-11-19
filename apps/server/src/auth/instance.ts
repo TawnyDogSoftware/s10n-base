@@ -31,6 +31,14 @@ export interface AppAuth {
   readonly getSession: (headers: Headers) => Promise<AppSession | null>;
   /** Whether an `Origin` header value is one Better Auth trusts, matched the way it matches. */
   readonly isTrustedOrigin: (origin: string) => Promise<boolean>;
+  /**
+   * Changes a user's display name through Better Auth's own adapter, so its user hooks run and
+   * any session storage it keeps is refreshed, and returns the updated user.
+   */
+  readonly updateUserName: (
+    userId: string,
+    name: string,
+  ) => Promise<AuthUser & { createdAt: Date }>;
 }
 
 /** The user fields {@link toAppSession} reads, as Better Auth and its admin plugin return them. */
@@ -99,5 +107,7 @@ export function createAppAuth(options: AuthOptions, now: () => Date = () => new 
       return isBanned(user, now()) ? null : toAppSession(user);
     },
     isTrustedOrigin: async (origin) => (await auth.$context).isTrustedOrigin(origin),
+    updateUserName: async (userId, name) =>
+      (await auth.$context).internalAdapter.updateUser(userId, { name }),
   };
 }

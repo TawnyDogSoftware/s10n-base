@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import { defineRpc, rpcContracts } from "@s10n-base/contracts";
 
 import { defineHandler } from "./dispatcher";
-import { rpcHandlers } from "./handlers";
+import { unusedDb } from "../test/auth-options";
+import { createRpcHandlers } from "./handlers";
 import { findRegistryMismatches } from "./registry";
 
 const empty = Schema.Struct({});
@@ -30,10 +31,15 @@ const respond = () => Promise.resolve({});
 
 describe("RPC registry", () => {
   it("has exactly one handler for every contract, and no handler without a contract", () => {
-    expect(findRegistryMismatches(rpcContracts, rpcHandlers)).toEqual([]);
+    const handlers = createRpcHandlers({
+      db: unusedDb(),
+      auth: { updateUserName: () => Promise.reject(new Error("unused")) },
+    });
+
+    expect(rpcContracts.length).toBeGreaterThan(0);
+    expect(findRegistryMismatches(rpcContracts, handlers)).toEqual([]);
   });
 
-  // The check above passes trivially while both lists are empty; this proves it can fail.
   it("reports a contract with no handler and a handler with no contract", () => {
     expect(
       findRegistryMismatches(

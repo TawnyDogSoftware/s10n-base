@@ -35,6 +35,7 @@ function fakeAuth(overrides: Partial<AppAuth> = {}): AppAuth {
     getSession: () => Promise.resolve(null),
     isTrustedOrigin: (origin) =>
       Promise.resolve(origin === APP_ORIGIN || origin.startsWith("s10nbase-dev://")),
+    updateUserName: () => Promise.reject(new Error("not used in these tests")),
     ...overrides,
   };
 }

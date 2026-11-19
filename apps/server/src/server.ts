@@ -38,7 +38,7 @@ import { createDb, createPool } from "./infra/postgres/pool";
 import { createRequestHandler } from "./http/routes";
 import { createLogger, type Logger, type LogWriter } from "./observability/logger";
 import { type ActorResolver, createRpcDispatcher, type RpcHandler } from "./rpc/dispatcher";
-import { rpcHandlers } from "./rpc/handlers";
+import { createRpcHandlers } from "./rpc/handlers";
 
 /** How long `/ready` waits for `select 1`. */
 const READINESS_TIMEOUT = Duration.seconds(2);
@@ -223,7 +223,7 @@ const httpServerLayer = (options: ServerLayerOptions) =>
       let forced = false;
 
       const dispatcher = createRpcDispatcher({
-        handlers: options.handlers ?? rpcHandlers,
+        handlers: options.handlers ?? createRpcHandlers({ db: database.db, auth }),
         resolveActor: options.resolveActor ?? createSessionActorResolver(auth),
       });
       const server = http.createServer(

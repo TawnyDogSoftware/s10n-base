@@ -168,6 +168,7 @@ describe("ERROR_CODES", () => {
       forbidden: "auth.forbidden",
       invalidRequest: "rpc.invalid_request",
       invalidPayload: "rpc.invalid_payload",
+      invalidCursor: "rpc.invalid_cursor",
       methodNotFound: "rpc.method_not_found",
       notFound: "http.not_found",
       methodNotAllowed: "http.method_not_allowed",
