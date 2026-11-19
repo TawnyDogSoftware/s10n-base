@@ -504,6 +504,38 @@ describe("runDependencyUpdate", () => {
     expect(body).toContain("Node 28 is a newer LTS line. Moving to it is a manual change");
   });
 
+  it("moves Node alone when bun has no newer release", async () => {
+    const io = new FakeIo({
+      nodeIndex: [{ version: "v26.13.2", date: "2026-11-12", lts: "Lithium" }],
+    });
+
+    const outcome = await runDependencyUpdate(io, options);
+
+    expect(JSON.parse(io.files.get("package.json") ?? "")).toMatchObject({
+      packageManager: "bun@1.4.4",
+      engines: { bun: ">=1.4.4", node: ">=26.13.2" },
+    });
+    const body = outcome.kind === "unchanged" ? "" : outcome.body;
+    expect(body).not.toContain("- bun ");
+  });
+
+  it("names the spec it refused when a held package was moved to something that is not a version", async () => {
+    const io = new FakeIo({
+      latest: { catalog: { ...startCatalog, react: "canary" }, lock: startLock },
+    });
+    io.files.set("bun.lock", lockfile({ ...startLock, isbot: "5.1.39" }));
+
+    const outcome = await runDependencyUpdate(io, {
+      ...options,
+      now: new Date("2026-11-20T00:10:00Z"),
+    });
+
+    const body = outcome.kind === "unchanged" ? "" : outcome.body;
+    expect(body).toContain(
+      "- react stays at 19.3.0 (newest allowed: canary): Owned by the Expo SDK.",
+    );
+  });
+
   it("keeps @types/node on Node's major", async () => {
     const io = new FakeIo({
       latest: {

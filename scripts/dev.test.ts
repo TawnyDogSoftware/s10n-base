@@ -51,6 +51,31 @@ describe("supervise", () => {
     expect(web.child.exitCode ?? web.child.signalCode).not.toBeNull();
   });
 
+  it("sees a child that exited before supervision began, and calls a clean exit a failure", async () => {
+    const early = node("migrate", "process.exit(0)");
+    await once(early.child, "exit");
+
+    expect(await supervise([early], new Promise(() => {}))).toBe(1);
+  });
+
+  it("reports a child a signal ended before supervision began as code 1", async () => {
+    const killed = node("server", RUN_UNTIL_SIGTERM);
+    killed.child.kill("SIGKILL");
+    await once(killed.child, "exit");
+
+    expect(await supervise([killed], new Promise(() => {}))).toBe(1);
+  });
+
+  it("kills only the children still running when the grace period ends", async () => {
+    const stubborn = node("web", "setInterval(() => {}, 1000); process.on('SIGTERM', () => {});");
+    const graceful = node("server", RUN_UNTIL_SIGTERM);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(await supervise([stubborn, graceful], Promise.resolve(), 300)).toBe(0);
+    expect(stubborn.child.signalCode).toBe("SIGKILL");
+    expect(graceful.child.exitCode).toBe(0);
+  });
+
   it("kills a child that ignores SIGTERM after the grace period", async () => {
     const stubborn = node("web", "setInterval(() => {}, 1000); process.on('SIGTERM', () => {});");
     await new Promise((resolve) => setTimeout(resolve, 200));

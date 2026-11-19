@@ -7,6 +7,13 @@ describe("compareVersions", () => {
     expect(compareVersions("1.2.3", "1.2.3")).toBe(0);
     expect(compareVersions("1.10.0", "1.9.9")).toBeGreaterThan(0);
     expect(compareVersions("2.0.0", "10.0.0")).toBeLessThan(0);
+    expect(compareVersions("1.2.4", "1.2.3")).toBeGreaterThan(0);
+  });
+
+  it("refuses anything but a plain x.y.z version", () => {
+    expect(() => compareVersions("1.2.3-beta.1", "1.2.3")).toThrow(
+      'Not a plain x.y.z version: "1.2.3-beta.1"',
+    );
   });
 });
 

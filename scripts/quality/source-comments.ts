@@ -68,12 +68,13 @@ export function commentLines(sourceFile: ts.SourceFile): CommentLine[] {
   for (const range of commentRangesOf(sourceFile)) {
     let offset = range.pos;
     for (const raw of sourceFile.text.slice(range.pos, range.end).split("\n")) {
-      const marker = LEADING_MARKER.exec(raw)?.[0] ?? "";
-      const start = sourceFile.getLineAndCharacterOfPosition(offset + marker.length);
+      // Every part of the marker pattern is optional, so it always matches, if only "".
+      const markerLength = raw.length - raw.replace(LEADING_MARKER, "").length;
+      const start = sourceFile.getLineAndCharacterOfPosition(offset + markerLength);
       lines.push({
         line: start.line + 1,
         column: start.character + 1,
-        text: withoutClosingMarker(raw.slice(marker.length)),
+        text: withoutClosingMarker(raw.slice(markerLength)),
       });
       offset += raw.length + 1;
     }

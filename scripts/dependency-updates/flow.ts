@@ -79,7 +79,7 @@ const BUN_RELEASES_URL = "https://api.github.com/repos/oven-sh/bun/releases?per_
 const NODE_INDEX_URL = "https://nodejs.org/dist/index.json";
 const DRY_RUN_URL = "(dry run: no PR opened)";
 
-async function mustRun(
+export async function mustRun(
   io: Io,
   command: string,
   args: readonly string[],
@@ -95,7 +95,7 @@ async function mustRun(
   return result;
 }
 
-async function readManifests(io: Io): Promise<ManifestFile[]> {
+export async function readManifests(io: Io): Promise<ManifestFile[]> {
   const root = JSON.parse(await io.readFile("package.json")) as Manifest;
   const workspaces = root.workspaces;
   const patterns =
@@ -116,7 +116,7 @@ async function readManifests(io: Io): Promise<ManifestFile[]> {
   return [{ path: "package.json", json: root }, ...workspaceFiles];
 }
 
-async function findOpenPr(io: Io, label: string): Promise<OpenPr | undefined> {
+export async function findOpenPr(io: Io, label: string): Promise<OpenPr | undefined> {
   const result = await mustRun(io, "gh", [
     "pr",
     "list",
@@ -175,17 +175,17 @@ interface BaseSnapshot {
 }
 
 /** The bun version a manifest's `packageManager` names, or "" when it names none. */
-function bunVersionOf(manifest: Manifest | undefined): string {
+export function bunVersionOf(manifest: Manifest | undefined): string {
   const value = manifest?.packageManager;
   return typeof value === "string" ? value.replace(/^bun@/, "") : "";
 }
 
-async function readAtCommit(io: Io, sha: string, path: string): Promise<string | undefined> {
+export async function readAtCommit(io: Io, sha: string, path: string): Promise<string | undefined> {
   const result = await io.run("git", ["show", `${sha}:${path}`]);
   return result.code === 0 ? result.stdout : undefined;
 }
 
-async function readBase(io: Io, sha: string): Promise<BaseSnapshot> {
+export async function readBase(io: Io, sha: string): Promise<BaseSnapshot> {
   const read = await Promise.all(
     (await readManifests(io)).map(async ({ path }) => ({
       path,
@@ -295,7 +295,7 @@ async function updateRuntimes(io: Io, now: Date): Promise<string[]> {
   return notApplied;
 }
 
-async function checkExpo(io: Io): Promise<string[]> {
+export async function checkExpo(io: Io): Promise<string[]> {
   if (!(await io.exists("apps/mobile/package.json"))) {
     io.log("apps/mobile does not exist, so there is no Expo version check.");
     return [];
@@ -311,7 +311,7 @@ async function checkExpo(io: Io): Promise<string[]> {
   ];
 }
 
-async function packagesHeldByAge(io: Io): Promise<AgeHeldPackage[]> {
+export async function packagesHeldByAge(io: Io): Promise<AgeHeldPackage[]> {
   const result = await io.run("bun", ["outdated", "-r"]);
   const rows = parseOutdated(result.stdout).filter((row) => row.heldByAge);
   const unique = [...new Map(rows.map((row) => [row.name, row])).values()];
@@ -340,7 +340,7 @@ async function packagesHeldByAge(io: Io): Promise<AgeHeldPackage[]> {
   );
 }
 
-function versionChanges(
+export function versionChanges(
   names: Iterable<string>,
   before: ReadonlyMap<string, string>,
   after: ReadonlyMap<string, string>,
@@ -392,7 +392,8 @@ export async function runDependencyUpdate(io: Io, options: FlowOptions): Promise
   const base = await readBase(io, baseSha);
 
   const holds = parseHolds(JSON.parse(await io.readFile("dependency-holds.json")) as unknown);
-  const nodeMajor = (await io.readFile(".nvmrc")).trim().split(".")[0] ?? "";
+  const nvmrc = (await io.readFile(".nvmrc")).trim();
+  const nodeMajor = nvmrc.slice(0, nvmrc.indexOf("."));
 
   const restorations = await updatePackages(io, holds, nodeMajor);
   const notApplied = await updateRuntimes(io, options.now);

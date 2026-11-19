@@ -97,6 +97,12 @@ describe("findDirectives", () => {
   });
 });
 
+describe("a file of a type it does not know", () => {
+  it("is read as TypeScript", () => {
+    expect(findDirectives("notes.txt", `// ${TS_IGNORE}\n`)).toHaveLength(1);
+  });
+});
+
 describe("isTypeTestFile", () => {
   it.each([
     ["packages/i18n/src/keys.types.test.ts", true],

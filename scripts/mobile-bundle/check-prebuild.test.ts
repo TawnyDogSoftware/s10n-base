@@ -42,6 +42,12 @@ describe("checkPrebuild", () => {
     ]);
   });
 
+  it("says a name is missing when a project has none", () => {
+    expect(checkPrebuild(files({ androidStrings: "<resources/>" }), "development")).toEqual([
+      `the Android app name is missing, expected ${dev.displayName}`,
+    ]);
+  });
+
   it("checks against the variant asked for", () => {
     expect(checkPrebuild(files(), "production")).toHaveLength(6);
   });

@@ -38,6 +38,15 @@ describe("checkVersionSources", () => {
     ]);
   });
 
+  it("requires packageManager to be there and to name bun", () => {
+    expect(checkVersionSources({ ...consistent, packageManager: undefined })).toEqual([
+      'packageManager must be "bun@<exact version>", found nothing',
+    ]);
+    expect(checkVersionSources({ ...consistent, packageManager: "pnpm@10.0.0" })).toEqual([
+      'packageManager must be "bun@<exact version>", found "pnpm@10.0.0"',
+    ]);
+  });
+
   it("requires engines.bun to be >= the packageManager version", () => {
     expect(checkVersionSources({ ...consistent, enginesBun: ">=1.3.0" })).toEqual([
       'engines.bun must be ">=1.4.4" to match packageManager, found ">=1.3.0"',

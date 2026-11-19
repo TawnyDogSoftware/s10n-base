@@ -317,6 +317,18 @@ describe("runSmoke's other failures", () => {
     });
   });
 
+  it("fails when /ready answers 200 with the wrong body", async () => {
+    const entry = serverAnswering("ready-wrong-body", {
+      "/health": OK,
+      "/ready": `response.end('{"ok":false}')`,
+    });
+
+    expect(await runSmoke({ serverEntry: entry, deadlineMs: 10_000 })).toMatchObject({
+      ok: false,
+      reason: '/ready answered 200 but expected {"ok":true}, got {"ok":false}',
+    });
+  });
+
   it("fails when / cannot be reached for the web app", async () => {
     const entry = serverAnswering("gone-before-web", {
       "/health": OK,

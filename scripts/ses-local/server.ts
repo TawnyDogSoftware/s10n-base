@@ -197,11 +197,20 @@ function parseSendEmail(body: unknown): ParsedSendEmail {
 }
 
 function headerPairs(request: IncomingMessage): Array<[string, string]> {
+  // rawHeaders alternates names and values, so it always has an even length.
   const pairs: Array<[string, string]> = [];
-  for (let index = 0; index + 1 < request.rawHeaders.length; index += 2) {
-    pairs.push([request.rawHeaders[index] ?? "", request.rawHeaders[index + 1] ?? ""]);
+  for (let index = 0; index < request.rawHeaders.length; index += 2) {
+    pairs.push(request.rawHeaders.slice(index, index + 2) as [string, string]);
   }
   return pairs;
+}
+
+/**
+ * The method and target of a request `http.Server` received: Node types both as optional, but
+ * always sets them on a server's requests.
+ */
+function requestLine(request: IncomingMessage): { method: string; target: string } {
+  return { method: request.method as string, target: request.url as string };
 }
 
 /**
@@ -227,11 +236,11 @@ export async function startSesLocal(options: SesLocalOptions): Promise<SesLocal>
       awsError(response, 413, "BadRequestException", "The request body is too large.");
       return;
     }
-    const target = request.url ?? "/";
+    const { method, target } = requestLine(request);
     const queryStart = target.indexOf("?");
     const verified = verifySignature(
       {
-        method: request.method ?? "POST",
+        method,
         path: queryStart === -1 ? target : target.slice(0, queryStart),
         query: queryStart === -1 ? "" : target.slice(queryStart + 1),
         headers: headerPairs(request),
@@ -270,8 +279,9 @@ export async function startSesLocal(options: SesLocalOptions): Promise<SesLocal>
   }
 
   async function handle(request: IncomingMessage, response: ServerResponse) {
-    const path = (request.url ?? "/").split("?", 1)[0];
-    const route = `${request.method ?? ""} ${String(path)}`;
+    const { method, target } = requestLine(request);
+    const [path] = target.split("?", 1);
+    const route = `${method} ${String(path)}`;
     if (route === `POST ${SEND_PATH}`) return receive(request, response);
     request.resume();
     if (route === "GET /store") {
@@ -302,10 +312,9 @@ export async function startSesLocal(options: SesLocalOptions): Promise<SesLocal>
   }
 
   const server = http.createServer((request, response) => {
-    handle(request, response).catch(() => {
-      if (!response.headersSent) awsError(response, 500, "InternalFailure", "Unexpected error.");
-      else response.destroy();
-    });
+    // handle never rejects: readBody reports a broken stream as aborted, and http.Server turns a
+    // malformed body into one.
+    void handle(request, response);
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);

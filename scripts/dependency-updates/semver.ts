@@ -15,13 +15,9 @@ function parse(version: string): Triple {
 }
 
 export function compareVersions(a: string, b: string): number {
-  const left = parse(a);
-  const right = parse(b);
-  for (let index = 0; index < 3; index += 1) {
-    const difference = (left[index] ?? 0) - (right[index] ?? 0);
-    if (difference !== 0) return difference;
-  }
-  return 0;
+  const [majorA, minorA, patchA] = parse(a);
+  const [majorB, minorB, patchB] = parse(b);
+  return majorA - majorB || minorA - minorB || patchA - patchB;
 }
 
 /** The version written in a spec such as `^8.3.8`, `~6.0.3` or `4.1.4`. */

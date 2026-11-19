@@ -33,6 +33,23 @@ describe("parseHolds", () => {
     );
   });
 
+  it("rejects an entry that is not an object, and a range or group that is not text", () => {
+    expect(() => parseHolds({ holds: ["react"] })).toThrow(
+      "dependency-holds.json entry 1 must be an object",
+    );
+    expect(() => parseHolds({ holds: [{ packages: ["a"], reason: "x", range: 1 }] })).toThrow(
+      "dependency-holds.json entry 1: range must be a string",
+    );
+    expect(() => parseHolds({ holds: [{ packages: ["a"], reason: "x", group: 1 }] })).toThrow(
+      "dependency-holds.json entry 1: group must be a string",
+    );
+  });
+
+  it("reads no holds from a file without a list", () => {
+    expect(parseHolds({})).toEqual([]);
+    expect(parseHolds(null)).toEqual([]);
+  });
+
   it("rejects a range it cannot read", () => {
     expect(() =>
       parseHolds({ holds: [{ packages: ["a"], reason: "x", range: "1 || 2" }] }),
@@ -107,6 +124,66 @@ describe("enforceHolds", () => {
         ]),
       ),
     ).toEqual([{ name: "auth", attempted: "1.7.26", restoredTo: "1.7.25", reason: "lockstep" }]);
+  });
+
+  it("restores a ranged group whose members agree on a version outside the range", () => {
+    const ranged: readonly Hold[] = [
+      { packages: ["db", "db-cli"], group: "db", range: "0.29.x", reason: "the adapter's range" },
+    ];
+    const before = new Map([
+      ["db", "^0.29.9"],
+      ["db-cli", "^0.29.9"],
+    ]);
+
+    expect(
+      enforceHolds(
+        ranged,
+        before,
+        new Map([
+          ["db", "^0.29.10"],
+          ["db-cli", "^0.29.10"],
+        ]),
+      ),
+    ).toEqual([]);
+    expect(
+      enforceHolds(
+        ranged,
+        before,
+        new Map([
+          ["db", "^0.30.0"],
+          ["db-cli", "^0.30.0"],
+        ]),
+      ).map((restoration) => restoration.name),
+    ).toEqual(["db", "db-cli"]);
+  });
+
+  it("restores a ranged group moved to a spec that is not a version", () => {
+    const ranged: readonly Hold[] = [
+      { packages: ["db", "db-cli"], group: "db", range: "0.29.x", reason: "the adapter's range" },
+    ];
+    const before = new Map([
+      ["db", "^0.29.9"],
+      ["db-cli", "^0.29.9"],
+    ]);
+
+    expect(
+      enforceHolds(
+        ranged,
+        before,
+        new Map([
+          ["db", "next"],
+          ["db-cli", "next"],
+        ]),
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("restores a held package moved to a spec that is not a version", () => {
+    const ranged: readonly Hold[] = [{ packages: ["ts"], range: "<6.1.0", reason: "cap" }];
+
+    expect(enforceHolds(ranged, new Map([["ts", "~6.0.3"]]), new Map([["ts", "next"]]))).toEqual([
+      { name: "ts", attempted: "next", restoredTo: "~6.0.3", reason: "cap" },
+    ]);
   });
 
   it("applies extra holds passed by the caller", () => {

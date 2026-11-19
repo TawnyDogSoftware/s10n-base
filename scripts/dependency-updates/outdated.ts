@@ -15,15 +15,8 @@ export function parseOutdated(output: string): OutdatedRow[] {
       .split("|")
       .slice(1, -1)
       .map((cell) => cell.trim());
-    const [packageCell, current, update, latest] = cells;
-    if (
-      packageCell === undefined ||
-      current === undefined ||
-      update === undefined ||
-      latest === undefined
-    ) {
-      continue;
-    }
+    if (cells.length < 4) continue;
+    const [packageCell = "", current = "", update = "", latest = ""] = cells;
     rows.push({
       name: packageCell.replace(/ \((?:dev|peer|optional)\)$/, ""),
       current,

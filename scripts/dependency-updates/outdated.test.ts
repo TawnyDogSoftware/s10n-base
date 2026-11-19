@@ -28,6 +28,10 @@ describe("parseOutdated", () => {
     ]);
   });
 
+  it("skips a row with fewer cells than the table has", () => {
+    expect(parseOutdated("| effect | 4.0.3 | 4.0.3 |\n")).toEqual([]);
+  });
+
   it("returns nothing when everything is current", () => {
     expect(parseOutdated("bun outdated v1.4.4 (38afee6c8)\n")).toEqual([]);
   });

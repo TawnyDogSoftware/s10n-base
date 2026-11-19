@@ -12,7 +12,7 @@ import { access, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { runDependencyUpdate, type CommandResult, type FlowOptions, type Io } from "./flow";
+import type { CommandResult, FlowOptions, Io, runDependencyUpdate } from "./flow";
 
 interface Args {
   readonly dryRun: boolean;
@@ -132,14 +132,14 @@ export class ProcessIo implements Io {
   }
 }
 
-/** What `deps:update` reads and where it reports; the flow is a parameter for tests. */
+/** What `deps:update` reads, where it reports, and the flow it runs (a stand-in in tests). */
 export interface UpdateCommandIo {
   readonly repoRoot: string;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly now: Date;
   readonly log: (line: string) => void;
   readonly error: (line: string) => void;
-  readonly flow?: typeof runDependencyUpdate;
+  readonly flow: typeof runDependencyUpdate;
 }
 
 async function git(io: Io, args: readonly string[]): Promise<void> {
@@ -169,7 +169,7 @@ function flowOptions(args: Args, io: UpdateCommandIo): FlowOptions {
 async function update(argv: readonly string[], io: UpdateCommandIo): Promise<void> {
   const args = parseArgs(argv);
   const options = flowOptions(args, io);
-  const flow = io.flow ?? runDependencyUpdate;
+  const { flow } = io;
   const token = io.env.GH_TOKEN;
 
   if (!args.dryRun) {

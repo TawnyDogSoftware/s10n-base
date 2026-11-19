@@ -1,3 +1,7 @@
+import { once } from "node:events";
+import net from "node:net";
+import { setTimeout as delay } from "node:timers/promises";
+
 import { afterEach, describe, expect, it } from "vitest";
 
 import { LOCAL_SES_CREDENTIALS } from "../../apps/server/src/infra/email/local";
@@ -213,4 +217,133 @@ describe("ses-local", () => {
       await expect(startSesLocal({ host, port: 0 })).rejects.toThrow(/loopback/);
     },
   );
+});
+
+/** Sends `body` signed with the local keys, as the SES client would, to `path` (with a query). */
+function signedSend(local: SesLocal, body: string, query = "") {
+  const url = new URL(`${local.url}/v2/email/outbound-emails`);
+  const signed = signRequest(
+    {
+      method: "POST",
+      path: url.pathname,
+      query,
+      headers: [
+        ["host", url.host],
+        ["content-type", "application/json"],
+      ],
+      body,
+    },
+    { credentials: LOCAL_SES_CREDENTIALS, region: "us-east-1", service: "ses", date: new Date() },
+  );
+  url.search = query;
+  return fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...signed.headers },
+    body,
+  });
+}
+
+const valid = {
+  FromEmailAddress: "no-reply@example.com",
+  Destination: { ToAddresses: ["someone@example.com"] },
+  Content: { Simple: { Subject: { Data: "Hi" }, Body: { Text: { Data: "Hello" } } } },
+};
+
+describe("ses-local's request checks", () => {
+  it.each([
+    ["not JSON", "{", "The body is not valid JSON."],
+    ["not an object", "5", "The body must be a JSON object."],
+    ["null", "null", "The body must be a JSON object."],
+    [
+      "no sender",
+      JSON.stringify({ ...valid, FromEmailAddress: 7 }),
+      "FromEmailAddress is required.",
+    ],
+    [
+      "addresses that are not lists",
+      JSON.stringify({ ...valid, Destination: { ToAddresses: "someone@example.com" } }),
+      "Addresses must be arrays of strings.",
+    ],
+    [
+      "a reply-to list with a number in it",
+      JSON.stringify({ ...valid, ReplyToAddresses: [1] }),
+      "Addresses must be arrays of strings.",
+    ],
+    [
+      "no recipient",
+      JSON.stringify({ ...valid, Destination: {} }),
+      "Destination needs an address.",
+    ],
+    [
+      "no content",
+      JSON.stringify({ ...valid, Content: {} }),
+      "Content.Simple.Subject.Data is required.",
+    ],
+    [
+      "no body",
+      JSON.stringify({ ...valid, Content: { Simple: { Subject: { Data: "Hi" } } } }),
+      "Content.Simple.Body needs Text or Html data.",
+    ],
+  ])("refuses %s with 400", async (_case, body, message) => {
+    const local = await start();
+
+    const response = await signedSend(local, body);
+
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { message: string }).message).toBe(message);
+  });
+
+  it("accepts an HTML-only email sent with a query string, and shows it without a text part", async () => {
+    const local = await start();
+    const body = JSON.stringify({
+      ...valid,
+      Destination: { CcAddresses: ["copy@example.com"] },
+      Content: { Simple: { Subject: { Data: "Hi" }, Body: { Html: { Data: "<p>Hello</p>" } } } },
+    });
+
+    expect((await signedSend(local, body, "x=1")).status).toBe(200);
+
+    expect(local.emails()).toMatchObject([
+      {
+        destination: { to: [], cc: ["copy@example.com"], bcc: [] },
+        body: { html: "<p>Hello</p>" },
+      },
+    ]);
+    const page = await (await fetch(`${local.url}/`)).text();
+    expect(page).toContain("<pre>(no text part)</pre>");
+    expect(page).toContain("1 email, newest first.");
+  });
+
+  it("says the inbox is empty, and counts more than one email in the plural", async () => {
+    const local = await start();
+    expect(await (await fetch(`${local.url}/`)).text()).toContain("<p>No emails yet.</p>");
+
+    await signedSend(local, JSON.stringify(valid));
+    await signedSend(local, JSON.stringify(valid));
+
+    expect(await (await fetch(`${local.url}/`)).text()).toContain("2 emails, newest first.");
+  });
+
+  it("stores nothing when the client goes away before the body arrives", async () => {
+    const local = await start();
+    const { port } = new URL(local.url);
+    const socket = net.connect(Number(port), "127.0.0.1");
+    await once(socket, "connect");
+    socket.write(
+      `POST /v2/email/outbound-emails HTTP/1.1\r\nhost: 127.0.0.1:${port}\r\ncontent-length: 100\r\n\r\n{`,
+    );
+    await delay(50);
+    socket.destroy();
+    await delay(50);
+
+    expect(local.emails()).toEqual([]);
+    expect((await fetch(`${local.url}/health-check`)).status).toBe(200);
+  });
+
+  it("listens on IPv6 loopback with a bracketed URL", async () => {
+    const local = await start({ host: "::1" });
+
+    expect(local.url).toMatch(/^http:\/\/\[::1\]:\d+$/);
+    expect((await fetch(`${local.url}/health-check`)).status).toBe(200);
+  });
 });

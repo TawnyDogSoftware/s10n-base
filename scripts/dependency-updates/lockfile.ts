@@ -24,8 +24,10 @@ export function parseLockedDependencies(
 ): Map<string, string> | undefined {
   for (const line of lockText.split("\n")) {
     const match = /^\s+"([^"]+)": \["((?:@[^/"]+\/)?[^@"]+)@[^"]+", "[^"]*", (\{.*\})/.exec(line);
-    if (match === null || match[1] !== name || match[2] !== name) continue;
-    const meta = JSON.parse(match[3] ?? "{}") as { dependencies?: Record<string, string> };
+    if (match === null) continue;
+    const [, key, pkg, metaText = "{}"] = match;
+    if (key !== name || pkg !== name) continue;
+    const meta = JSON.parse(metaText) as { dependencies?: Record<string, string> };
     return new Map(Object.entries(meta.dependencies ?? {}));
   }
   return undefined;
