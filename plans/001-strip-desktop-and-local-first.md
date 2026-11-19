@@ -1,6 +1,6 @@
 # 001: Strip the desktop and local-first layer
 
-> Status: not started.
+> Status: implemented on 2026-11-19, branch `feature/001-strip-desktop-and-local-first`.
 
 Phase 1 of [000](000-hosted-starter-rework.md). Source references such as `[S1]` are resolved in the private companion's README (`../s10n-base-private/README.md`); nothing from that directory is copied into this repo.
 
@@ -21,14 +21,14 @@ Two projects built on this base each did this strip in one commit `[S1]`. Their 
 
 Leave these alone even though they are visibly wrong. Each has an owner phase, and fixing them here makes this PR harder to review.
 
-| Not in this phase | Owner |
-|---|---|
-| Any version change, `tsdown` bundling fix (defect 1), `vitest.workspace` migration, repo-wide reformat, CI | Phase 2 |
-| Wildcard CORS, body limit, 500 responses that leak messages, static-path hardening, shutdown ordering, signal handling, `/config` deriving its URL from the `Host` header, config validation, `HOST`/`PORT`/`S10N_BASE_PORT` handling | Phase 3 |
-| Auth on any route, auth levels on RPC methods | Phases 3 and 4 |
-| Relative URLs in the web client (defect 6), a replacement example domain | Phase 5 |
-| Lint rules, knip, coverage gate | Phase 7 |
-| Rewriting `README.md` and `CUSTOMIZATION_GUIDE.md`, `AGENTS.md`, rename script | Phase 9 |
+| Not in this phase                                                                                                                                                                                                                     | Owner          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| Any version change, `tsdown` bundling fix (defect 1), `vitest.workspace` migration, repo-wide reformat, CI                                                                                                                            | Phase 2        |
+| Wildcard CORS, body limit, 500 responses that leak messages, static-path hardening, shutdown ordering, signal handling, `/config` deriving its URL from the `Host` header, config validation, `HOST`/`PORT`/`S10N_BASE_PORT` handling | Phase 3        |
+| Auth on any route, auth levels on RPC methods                                                                                                                                                                                         | Phases 3 and 4 |
+| Relative URLs in the web client (defect 6), a replacement example domain                                                                                                                                                              | Phase 5        |
+| Lint rules, knip, coverage gate                                                                                                                                                                                                       | Phase 7        |
+| Rewriting `README.md` and `CUSTOMIZATION_GUIDE.md`, `AGENTS.md`, rename script                                                                                                                                                        | Phase 9        |
 
 No dependency is added in this phase.
 
@@ -141,4 +141,55 @@ Run all of these on the final commit and paste the results into section 8 and th
 
 ## 8. How it was built
 
-Filled in by the implementor: baseline results, the defect 1 observation, departures from this plan and why.
+### Baseline on `main` (`af4ca30`), before any edit
+
+Local tools: bun 1.4.4 (`packageManager` says `bun@1.3.9`) and Node 26.12.1.
+
+| Step                            | Result                                                                                                                                                                                         |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bun install --frozen-lockfile` | Pass, 334 packages. The lockfile was not rewritten despite the bun version difference.                                                                                                         |
+| `bun run fmt:check`             | **Fail**, on one file: `plans/000-hosted-starter-rework.md`. oxfmt also checks Markdown and wants that plan's tables padded. Not repaired here (section 3); recorded as defect 10 in plan 000. |
+| `bun run lint`                  | Pass, 0 warnings and 0 errors.                                                                                                                                                                 |
+| `bun run typecheck`             | Pass, 5 tasks.                                                                                                                                                                                 |
+| `bun run test`                  | Pass: contracts 2 tests, server 1, web 1.                                                                                                                                                      |
+| `bun run build`                 | Pass, 5 tasks.                                                                                                                                                                                 |
+
+### Defect 1
+
+**Before** (on `main`, after the baseline build): `S10N_BASE_HOME=<empty temp dir> S10N_BASE_PORT=47811 node apps/server/dist/bin.mjs` exits with code 1 at once, and `/health` is refused. The error:
+
+```
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '<repo>/packages/contracts/src/base' imported from <repo>/packages/contracts/src/index.ts
+```
+
+Plan 000's claim holds, with a sharper cause: Node 26 strips types and loads `packages/contracts/src/index.ts` itself, then fails on its extensionless relative import `./base`. The crash is at module resolution, so nothing was created in the temp directory. Plan 000 is corrected accordingly.
+
+**After** (on this branch, same command with `HOME` pointed at an empty temp directory): the same error and exit code 1; nothing created. The bundle's only external imports are now `effect` and `@s10n-base/contracts`. Not fixed; phase 2 owns it.
+
+### Decisions and departures
+
+- **RPC envelope:** `RpcRequest` requires both keys, so `{method}` without `payload` is a 400. An empty body is a 400 too (it used to be read as `{}` and answered with a 404 for method `undefined`), and invalid JSON is a 400 (it was a 500). The 404 message still names the method, as before.
+- **Config shape:** `ServerConfig.paths` stays an object holding only `webDistDir` (the interface is renamed `ServerPaths`), so static serving in `routes.ts` is untouched.
+- **Logger:** both levels go to stdout as JSON lines, as section 4.4 asks; errors used to go to stderr. `bin.ts` still prints its plain "listening" line.
+- **`@s10n-base/shared`:** nothing in `apps/server` imports it any more, but section 4.4 does not list it, so the dependency stays. Knip (phase 7) will flag it.
+- **Build info:** the desktop `tsconfig.tsbuildinfo` went with `apps/desktop`; the other four are untracked.
+- **Section 6 grep:** the tests that check the removed bootstrap fields compare the exact set of keys instead of naming the removed fields, so the grep stays empty.
+- **Removed web paths:** `/settings` and `/projects/x` now match only the root route (the router's not-found view inside the shell) and make no RPC call.
+- **Formatting:** `turbo.json` and this plan are formatted with oxfmt (whitespace and table padding only), so `fmt:check` is no worse than the baseline. Plan 000 is left unformatted (section 3).
+- **Nothing in section 2 was touched.** CORS, the body handling outside `/rpc`, static serving, the 500 handler, `/config`'s use of the `Host` header and the env handling are as they were.
+
+### Verification on the final commit (section 6)
+
+1. `bun install --frozen-lockfile` after `bun run clean`: pass, 238 packages, lockfile unchanged.
+2. `fmt:check`: fails on `plans/000-hosted-starter-rework.md` only, the same as the baseline. `lint`: pass, 0 warnings and 0 errors. `typecheck`: pass, 4 tasks. `test`: pass, contracts 11 tests, server 21, web 4. `build`: pass, 4 tasks.
+3. `S10N_BASE_PORT=47812 bun run dev:server`: `/health` gave 200 `{"ok":true,"status":"ok"}`; `/config` gave 200 `{"appName":"S10N Base","appVersion":"0.0.0","apiBaseUrl":"http://127.0.0.1:47812"}`; `POST /rpc` with `{"method":"example.get","payload":{}}` gave 404 `{"ok":false,"error":{"code":"rpc.method_not_found","message":"Unknown RPC method example.get"}}`; invalid JSON gave 400 `rpc.invalid_request`. Once the server was stopped, the port refused connections.
+4. Empty `HOME`: **not literally empty.** After starting and stopping `bun run dev:server`, `HOME` held `.bun/install/cache/` (bun's runtime transpiler cache) and `.config/turborepo/telemetry.json` (turbo), even with `BUN_RUNTIME_TRANSPILER_CACHE_PATH=0` and `TURBO_TELEMETRY_DISABLED=1`. Running `bun run src/bin.ts` directly left only `.bun/install/cache/`. Nothing came from the server: no `.s10n-base` directory and no database, settings or log file. The server test "creates no file when it starts and stops" checks the server code alone and passes.
+5. Defect 1: unchanged, as above.
+6. The first three greps print nothing. The lockfile grep prints `ws@8.20.0`; `jsdom` (the web test environment) is the only package that still depends on it.
+7. Scrub check: prints nothing.
+
+### For later phases
+
+- **Phase 2:** bun 1.4.4 installs the 1.3.9 lockfile without rewriting it. oxfmt checks Markdown, so the reformat must include `plans/`.
+- **Phase 3:** `bun run dev:server` exits with turbo reporting `run failed` on SIGTERM, because the server has no signal handling. Server tests print the logger's JSON lines; an injected writer can silence them.
+- **Phase 7:** the unused `@s10n-base/shared` dependency in `apps/server`. jsdom prints `Not implemented: window.scrollTo` in the web tests, as it did before this change.

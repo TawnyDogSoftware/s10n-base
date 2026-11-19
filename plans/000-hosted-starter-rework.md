@@ -1,12 +1,12 @@
 # 000: Rework s10n-base into a hosted web and mobile starter
 
-> Status: approved by the owner on 2026-11-18. Not started.
+> Status: approved by the owner on 2026-11-18. Phase 1 implemented on 2026-11-19 ([001](001-strip-desktop-and-local-first.md)).
 
 Written 2026-11-18 from a review of three private projects built on this base (called Project A, B and C here), of s10n-base itself, of T3 Code upstream, and of the npm registry.
 
 **This is the public version of the plan.** The projects it draws on are private, so they are not named, and source references are given as labels such as `[S4]`. The full plan, the research reports, the key to the labels (which repo, file and commit each one points to) and the scrub denylist live in a private companion directory outside this repo, at `../s10n-base-private/` next to the checkout. Read `../s10n-base-private/README.md` before starting a phase. Nothing from that directory may be copied into this repo without scrubbing.
 
-**How far to trust this:** every finding comes from reading code, git history and the npm registry. Nobody installed, built or ran anything. Version numbers are registry data as of 2026-11-18 and must be re-checked on the day the upgrade is done.
+**How far to trust this:** every finding comes from reading code, git history and the npm registry. Nobody installed, built or ran anything. Version numbers are registry data as of 2026-11-18 and must be re-checked on the day the upgrade is done. Phase 1 recorded a real baseline on 2026-11-19 (plan 001, section 8): it confirmed defect 1 and found defect 10.
 
 ## 1. Summary
 
@@ -53,9 +53,9 @@ The target is a hosted, multi-user starter:
 
 ## 3. Defects in the base today
 
-These are bugs, separate from the desktop assumptions. The first one was found by reading the config, not by running it; Project B fixed the same thing in its first 48 hours.
+These are bugs, separate from the desktop assumptions. The first one was found by reading the config and confirmed by running it in phase 1; Project B fixed the same thing in its first 48 hours.
 
-1. **The built server probably doesn't start.** `apps/server/tsdown.config.ts` has no setting to bundle workspace packages, and `packages/contracts` exports TypeScript source, so `dist/bin.mjs` imports raw `.ts`.
+1. **The built server doesn't start** (confirmed 2026-11-19 on Node 26.12.1). `apps/server/tsdown.config.ts` has no setting to bundle workspace packages, and `packages/contracts` exports TypeScript source, so `dist/bin.mjs` imports raw `.ts`. Node 26 strips the types and loads that file, then exits with `ERR_MODULE_NOT_FOUND` on its extensionless relative import `./base`.
 2. **Five `tsconfig.tsbuildinfo` files are committed.** All three spin-offs inherited and later removed them.
 3. **No auth on `/rpc`, `/ws` or `/config`**, CORS is `*`, there is no request body limit, and 500 responses leak error messages.
 4. **The database closes before requests drain** on shutdown, and there is no shutdown deadline.
@@ -64,6 +64,7 @@ These are bugs, separate from the desktop assumptions. The first one was found b
 7. **Lockfile versions carry known advisories:** `ws` 8.20.0, vite 7.3.2, vitest 4.1.4, turbo 2.9.6, effect beta.45 and electron 40.6.0.
 8. **Docs are wrong.** `EXTRACTION_REPORT.md` describes path helpers and log rotation that don't exist, and the rename checklist misses the `S10N_BASE_*` env vars, the localStorage key, the page title and the bin name.
 9. **Uses the deprecated `vitest.workspace` file** and leaves `packages/shared` out of it.
+10. **`fmt:check` fails on the default branch** (found 2026-11-19). oxfmt also checks Markdown, and this plan's tables are not in its format. Phase 2's repo-wide reformat fixes it; until then it is the only file the check reports.
 
 ## 4. Decisions (settled with the owner, 2026-11-18)
 
@@ -308,7 +309,7 @@ Not in the default template; documented so a project can add them the same way e
 
 ## 8. Open risks
 
-- **Nothing was executed.** Phase 2's CI smoke test is the first real evidence that the base builds and starts.
+- **Little was executed.** Phase 1 ran the gates locally and confirmed defect 1; phase 2's CI smoke test is the first evidence that the built server starts.
 - **s10n-base is public and the three spin-offs are private.** The scrub check before phase 1 is the control; a missed term in a pushed commit is public and stays in history.
 - **Fresh-clone Expo build under bun's default linker** is unverified (phase 6 gate).
 - **Better Auth 1.7.25, jsdom 31 and vitest 5.1.1** are newer than anything our repos run.
