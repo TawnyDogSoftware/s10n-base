@@ -1,4 +1,8 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": ["plans/**", "apps/server/src/infra/email/sigv4-test-suite/**"]
+  "ignorePatterns": [
+    "plans/**",
+    "apps/server/src/infra/email/sigv4-test-suite/**",
+    "apps/server/src/infra/postgres/generated/**"
+  ]
 }
