@@ -29,8 +29,10 @@ packages/
 
 ## Requirements
 
-- Bun `>=1.3.0`
-- Node `>=24`
+- Bun 1.4.4, the version in `packageManager` in `package.json`
+- Node 26.13.1, the version in `.nvmrc` (`nvm use` picks it up)
+
+Versions follow a 3-day rule enforced by `bunfig.toml`, and a daily workflow keeps them current. See [docs/dependencies.md](docs/dependencies.md).
 
 ## Commands
 
@@ -74,6 +76,20 @@ bun run fmt:check
 bun run lint
 bun run typecheck
 bun run test
+```
+
+Start the built server and check that `/health` answers (run `bun run build` first):
+
+```bash
+bun run smoke
+```
+
+CI (`.github/workflows/ci.yml`) runs all of these on every pull request.
+
+Preview the daily dependency update without pushing anything:
+
+```bash
+bun run deps:update --dry-run
 ```
 
 Clean generated output:

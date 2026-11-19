@@ -1,6 +1,6 @@
 # 000: Rework s10n-base into a hosted web and mobile starter
 
-> Status: approved by the owner on 2026-11-18. Phase 1 implemented on 2026-11-19 ([001](001-strip-desktop-and-local-first.md)).
+> Status: approved by the owner on 2026-11-18. Phase 1 implemented on 2026-11-19 ([001](001-strip-desktop-and-local-first.md)). Phase 2 implemented on 2026-11-19 ([002](002-toolchain-upgrade-and-ci.md)).
 
 Written 2026-11-18 from a review of three private projects built on this base (called Project A, B and C here), of s10n-base itself, of T3 Code upstream, and of the npm registry.
 
@@ -55,15 +55,15 @@ The target is a hosted, multi-user starter:
 
 These are bugs, separate from the desktop assumptions. The first one was found by reading the config and confirmed by running it in phase 1; Project B fixed the same thing in its first 48 hours.
 
-1. **The built server doesn't start** (confirmed 2026-11-19 on Node 26.12.1). `apps/server/tsdown.config.ts` has no setting to bundle workspace packages, and `packages/contracts` exports TypeScript source, so `dist/bin.mjs` imports raw `.ts`. Node 26 strips the types and loads that file, then exits with `ERR_MODULE_NOT_FOUND` on its extensionless relative import `./base`.
+1. **The built server doesn't start** (confirmed 2026-11-19 on Node 26.12.1; **fixed in phase 2**, and CI's smoke test now checks it). `apps/server/tsdown.config.ts` has no setting to bundle workspace packages, and `packages/contracts` exports TypeScript source, so `dist/bin.mjs` imports raw `.ts`. Node 26 strips the types and loads that file, then exits with `ERR_MODULE_NOT_FOUND` on its extensionless relative import `./base`.
 2. **Five `tsconfig.tsbuildinfo` files are committed.** All three spin-offs inherited and later removed them.
 3. **No auth on `/rpc`, `/ws` or `/config`**, CORS is `*`, there is no request body limit, and 500 responses leak error messages.
 4. **The database closes before requests drain** on shutdown, and there is no shutdown deadline.
 5. **SQLite tables are created on every boot** with no migrations and no owner column.
 6. **The web client uses relative URLs**, which a mobile app can't use.
-7. **Lockfile versions carry known advisories:** `ws` 8.20.0, vite 7.3.2, vitest 4.1.4, turbo 2.9.6, effect beta.45 and electron 40.6.0.
+7. **Lockfile versions carry known advisories:** `ws` 8.20.0, vite 7.3.2, vitest 4.1.4, turbo 2.9.6, effect beta.45 and electron 40.6.0. **Fixed in phases 1 and 2:** electron went in phase 1; `ws` left the lockfile with jsdom 31; the rest moved past their advisories. Phase 2 also cleared a `source-map-js` advisory the old lockfile kept, and `bun audit` reports nothing.
 8. **Docs are wrong.** `EXTRACTION_REPORT.md` describes path helpers and log rotation that don't exist, and the rename checklist misses the `S10N_BASE_*` env vars, the localStorage key, the page title and the bin name.
-9. **Uses the deprecated `vitest.workspace` file** and leaves `packages/shared` out of it.
+9. **Uses the deprecated `vitest.workspace` file** and leaves `packages/shared` out of it. **Fixed in phase 2:** a root `vitest.config.ts` with `test.projects`, and `packages/shared` has tests.
 10. **`fmt:check` fails on the default branch** (found 2026-11-19). oxfmt also checks Markdown, and this plan's tables are not in its format. Fixed the same day: `plans/` is excluded from formatting in `.oxfmtrc.json` (owner decision), so plan files are never reformatted by the tool.
 
 ## 4. Decisions (settled with the owner, 2026-11-18)
@@ -160,12 +160,14 @@ Targets follow the 3-day rule as of 2026-11-18. The full table and changelog lin
 | oxlint / oxfmt | 1.55 / 0.40 | 1.93.0 / 0.78.0 exact | expect a repo-wide reformat; do it as its own commit |
 | React and react-dom | ^19.2.0 | 19.3.0, exact | **Deviation from the rule.** 19.3.1 is newest, but Expo SDK 58 pins 19.3.0, and one React across web and mobile avoids duplicates. Project B does this. |
 
+**Phase 2 outcome (2026-11-19):** the table held except for turbo (2.11.11) and vitest with coverage-v8 (5.1.0). Neither patch exception was taken: turbo 2.11.12 and 2.11.13 fix affected-task detection, watch mode and `turbo trace`, none of which this repo uses, and both releases become eligible on 2026-11-21 through the daily update. oxfmt 0.78.0 changed no file, so there was no reformat. The final table and every check are in plan 002, section 10.
+
 Also in this phase:
 
 - A minimal `ci.yml`: frozen install, format check, lint, typecheck, test, build, then start the built server and hit `/health`. That last step would have caught defect 1.
-- Dependabot for GitHub Actions and Docker only, since it cannot update a bun `catalog`. Set its `cooldown` to 3 days so it follows the same rule (confirm the option name against current Dependabot docs).
+- Dependabot for GitHub Actions and Docker only, since it cannot update a bun `catalog`. Set its `cooldown` to 3 days so it follows the same rule (confirmed in phase 2: `cooldown.default-days`). Docker entries arrive with the phases that add Docker files.
 - The daily dependency-update workflow described below.
-- Enforce the 3-day rule in the package manager: `[install] minimumReleaseAge = 259200` (seconds) in `bunfig.toml`. **Decided 2026-11-18.** Tested on bun 1.4.4 in a throwaway project: with the setting, `bun add knip` installed 6.45.1 (7 days old) instead of 6.46.0 (published that day). The patch exception then needs a per-package override or a temporary lift, documented in the README.
+- Enforce the 3-day rule in the package manager: `[install] minimumReleaseAge = 259200` (seconds) in `bunfig.toml`. **Decided 2026-11-18.** Tested on bun 1.4.4 in a throwaway project: with the setting, `bun add knip` installed 6.45.1 (7 days old) instead of 6.46.0 (published that day). The patch exception then needs a per-package override or a temporary lift, documented in the README. **Phase 2 found** the per-package setting is `minimumReleaseAgeExcludes` in `bunfig.toml`, and that it covers only the packages named: dependencies published with them must be listed too, and blocked platform binaries (oxlint, turbo) are skipped without an error. See `docs/dependencies.md`.
 - An `auth-stack` note in the docs: `better-auth`, `@better-auth/expo` and `better-call` move together.
 
 #### Daily dependency-update workflow
@@ -177,12 +179,13 @@ What the test showed:
 - `bun update` honours `minimumReleaseAge` from `bunfig.toml`, rewrites the root `catalog`, and stays inside each range. Exact pins are left alone.
 - `bun update --latest` also honours the age gate, crosses major versions, and moves exact pins while keeping them exact (`effect` 4.0.3 became 4.1.4; `jsdom` ^30 became ^31.0.1; `knip` stayed at 6.45.1 because 6.46.0 was a day old).
 - `bun outdated` marks versions held back by the age gate with `*`.
-- `--minimum-release-age-excludes=<pkg>` lifts the gate for named packages, which is how a bug-fix patch is taken early.
+- `--minimum-release-age-excludes=<pkg>` lifts the gate for named packages, which is how a bug-fix patch is taken early. (Phase 2: true, but only for the packages named, not their dependencies.)
+- (Phase 2, not in the original test) `bun update --latest <names>` and `bun update --latest '!<name>'` do **not** rewrite catalog entries on bun 1.4.4; only an unfiltered `bun update -r --latest` does.
 
 Design (`.github/workflows/dependency-updates.yml`), revised with the owner on 2026-11-18:
 
 - **Trigger:** `cron: "0 0 * * *"` plus `workflow_dispatch`. GitHub can start scheduled runs late at busy times such as the top of the hour, so "midnight UTC" means shortly after.
-- **One PR with everything the rule allows:** `bun update -r --latest` minus the hold list, so majors are included. When a major breaks CI, the fix is made on that PR's branch (by a person or an agent) and merged with it; the base is expected to keep up with majors.
+- **One PR with everything the rule allows:** `bun update -r --latest` minus the hold list, so majors are included. (Phase 2: bun's filters cannot exclude catalog entries, so the script updates everything, then restores held packages and reinstalls.) When a major breaks CI, the fix is made on that PR's branch (by a person or an agent) and merged with it; the base is expected to keep up with majors.
 - **Supersede, don't pile up.** Each run:
   1. Looks for an open PR with the `dependency-update` label.
   2. Builds today's result. If there is an open PR, the new branch starts from that PR's head with `main` merged in, so fix commits already pushed for a major carry forward. If that merge conflicts, it starts from `main` and says so.
@@ -196,10 +199,10 @@ Design (`.github/workflows/dependency-updates.yml`), revised with the owner on 2
 - **Hold list** in one checked-in file with a reason per entry, enforced by a test:
   - `react`, `react-dom`, `react-native` and every Expo-managed native module: owned by the Expo SDK. The job runs `bunx expo install --check` in `apps/mobile` and reports drift instead of taking npm latest. A new Expo SDK is flagged in the PR body.
   - `typescript`: held below 6.1 until typescript-eslint supports 7 (D4, D6).
-  - `better-auth`, `@better-auth/expo`, `@better-auth/passkey`, `better-call`: updated only together, as one group.
+  - `better-auth`, `@better-auth/expo`, `@better-auth/passkey`, `better-call`: updated only together, as one group. (Phase 2: `better-call` has its own version numbers, 1.4.5 against better-auth's 1.7.25, so it cannot share a same-version group. It is held on its own and moved by hand with the group; phase 4's version test covers it.)
   - `kysely`: held on 0.29.x, the range Better Auth supports.
 - **PR body:** version changes grouped as major, minor and patch; bun and Node changes; anything flagged but not applied; and the packages `bun outdated` shows as held back by the age gate. That last list is where a person applies the patch exception by hand with `--minimum-release-age-excludes`; judging whether a patch "fixes an actual bug" is not automated.
-- **Token:** a GitHub App installation token from `actions/create-github-app-token`. A PR opened with the default `GITHUB_TOKEN` does not trigger CI. App permissions: Contents read and write, Pull requests read and write, nothing else. Secrets: `DEPS_UPDATE_APP_ID` and `DEPS_UPDATE_APP_PRIVATE_KEY`.
+- **Token:** a GitHub App installation token from `actions/create-github-app-token`. A PR opened with the default `GITHUB_TOKEN` does not trigger CI. App permissions: Contents read and write, Pull requests read and write, nothing else. Secrets: `DEPS_UPDATE_APP_CLIENT_ID` and `DEPS_UPDATE_APP_PRIVATE_KEY` (phase 2 renamed the first from `DEPS_UPDATE_APP_ID`, because `app-id` is deprecated in `actions/create-github-app-token` 3.3.0 in favour of `client-id`).
 - **Hardening:** SHA-pinned actions, job `permissions: contents: read` (the app token does the writing), `bun install --ignore-scripts` during the update, a concurrency group.
 - **Not covered:** GitHub Actions versions and Docker image digests, which Dependabot handles.
 - **Public-repo caveat:** s10n-base is a public repo, and GitHub disables scheduled workflows in public repos after 60 days without repository activity. Merging the update PRs counts as activity; a long quiet spell would need the workflow re-enabled.
