@@ -1,6 +1,9 @@
 /**
  * WCAG 2 contrast, computed from the token values themselves, and a small reader for the theme
- * file's blocks. Used by the contrast test; nothing at runtime depends on it.
+ * file's blocks. Used by the contrast test, and by the mobile app's Expo config for the colours
+ * native code needs before any CSS runs (the splash screen and Android's icon background).
+ *
+ * This file imports nothing, so Node can load it from the Expo config as it is.
  */
 
 export type Rgb = readonly [number, number, number];

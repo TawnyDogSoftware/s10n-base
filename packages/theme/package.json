@@ -4,7 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./theme.css": "./theme.css"
+    "./theme.css": "./theme.css",
+    "./tokens": {
+      "types": "./src/contrast.ts",
+      "import": "./src/contrast.ts"
+    }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

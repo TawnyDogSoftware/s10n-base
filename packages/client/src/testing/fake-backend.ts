@@ -43,6 +43,7 @@ export interface SeenRequest {
   readonly path: string;
   readonly search: string;
   readonly body: unknown;
+  readonly headers: Headers;
 }
 
 /** How a request should fail: no answer at all, or a given answer. */
@@ -258,7 +259,13 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     const url = new URL(request.url);
     const text = await request.clone().text();
     const body = text === "" ? undefined : (JSON.parse(text) as unknown);
-    const seen = { method: request.method, path: url.pathname, search: url.search, body };
+    const seen = {
+      method: request.method,
+      path: url.pathname,
+      search: url.search,
+      body,
+      headers: request.headers,
+    };
     requests.push(seen);
     const cookie = request.headers.get("cookie");
     const hold = holds.get(url.pathname);
@@ -339,6 +346,8 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       return release;
     },
     calls: (path: string) => requests.filter((request) => request.path === path),
+    /** The headers of the latest request to `path`. */
+    headers: (path: string) => requests.findLast((request) => request.path === path)?.headers,
   };
 }
 

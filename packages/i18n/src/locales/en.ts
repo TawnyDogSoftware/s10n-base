@@ -34,6 +34,10 @@ export const en = {
       body: "Something went wrong while loading it. Try again in a moment.",
       retry: "Try again",
     },
+    startError: {
+      title: "We could not reach the server",
+      body: "Check your connection, then try again.",
+    },
     unknownOutcome: {
       title: "We could not confirm whether that worked",
       body: "The connection dropped before the server answered. We are checking your account now.",
@@ -75,6 +79,9 @@ export const en = {
       resend: "Send the link again",
       resending: "Sending…",
       resent: "We sent a new link. It works for one hour.",
+      inBrowser:
+        "The link opens in your browser. When it says your address is confirmed, come back here and sign in.",
+      toSignIn: "Go to sign in",
     },
     signIn: {
       title: "Sign in",
@@ -110,6 +117,8 @@ export const en = {
       sentBody:
         "If an account uses {{email}}, we sent it a link to reset the password. The link works for one hour.",
       backToSignIn: "Back to sign in",
+      inBrowser:
+        "The link opens in your browser, where you choose the new password. Then come back here and sign in with it.",
     },
     resetPassword: {
       title: "Choose a new password",
@@ -153,6 +162,7 @@ export const en = {
     session: {
       title: "Session",
       intro: "Sign out of this browser.",
+      introApp: "Sign out of the app on this device.",
     },
   },
   admin: {
