@@ -64,7 +64,7 @@ These are bugs, separate from the desktop assumptions. The first one was found b
 7. **Lockfile versions carry known advisories:** `ws` 8.20.0, vite 7.3.2, vitest 4.1.4, turbo 2.9.6, effect beta.45 and electron 40.6.0.
 8. **Docs are wrong.** `EXTRACTION_REPORT.md` describes path helpers and log rotation that don't exist, and the rename checklist misses the `S10N_BASE_*` env vars, the localStorage key, the page title and the bin name.
 9. **Uses the deprecated `vitest.workspace` file** and leaves `packages/shared` out of it.
-10. **`fmt:check` fails on the default branch** (found 2026-11-19). oxfmt also checks Markdown, and this plan's tables are not in its format. Phase 2's repo-wide reformat fixes it; until then it is the only file the check reports.
+10. **`fmt:check` fails on the default branch** (found 2026-11-19). oxfmt also checks Markdown, and this plan's tables are not in its format. Fixed the same day: `plans/` is excluded from formatting in `.oxfmtrc.json` (owner decision), so plan files are never reformatted by the tool.
 
 ## 4. Decisions (settled with the owner, 2026-11-18)
 
