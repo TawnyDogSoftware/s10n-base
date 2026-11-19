@@ -189,6 +189,8 @@ export type AuthOptions = Options & {
     };
     readonly database: { readonly generateId: "uuid" };
     readonly ipAddress: { readonly ipAddressHeaders: string[] };
+    readonly disableOriginCheck: false;
+    readonly disableCSRFCheck: false;
   };
   readonly plugins: BetterAuthPlugin[];
 };
@@ -252,6 +254,10 @@ export function buildAuthOptions(
       defaultCookieAttributes: { httpOnly: true, sameSite: "lax", secure, path: "/" },
       database: { generateId: "uuid" },
       ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
+      // Better Auth turns both checks off when NODE_ENV is test. They stay on everywhere, so a
+      // server's protection never depends on NODE_ENV, and the live tests exercise them.
+      disableOriginCheck: false,
+      disableCSRFCheck: false,
     },
     plugins: [
       expo(),

@@ -150,6 +150,13 @@ describe("buildAuthOptions", () => {
     expect(plain.defaultCookieAttributes.secure).toBe(false);
   });
 
+  it("keeps Better Auth's origin and CSRF checks on, which it would turn off when NODE_ENV is test", () => {
+    const { advanced } = setup({ nodeEnv: "test" }).options;
+
+    expect(advanced.disableOriginCheck).toBe(false);
+    expect(advanced.disableCSRFCheck).toBe(false);
+  });
+
   it("reads the client IP from the bridge's header only", () => {
     expect(setup().options.advanced.ipAddress).toEqual({ ipAddressHeaders: [CLIENT_IP_HEADER] });
   });
