@@ -25,7 +25,7 @@ function fake(answer: (seen: Seen) => Response | Promise<Response>) {
     requests.push(seen);
     return answer(seen);
   };
-  return { fetch: fetch as typeof globalThis.fetch, requests };
+  return { fetch: fetch, requests };
 }
 
 const ok = (body: unknown = { status: true }) =>

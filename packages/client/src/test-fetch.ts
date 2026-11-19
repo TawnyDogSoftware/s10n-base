@@ -31,7 +31,7 @@ export function fakeFetch(handler: FakeHandler) {
     requests.push(request);
     return handler(request);
   };
-  return { fetch: fetch as typeof globalThis.fetch, requests };
+  return { fetch: fetch, requests };
 }
 
 /** A promise with its resolve and reject exposed. */

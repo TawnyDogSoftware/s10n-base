@@ -38,7 +38,7 @@ export interface ServerConfig {
   readonly appOrigin: string;
   readonly host: string;
   readonly port: number;
-  readonly databaseUrl: Redacted.Redacted<string>;
+  readonly databaseUrl: Redacted.Redacted;
   readonly databasePoolMax: number;
   readonly trustedProxyHops: number;
   readonly requestBodyLimitBytes: number;
@@ -54,7 +54,7 @@ export interface ServerConfig {
 
 export interface AuthConfig {
   /** Signs and encrypts Better Auth's cookies and tokens. At least 32 characters. */
-  readonly secret: Redacted.Redacted<string>;
+  readonly secret: Redacted.Redacted;
 }
 
 export interface SesConfig {
@@ -63,8 +63,8 @@ export interface SesConfig {
   readonly endpoint: string | undefined;
   readonly credentials: {
     readonly accessKeyId: string;
-    readonly secretAccessKey: Redacted.Redacted<string>;
-    readonly sessionToken: Redacted.Redacted<string> | undefined;
+    readonly secretAccessKey: Redacted.Redacted;
+    readonly sessionToken: Redacted.Redacted | undefined;
   };
 }
 
@@ -79,7 +79,7 @@ export interface EmailConfig {
 /** What the `migrate` entry point needs: no HTTP settings. */
 export interface DatabaseConfig {
   readonly nodeEnv: NodeEnv;
-  readonly databaseUrl: Redacted.Redacted<string>;
+  readonly databaseUrl: Redacted.Redacted;
   readonly logLevel: LogLevel;
 }
 

@@ -92,7 +92,16 @@ async function startWithSlowMethod(events: string[], config: Partial<ServerConfi
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ method: "fixture.slow", payload: {} }),
     });
-  return { pool, base, call, handlerStarted, finish: () => finish(), logs };
+  return {
+    pool,
+    base,
+    call,
+    handlerStarted,
+    finish: () => {
+      finish();
+    },
+    logs,
+  };
 }
 
 describe("startServer", () => {
@@ -114,7 +123,9 @@ describe("startServer", () => {
     started = undefined;
 
     const inFlight = call();
-    await vi.waitFor(() => expect(handlerStarted).toHaveBeenCalled());
+    await vi.waitFor(() => {
+      expect(handlerStarted).toHaveBeenCalled();
+    });
     const stopping = server.stop().then((result) => {
       events.push("stopped");
       return result;
@@ -187,7 +198,9 @@ describe("startServer", () => {
       () => "answered",
       () => "connection closed",
     );
-    await vi.waitFor(() => expect(handlerStarted).toHaveBeenCalled());
+    await vi.waitFor(() => {
+      expect(handlerStarted).toHaveBeenCalled();
+    });
     const startedAt = Date.now();
     const result = await server.stop();
 

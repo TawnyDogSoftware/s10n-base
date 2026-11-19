@@ -72,7 +72,7 @@ export function createAuthRouteGuard(
       path,
       { method: methods as ["GET"], disableBody: true },
       async () => new Response(null, { status: 204 }),
-    ) as unknown as Endpoint;
+    );
   }
   // The settings Better Auth's own router uses.
   const router = createRouter(endpoints, {

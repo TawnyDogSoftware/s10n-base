@@ -65,7 +65,12 @@ export function SignUpScreen() {
   if (sentTo !== null) {
     return (
       <Screen title={t("checkEmail.title")}>
-        <CheckEmail email={sentTo} onSignIn={() => router.replace("/sign-in")} />
+        <CheckEmail
+          email={sentTo}
+          onSignIn={() => {
+            router.replace("/sign-in");
+          }}
+        />
       </Screen>
     );
   }
@@ -131,7 +136,13 @@ export function SignUpScreen() {
         </Button>
       </Card>
       <Body>{t("signUp.haveAccount")}</Body>
-      <TextButton onPress={() => router.replace("/sign-in")}>{t("signUp.signInLink")}</TextButton>
+      <TextButton
+        onPress={() => {
+          router.replace("/sign-in");
+        }}
+      >
+        {t("signUp.signInLink")}
+      </TextButton>
     </Screen>
   );
 }

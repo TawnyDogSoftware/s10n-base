@@ -66,7 +66,9 @@ export function SignInScreen() {
         <CheckEmail
           email={unverified}
           lead={t("signIn.unverified")}
-          onSignIn={() => setUnverified(null)}
+          onSignIn={() => {
+            setUnverified(null);
+          }}
         />
       </Screen>
     );
@@ -123,12 +125,22 @@ export function SignInScreen() {
         >
           {t("signIn.submit")}
         </Button>
-        <TextButton onPress={() => router.push("/forgot-password")}>
+        <TextButton
+          onPress={() => {
+            router.push("/forgot-password");
+          }}
+        >
           {t("signIn.forgotPassword")}
         </TextButton>
       </Card>
       <Body>{t("signIn.noAccount")}</Body>
-      <TextButton onPress={() => router.push("/sign-up")}>{t("signIn.signUpLink")}</TextButton>
+      <TextButton
+        onPress={() => {
+          router.push("/sign-up");
+        }}
+      >
+        {t("signIn.signUpLink")}
+      </TextButton>
     </Screen>
   );
 }

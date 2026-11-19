@@ -240,12 +240,19 @@ export async function startSesLocal(options: SesLocalOptions): Promise<SesLocal>
     const route = `${request.method ?? ""} ${path}`;
     if (route === `POST ${SEND_PATH}`) return receive(request, response);
     request.resume();
-    if (route === "GET /store") return sendJson(response, 200, { emails });
+    if (route === "GET /store") {
+      sendJson(response, 200, { emails });
+      return;
+    }
     if (route === "POST /clear-store") {
       emails = [];
-      return sendJson(response, 200, { ok: true });
+      sendJson(response, 200, { ok: true });
+      return;
     }
-    if (route === "GET /health-check") return sendJson(response, 200, { ok: true });
+    if (route === "GET /health-check") {
+      sendJson(response, 200, { ok: true });
+      return;
+    }
     if (route === "GET /") {
       response.statusCode = 200;
       response.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -257,7 +264,7 @@ export async function startSesLocal(options: SesLocalOptions): Promise<SesLocal>
       response.end(inboxPage(emails));
       return undefined;
     }
-    return awsError(response, 404, "NotFoundException", "Not found.");
+    awsError(response, 404, "NotFoundException", "Not found.");
   }
 
   const server = http.createServer((request, response) => {
@@ -280,7 +287,9 @@ export async function startSesLocal(options: SesLocalOptions): Promise<SesLocal>
     emails: () => emails,
     stop: () =>
       new Promise((resolve) => {
-        server.close(() => resolve());
+        server.close(() => {
+          resolve();
+        });
         server.closeAllConnections();
       }),
   };

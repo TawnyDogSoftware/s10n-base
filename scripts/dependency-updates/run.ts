@@ -56,7 +56,9 @@ class ProcessIo implements Io {
       child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
       child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
       child.on("error", reject);
-      child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
+      child.on("close", (code) => {
+        resolve({ code: code ?? 1, stdout, stderr });
+      });
       child.stdin.end(options?.input ?? "");
     });
   }

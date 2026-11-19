@@ -67,7 +67,7 @@ export function trackNetworkFailures(base: typeof globalThis.fetch): NetworkTrac
       headers: response.headers,
     });
   };
-  return { fetch: tracked as typeof globalThis.fetch, failures: () => failures };
+  return { fetch: tracked, failures: () => failures };
 }
 
 /** What a Better Auth client call resolves to. */

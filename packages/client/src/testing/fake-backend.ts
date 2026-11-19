@@ -320,7 +320,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
   }
 
   return {
-    fetch: fetch as typeof globalThis.fetch,
+    fetch: fetch,
     requests,
     users,
     addUser,

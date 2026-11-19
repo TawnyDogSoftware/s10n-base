@@ -86,8 +86,12 @@ async function main(): Promise<number> {
   const stop = new Promise<void>((resolve) => {
     requestStop = resolve;
   });
-  process.on("SIGINT", () => requestStop());
-  process.on("SIGTERM", () => requestStop());
+  process.on("SIGINT", () => {
+    requestStop();
+  });
+  process.on("SIGTERM", () => {
+    requestStop();
+  });
 
   await run("docker", ["compose", "-f", "docker-compose.local.yml", "up", "-d", "--wait"], env);
   await run("bun", ["apps/server/src/migrate.ts", "up"], env);

@@ -126,7 +126,9 @@ describe("sendFetchResponse", () => {
       http.get(`http://127.0.0.1:${port}/`, (message) => {
         let body = "";
         message.on("data", (chunk: Buffer) => (body += chunk.toString()));
-        message.on("end", () => resolve(Object.assign(message, { body })));
+        message.on("end", () => {
+          resolve(Object.assign(message, { body }));
+        });
       });
     });
   }

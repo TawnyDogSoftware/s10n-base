@@ -474,7 +474,9 @@ describe("/reset-password", () => {
       "We could not confirm whether that worked",
     );
     await act(async () => {
-      await waitFor(() => expect(backend.calls("/api/app-auth/session").length).toBeGreaterThan(0));
+      await waitFor(() => {
+        expect(backend.calls("/api/app-auth/session").length).toBeGreaterThan(0);
+      });
     });
   });
 });

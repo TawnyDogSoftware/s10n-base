@@ -24,7 +24,7 @@ export interface MigrateCliOptions {
   readonly env: Record<string, string | undefined>;
   readonly write?: LogWriter;
   /** Retry schedule for the first connection. */
-  readonly schedule?: Schedule.Schedule<unknown, unknown>;
+  readonly schedule?: Schedule.Schedule<unknown>;
   /** For tests: the migrations to run and the schema to run them in. */
   readonly migrations?: Readonly<Record<string, Migration>>;
   readonly schema?: string;
@@ -71,14 +71,18 @@ export async function runMigrateCli(options: MigrateCliOptions): Promise<number>
     connectionString: Redacted.value(config.databaseUrl),
     max: 1,
     ...(schema === "public" ? {} : { searchPath: schema }),
-    onIdleError: (error) => logger.warn("database_idle_connection_failed", { error }),
+    onIdleError: (error) => {
+      logger.warn("database_idle_connection_failed", { error });
+    },
   });
   const db = createDb(pool) as Kysely<unknown>;
   try {
     await Effect.runPromise(
       waitForDatabase(() => pingDatabase(db), {
         ...(options.schedule ? { schedule: options.schedule } : {}),
-        onAttemptFailed: (error) => logger.warn("database_unavailable", { error }),
+        onAttemptFailed: (error) => {
+          logger.warn("database_unavailable", { error });
+        },
       }),
     );
     await runMigrationCommand(command, {

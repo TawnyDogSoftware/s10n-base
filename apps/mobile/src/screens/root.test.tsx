@@ -30,7 +30,9 @@ describe("RootLayout", () => {
     const { unmount } = render(<RootLayout />);
 
     setNetwork({ isConnected: false });
-    await waitFor(() => expect(onlineManager.isOnline()).toBe(false));
+    await waitFor(() => {
+      expect(onlineManager.isOnline()).toBe(false);
+    });
 
     unmount();
     expect(onlineManager.isOnline()).toBe(true);

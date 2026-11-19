@@ -35,7 +35,9 @@ function freePort(): Promise<number> {
     probe.once("error", reject);
     probe.listen(0, "127.0.0.1", () => {
       const { port } = probe.address() as net.AddressInfo;
-      probe.close(() => resolve(port));
+      probe.close(() => {
+        resolve(port);
+      });
     });
   });
 }
@@ -72,7 +74,9 @@ export async function startAuthServer(
           connectionString: schema.fixture.url,
           max: 4,
           searchPath: schema.fixture.schema,
-          onIdleError: (error) => logger.warn("database_idle_connection_failed", { error }),
+          onIdleError: (error) => {
+            logger.warn("database_idle_connection_failed", { error });
+          },
         }),
       ...(options.handlers ? { handlers: options.handlers } : {}),
     });

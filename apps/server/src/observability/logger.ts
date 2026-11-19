@@ -78,10 +78,18 @@ export function createLogger(options: LoggerOptions, bound: LogFields = {}): Log
   }
 
   return {
-    debug: (message, fields) => log("debug", message, fields),
-    info: (message, fields) => log("info", message, fields),
-    warn: (message, fields) => log("warn", message, fields),
-    error: (message, fields) => log("error", message, fields),
+    debug: (message, fields) => {
+      log("debug", message, fields);
+    },
+    info: (message, fields) => {
+      log("info", message, fields);
+    },
+    warn: (message, fields) => {
+      log("warn", message, fields);
+    },
+    error: (message, fields) => {
+      log("error", message, fields);
+    },
     child: (fields) => createLogger(options, { ...bound, ...fields }),
   };
 }

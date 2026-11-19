@@ -33,7 +33,9 @@ describe("SignInScreen", () => {
     type("Password", "correct horse");
     press("Sign in");
 
-    await waitFor(() => expect(services.gate.current()?.name).toBe("Sam"));
+    await waitFor(() => {
+      expect(services.gate.current()?.name).toBe("Sam");
+    });
   });
 
   it("announces a refused sign-in", async () => {

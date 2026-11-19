@@ -80,7 +80,9 @@ describe("useSession", () => {
     const { result } = renderHook(() => useSession(), { wrapper });
 
     expect(result.current).toBeUndefined();
-    await waitFor(() => expect(result.current).toEqual(session));
+    await waitFor(() => {
+      expect(result.current).toEqual(session);
+    });
   });
 
   it("fails loudly outside a SessionClientProvider", () => {

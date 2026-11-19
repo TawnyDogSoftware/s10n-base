@@ -84,7 +84,7 @@ export interface ServerLayerOptions {
   /** Builds the connection pool. Defaults to a `pg` pool; tests pass a fake. */
   readonly createPool?: (config: ServerConfig, logger: Logger) => PostgresPool;
   /** Retry schedule for the first database connection. */
-  readonly connectSchedule?: Schedule.Schedule<unknown, unknown>;
+  readonly connectSchedule?: Schedule.Schedule<unknown>;
   readonly handlers?: ReadonlyArray<RpcHandler>;
   /** Defaults to the session lookup. */
   readonly resolveActor?: ActorResolver;
@@ -96,7 +96,9 @@ function defaultPool(config: ServerConfig, logger: Logger): PostgresPool {
   return createPool({
     connectionString: Redacted.value(config.databaseUrl),
     max: config.databasePoolMax,
-    onIdleError: (error) => logger.warn("database_idle_connection_failed", { error }),
+    onIdleError: (error) => {
+      logger.warn("database_idle_connection_failed", { error });
+    },
   });
 }
 
@@ -141,7 +143,9 @@ const databaseLayer = (options: ServerLayerOptions) =>
       );
       yield* waitForDatabase(() => pingDatabase(db as Kysely<unknown>), {
         ...(options.connectSchedule ? { schedule: options.connectSchedule } : {}),
-        onAttemptFailed: (error) => logger.warn("database_unavailable", { error }),
+        onAttemptFailed: (error) => {
+          logger.warn("database_unavailable", { error });
+        },
       });
       const checkReadiness = () =>
         Effect.runPromise(
@@ -240,7 +244,10 @@ const httpServerLayer = (options: ServerLayerOptions) =>
       // close it rather than wait for the client to.
       server.on("request", (_request, response: http.ServerResponse) => {
         response.once("finish", () => {
-          if (shuttingDown) setImmediate(() => server.closeIdleConnections());
+          if (shuttingDown)
+            setImmediate(() => {
+              server.closeIdleConnections();
+            });
         });
       });
 
@@ -250,7 +257,11 @@ const httpServerLayer = (options: ServerLayerOptions) =>
           Effect.gen(function* () {
             shuttingDown = true;
             logger.info("http_server_draining", { deadlineMs: config.shutdownTimeoutMs });
-            const closed = new Promise<void>((resolve) => server.close(() => resolve()));
+            const closed = new Promise<void>((resolve) =>
+              server.close(() => {
+                resolve();
+              }),
+            );
             server.closeIdleConnections();
             const drained = yield* Effect.promise(() => closed).pipe(
               Effect.timeoutOption(Duration.millis(config.shutdownTimeoutMs)),

@@ -19,7 +19,9 @@ describe("SignedInLayout", () => {
 
     renderScreen(<SignedInLayout />, { backend, services });
 
-    await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
+    await waitFor(() => {
+      expect(screen.queryByText("Loading…")).toBeNull();
+    });
     expect(screen.queryByTestId("redirect")).toBeNull();
   });
 
@@ -65,7 +67,9 @@ describe("SignedOutLayout", () => {
   it("shows the sign-in screens to a visitor", async () => {
     renderScreen(<SignedOutLayout />);
 
-    await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
+    await waitFor(() => {
+      expect(screen.queryByText("Loading…")).toBeNull();
+    });
     expect(screen.queryByTestId("redirect")).toBeNull();
   });
 });

@@ -34,7 +34,7 @@ export function isTransientConnectionError(error: unknown): boolean {
 }
 
 export interface WaitForDatabaseOptions {
-  readonly schedule?: Schedule.Schedule<unknown, unknown>;
+  readonly schedule?: Schedule.Schedule<unknown>;
   /** Called with each transient failure, including the last one before giving up. */
   readonly onAttemptFailed?: (error: unknown) => void;
 }

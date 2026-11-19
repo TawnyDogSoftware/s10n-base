@@ -13,9 +13,21 @@ export function HomeScreen() {
   if (!session) return null;
   return (
     <Screen title={t("home.title", { name: session.name })} intro={t("home.intro")}>
-      <TextButton onPress={() => router.push("/profile")}>{t("home.profileLink")}</TextButton>
+      <TextButton
+        onPress={() => {
+          router.push("/profile");
+        }}
+      >
+        {t("home.profileLink")}
+      </TextButton>
       {session.role === "admin" ? (
-        <TextButton onPress={() => router.push("/users")}>{t("home.usersLink")}</TextButton>
+        <TextButton
+          onPress={() => {
+            router.push("/users");
+          }}
+        >
+          {t("home.usersLink")}
+        </TextButton>
       ) : null}
     </Screen>
   );

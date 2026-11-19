@@ -104,7 +104,9 @@ describe("protected queries", () => {
     await act(async () => answers.get("alice")?.resolve("alice's profile"));
     await screen.findByText("alice's profile");
 
-    act(() => accept(gate, bob));
+    act(() => {
+      accept(gate, bob);
+    });
     await screen.findByText("loading");
     await act(async () => answers.get("bob")?.resolve("bob's profile"));
     await screen.findByText("bob's profile");
@@ -198,7 +200,7 @@ describe("a response that started under one user and finished under another", ()
       signal: new AbortController().signal,
       meta: undefined,
       client: queryClient,
-    } as never);
+    });
 
     accept(gate, bob);
     slow.resolve("alice's profile");
@@ -241,7 +243,9 @@ describe("an auth.unauthenticated error from a protected call", () => {
       gate.guard(() => Promise.reject(new RpcError("auth.unauthenticated", "Sign in.", 401))),
     ).rejects.toBeInstanceOf(RpcError);
 
-    await waitFor(() => expect(gate.current()).toBeNull());
+    await waitFor(() => {
+      expect(gate.current()).toBeNull();
+    });
     expect(server.fetchSession).toHaveBeenCalledTimes(1);
     expect(queryClient.getQueryData(["user", "alice", "profile"])).toBeUndefined();
   });
@@ -257,7 +261,9 @@ describe("an auth.unauthenticated error from a protected call", () => {
 
     await expect(gate.queryClient.fetchQuery(options)).rejects.toBeInstanceOf(RpcError);
 
-    await waitFor(() => expect(gate.current()).toBeNull());
+    await waitFor(() => {
+      expect(gate.current()).toBeNull();
+    });
     expect(server.fetchSession).toHaveBeenCalledTimes(1);
   });
 

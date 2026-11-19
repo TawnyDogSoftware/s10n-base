@@ -270,9 +270,9 @@ describe("/admin/users", () => {
 
     click("Load more");
 
-    await waitFor(() =>
-      expect(within(table).getAllByRole("row")).toHaveLength(ADMIN_USERS_PAGE_SIZE + 7),
-    );
+    await waitFor(() => {
+      expect(within(table).getAllByRole("row")).toHaveLength(ADMIN_USERS_PAGE_SIZE + 7);
+    });
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
     const requests = backend.calls("/rpc").map((call) => call.body as { payload: unknown });
     expect(requests.map((request) => request.payload)).toEqual([

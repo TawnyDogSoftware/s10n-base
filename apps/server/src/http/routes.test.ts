@@ -144,7 +144,9 @@ async function rawGet(base: string, target: string) {
       (response) => {
         let body = "";
         response.setEncoding("utf8").on("data", (chunk: string) => (body += chunk));
-        response.on("end", () => resolve({ status: response.statusCode ?? 0, body }));
+        response.on("end", () => {
+          resolve({ status: response.statusCode ?? 0, body });
+        });
       },
     );
     request.on("error", reject);
@@ -193,9 +195,9 @@ describe("every response", () => {
     });
     await response.text();
 
-    await vi.waitFor(() =>
-      expect(logLines.filter((line) => line.message === "request")).toHaveLength(1),
-    );
+    await vi.waitFor(() => {
+      expect(logLines.filter((line) => line.message === "request")).toHaveLength(1);
+    });
     const line = logLines.find((entry) => entry.message === "request");
     expect(line).toMatchObject({
       level: "info",
@@ -216,11 +218,11 @@ describe("every response", () => {
       await fetch(`${base}/health`, { headers: { "x-forwarded-for": "6.6.6.6, 198.51.100.7" } })
     ).text();
 
-    await vi.waitFor(() =>
+    await vi.waitFor(() => {
       expect(logLines.find((line) => line.message === "request")).toMatchObject({
         clientIp: "198.51.100.7",
-      }),
-    );
+      });
+    });
   });
 
   it("asks the client to close the connection once shutdown has started", async () => {

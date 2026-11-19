@@ -31,11 +31,11 @@ describe("findDirectives", () => {
     [`// ${TS_NOCHECK}\nexport {};`, TS_NOCHECK],
     [`/** ${TS_IGNORE} */\nexport {};`, TS_IGNORE],
     [`// ${TS_EXPECT} wrong type\nconst a: number = "x";`, TS_EXPECT],
-    [`/* v8 ${"ignore"} next */\nexport {};`, "v8 ignore"],
-    [`/* c8 ${"ignore"} next */\nexport {};`, "c8 ignore"],
-    [`/* istanbul ${"ignore"} else */\nexport {};`, "istanbul ignore"],
-    [`/* v8 ${"ignore"} start -- @preserve */\nexport {};`, "v8 ignore"],
-    [`// node:coverage ${"disable"}\nexport {};`, "node:coverage disable"],
+    [`/* v8 ignore next */\nexport {};`, "v8 ignore"],
+    [`/* c8 ignore next */\nexport {};`, "c8 ignore"],
+    [`/* istanbul ignore else */\nexport {};`, "istanbul ignore"],
+    [`/* v8 ignore start -- @preserve */\nexport {};`, "v8 ignore"],
+    [`// node:coverage disable\nexport {};`, "node:coverage disable"],
   ])("finds a directive in %j", (source, directive) => {
     expect(findDirectives("file.ts", source).map((finding) => finding.directive)).toEqual([
       directive,
@@ -68,7 +68,7 @@ describe("findDirectives", () => {
     const source = [
       `const a = "// ${ESLINT_OFF}";`,
       `const b = \`/* ${TS_IGNORE} */\`;`,
-      `const c = /v8 ${"ignore"} next/;`,
+      `const c = /v8 ignore next/;`,
       "export { a, b, c };",
     ].join("\n");
 

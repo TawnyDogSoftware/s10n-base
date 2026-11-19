@@ -71,7 +71,9 @@ export function Field(
         id={id}
         ref={inputRef}
         value={value}
-        onChange={(event) => onValueChange(event.target.value)}
+        onChange={(event) => {
+          onValueChange(event.target.value);
+        }}
         aria-invalid={error === undefined ? undefined : true}
         aria-describedby={describedBy === "" ? undefined : describedBy}
         className={`bg-background text-foreground border-border aria-[invalid=true]:border-danger ${focusRing} rounded-md border px-3 py-2`}

@@ -65,7 +65,7 @@ export interface SesClientOptions {
   /** Per attempt. Default 10 seconds. */
   readonly timeoutMs?: number;
   /** When to retry an attempt that may be retried. Default: up to two retries, backing off. */
-  readonly retrySchedule?: Schedule.Schedule<unknown, unknown>;
+  readonly retrySchedule?: Schedule.Schedule<unknown>;
   readonly fetch?: typeof fetch;
   readonly now?: () => Date;
 }
@@ -75,7 +75,7 @@ export interface SesClient {
   readonly sendEmail: (email: SesEmail) => Promise<{ readonly messageId: string }>;
 }
 
-export const DEFAULT_RETRY_SCHEDULE: Schedule.Schedule<unknown, unknown> = Schedule.max([
+export const DEFAULT_RETRY_SCHEDULE: Schedule.Schedule<unknown> = Schedule.max([
   Schedule.exponential("250 millis").pipe(Schedule.jittered),
   Schedule.recurs(2),
 ]);

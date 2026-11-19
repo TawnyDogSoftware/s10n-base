@@ -38,7 +38,9 @@ export function renderApp(path: string, backend: FakeBackend = createFakeBackend
 
 /** Waits until the router has finished navigating and shows `href`. */
 export async function waitForLocation(app: RenderedApp, href: string) {
-  await waitFor(() => expect(app.location()).toBe(href));
+  await waitFor(() => {
+    expect(app.location()).toBe(href);
+  });
 }
 
 export function type(label: string | RegExp, value: string) {

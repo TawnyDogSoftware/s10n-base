@@ -41,7 +41,7 @@ function fakeFetch(respond: Responder) {
     const result = respond(calls.length);
     return result instanceof Error ? Promise.reject(result) : Promise.resolve(result);
   };
-  return { calls, fetchImpl: fetchImpl as typeof fetch };
+  return { calls, fetchImpl: fetchImpl };
 }
 
 function client(respond: Responder, overrides: Partial<SesClientOptions> = {}) {
@@ -227,7 +227,9 @@ describe("createSesClient", () => {
   it("times out a request that never answers", async () => {
     const hanging = ((_input: unknown, init?: RequestInit) =>
       new Promise((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+        init?.signal?.addEventListener("abort", () => {
+          reject(init.signal?.reason);
+        });
       })) as typeof fetch;
     const ses = createSesClient({
       region: "us-east-1",

@@ -89,7 +89,9 @@ export async function runSetRoleCli(options: SetRoleCliOptions): Promise<number>
       connectionString: Redacted.value(configExit.value.databaseUrl),
       max: 1,
       ...(options.schema === undefined ? {} : { searchPath: options.schema }),
-      onIdleError: (error) => logger.warn("database_idle_connection_failed", { error }),
+      onIdleError: (error) => {
+        logger.warn("database_idle_connection_failed", { error });
+      },
     }),
   );
   try {

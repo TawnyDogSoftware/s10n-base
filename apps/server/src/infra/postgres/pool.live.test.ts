@@ -45,7 +45,9 @@ describe("createPool against Postgres", () => {
       const pid = await sql<{ pid: number }>`select pg_backend_pid() as pid`.execute(db);
 
       await fixture.admin.query("select pg_terminate_backend($1)", [pid.rows[0]?.pid]);
-      await vi.waitFor(() => expect(onIdleError).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => {
+        expect(onIdleError).toHaveBeenCalledTimes(1);
+      });
 
       const again = await sql<{ one: number }>`select 1 as one`.execute(db);
       expect(again.rows[0]?.one).toBe(1);

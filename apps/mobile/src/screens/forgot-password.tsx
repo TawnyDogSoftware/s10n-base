@@ -57,7 +57,11 @@ export function ForgotPasswordScreen() {
           <Body>{t("forgotPassword.sentBody", { email: sentTo })}</Body>
           <Body>{t("forgotPassword.inBrowser")}</Body>
         </Notice>
-        <TextButton onPress={() => router.replace("/sign-in")}>
+        <TextButton
+          onPress={() => {
+            router.replace("/sign-in");
+          }}
+        >
           {t("forgotPassword.backToSignIn")}
         </TextButton>
       </Screen>
@@ -94,7 +98,11 @@ export function ForgotPasswordScreen() {
           {t("forgotPassword.submit")}
         </Button>
       </Card>
-      <TextButton onPress={() => router.replace("/sign-in")}>
+      <TextButton
+        onPress={() => {
+          router.replace("/sign-in");
+        }}
+      >
         {t("forgotPassword.backToSignIn")}
       </TextButton>
     </Screen>

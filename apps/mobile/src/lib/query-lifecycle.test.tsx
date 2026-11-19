@@ -17,8 +17,8 @@ const API = "http://localhost:4210";
 function captureAppState() {
   const listeners: Array<(state: AppStateStatus) => void> = [];
   vi.spyOn(AppState, "addEventListener").mockImplementation((_type, listener) => {
-    listeners.push(listener as (state: AppStateStatus) => void);
-    return { remove: () => listeners.splice(listeners.indexOf(listener as never), 1) };
+    listeners.push(listener);
+    return { remove: () => listeners.splice(listeners.indexOf(listener), 1) };
   });
   return (state: AppStateStatus) => {
     act(() => {
@@ -106,7 +106,9 @@ describe("connectQueryLifecycle", () => {
     setNetwork({ isConnected: false });
     expect(onlineManager.isOnline()).toBe(false);
     setNetwork({ isConnected: true, isInternetReachable: true });
-    await waitFor(() => expect(onlineManager.isOnline()).toBe(true));
+    await waitFor(() => {
+      expect(onlineManager.isOnline()).toBe(true);
+    });
   });
 
   it("stops listening when disconnected", () => {

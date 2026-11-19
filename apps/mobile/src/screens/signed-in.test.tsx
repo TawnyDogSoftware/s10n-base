@@ -56,7 +56,9 @@ describe("ProfileScreen", () => {
 
     expect(await screen.findByText("Your name is saved.")).toBeInTheDocument();
     expect(backend.users.get("sam@example.com")?.name).toBe("Samantha");
-    await waitFor(() => expect(services.gate.current()?.name).toBe("Samantha"));
+    await waitFor(() => {
+      expect(services.gate.current()?.name).toBe("Samantha");
+    });
   });
 
   it("refuses an empty name without sending it", async () => {
@@ -78,7 +80,9 @@ describe("ProfileScreen", () => {
 
     press("Sign out");
 
-    await waitFor(() => expect(services.gate.current()).toBeNull());
+    await waitFor(() => {
+      expect(services.gate.current()).toBeNull();
+    });
     expect(backend.liveSessions()).toBe(0);
     expect(secureStore.get(`${authStoragePrefix(API)}_cookie`)).toBe("{}");
   });
@@ -92,7 +96,9 @@ describe("ProfileScreen", () => {
     press("Sign out");
 
     // The Expo client forgot the cookie before sending, so the read afterwards is signed out.
-    await waitFor(() => expect(services.gate.current()).toBeNull());
+    await waitFor(() => {
+      expect(services.gate.current()).toBeNull();
+    });
   });
 
   it("never shows one user's profile to the next", async () => {
