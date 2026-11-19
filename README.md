@@ -1,6 +1,6 @@
 # S10N Base
 
-S10N Base is a Bun + Turbo monorepo scaffold with a typed server boundary and a web client.
+S10N Base is a Bun + Turbo monorepo scaffold with a typed server boundary, a web client and an Expo mobile client.
 
 > The scaffold is being reworked into a hosted web and mobile starter; see [plans/000-hosted-starter-rework.md](plans/000-hosted-starter-rework.md).
 
@@ -12,6 +12,7 @@ It was derived from [`t3code`](https://github.com/pingdotgg/t3code), keeping the
 - Strict TypeScript across apps and packages
 - `apps/server`: Node HTTP server with a typed RPC endpoint, Better Auth (email and password, passkeys, admin roles), Postgres through Kysely, and Effect layers for startup and shutdown
 - `apps/web`: React 19 + Vite + Tailwind CSS v4 + TanStack Router + TanStack Query: sign-up, sign-in (password or passkey), email verification, password reset, a profile page and an admin user list
+- `apps/mobile`: Expo SDK 58 + expo-router + Uniwind: the same screens as the web app except passkeys, signed in with Better Auth's Expo client ([docs/mobile-dev.md](docs/mobile-dev.md)). Written and tested on Linux; the first boot on a Mac is pending ([docs/mobile-first-boot.md](docs/mobile-first-boot.md))
 - `packages/contracts`: shared Effect schemas and RPC contracts
 - `packages/client`: the RPC client with an explicit base URL, the session client and session-gated query state, for web and mobile ([docs/client.md](docs/client.md))
 - `packages/theme`: the Tailwind 4 design tokens shared by web and mobile
@@ -23,6 +24,7 @@ It was derived from [`t3code`](https://github.com/pingdotgg/t3code), keeping the
 
 ```text
 apps/
+  mobile/
   server/
   web/
 packages/
@@ -65,6 +67,15 @@ Run individual apps (start the database first with `bun run db:up`):
 bun run dev:server
 bun run dev:web
 bun run ses:local   # the local SES capture server and inbox
+```
+
+Run the mobile app against the same server (Metro; on a Mac, `bun run ios:simulator` builds and opens the development build first; see [docs/mobile-dev.md](docs/mobile-dev.md)):
+
+```bash
+bun run dev:mobile
+bun run ios:simulator   # macOS
+bun run android         # needs the Android SDK
+bun run mobile:export   # bundle both platforms and check the bundle
 ```
 
 Make a user an admin, then open **Users** in the header (`/admin/users`):

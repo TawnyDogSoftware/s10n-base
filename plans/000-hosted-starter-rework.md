@@ -1,6 +1,6 @@
 # 000: Rework s10n-base into a hosted web and mobile starter
 
-> Status: approved by the owner on 2026-11-18. Phase 1 implemented on 2026-11-19 ([001](001-strip-desktop-and-local-first.md)). Phase 2 implemented on 2026-11-19 ([002](002-toolchain-upgrade-and-ci.md)). Phase 3 implemented on 2026-11-19 ([003](003-hosted-server-core.md)). Phase 4 implemented on 2026-11-19 ([004](004-auth.md)). Phase 5 implemented on 2026-11-19 ([005](005-web-blank-slate.md)).
+> Status: approved by the owner on 2026-11-18. Phase 1 implemented on 2026-11-19 ([001](001-strip-desktop-and-local-first.md)). Phase 2 implemented on 2026-11-19 ([002](002-toolchain-upgrade-and-ci.md)). Phase 3 implemented on 2026-11-19 ([003](003-hosted-server-core.md)). Phase 4 implemented on 2026-11-19 ([004](004-auth.md)). Phase 5 implemented on 2026-11-19 ([005](005-web-blank-slate.md)). Phase 6 implemented on 2026-11-19 ([006](006-mobile-blank-slate.md)), first boot on a Mac pending.
 
 Written 2026-11-18 from a review of three private projects built on this base (called Project A, B and C here), of s10n-base itself, of T3 Code upstream, and of the npm registry.
 
@@ -261,6 +261,7 @@ Copy from Project B `[S7]`; it is the only one of our projects with verified nat
 - Tests under Vitest with jsdom and `react-native-web`, so coverage merges into the root report. Metro block-lists test files.
 - `docs/mobile-dev.md`: simulator and device setup, pointing a phone at a local server, and a playbook for testing on a physical phone over a private network `[S7]`.
 - **Monorepo linking:** start with bun's default linker, as Project B does on bun 1.4.4. Project A needed `linker = "hoisted"` on bun 1.3.9. **This phase is not done until someone boots the app on a simulator from a fresh clone on a Mac**, because that has not been verified for a clean checkout in any report.
+- **Phase 6 outcome (2026-11-19): implemented, first boot on a Mac pending** (`docs/mobile-first-boot.md`). Done as planned on Linux, with the departures recorded in plan 006, section 12. What was proven: from a fresh clone under bun's default linker, Metro bundles both platforms with one React and the workspace packages from source, `expo prebuild` generates both native projects with each variant's identity, and Expo's autolinking resolves each native module once; nothing needed `linker = "hoisted"`. What was not: no simulator or device ran the app, and `pod install` and the native builds were not run. Corrections to this section: expo-router is 58.0.31, not 58.0.32 (published 2026-11-17, too young for the 3-day rule), and so are `expo` 58.0.25, `expo-dev-client` 58.0.20 and `expo-web-browser` 58.0.8, one patch behind Expo's newest map until 2026-11-20; `expo install` asks Expo's servers for those newest patches unless run with `EXPO_OFFLINE=1`. Mobile passkeys were investigated and not shipped (`docs/mobile-dev.md`).
 
 ### Phase 7: quality gates
 
@@ -318,8 +319,8 @@ Not in the default template; documented so a project can add them the same way e
 
 - **Little was executed.** Phase 1 ran the gates locally and confirmed defect 1; phase 2's CI smoke test is the first evidence that the built server starts.
 - **s10n-base is public and the three spin-offs are private.** The scrub check before phase 1 is the control; a missed term in a pushed commit is public and stays in history.
-- **Fresh-clone Expo build under bun's default linker** is unverified (phase 6 gate).
+- **Fresh-clone Expo build under bun's default linker:** the Metro bundles and generated native projects are verified on Linux (phase 6); `pod install`, the native build and a boot on a simulator are not, until the owner's first boot on a Mac.
 - **Better Auth 1.7.25, jsdom 31 and vitest 5.1.1** are newer than anything our repos run.
 - **React pinned at 19.3.0** means holding back a patch on web until Expo moves.
 - **Effect core adoption (D1)** has not been tried in any of our repos.
-- **Passkeys on mobile** have no verified pattern in our repos.
+- **Passkeys on mobile** have no verified pattern in our repos. Phase 6 found what a native flow needs (a native passkey module, associated domains and the server's association files, Android's key-hash origins, an https domain for development) and shipped none of it.

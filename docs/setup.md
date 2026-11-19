@@ -31,6 +31,8 @@ Open `APP_URL` (`http://localhost:5173` by default). You land on the sign-in pag
 
 To run the parts on their own: `bun run dev:server`, `bun run dev:web` and `bun run ses:local` (start the database first with `bun run db:up`).
 
+The mobile app runs separately, against the server `bun dev` starts: `bun run dev:mobile` for Metro, and `bun run ios:simulator` on a Mac for the first build. See [mobile-dev.md](mobile-dev.md).
+
 ## Environment variables
 
 The server reads these once at startup and refuses to start if any is invalid, listing every problem in one log line. The value of a secret (`DATABASE_URL`, `BETTER_AUTH_SECRET`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`) is never printed.
@@ -65,7 +67,9 @@ The web app reads one variable at build time (Vite exposes `VITE_*` variables to
 | ------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------- |
 | `VITE_API_BASE_URL` | The API's origin (`https://api.example.com`), with no path, query or credentials. The build fails on anything else. | the page's own origin |
 
-Leave it unset when the server serves the web app (the built server does) or, in development, when Vite proxies the API. Set it when the web app is hosted on its own origin. The server then has to accept that page: its `APP_URL` must be the web app's origin (CORS and Better Auth's origin checks allow only `APP_URL`), the session cookie must reach the API (same site, or `SameSite=None` with `Secure`), and the HTML's Content-Security-Policy, which allows `connect-src 'self'`, must list the API origin if the server still serves the page.
+The mobile app reads `APP_VARIANT`, `EXPO_PUBLIC_API_BASE_URL` and `EAS_PROJECT_ID` when it builds, from your shell or `apps/mobile/.env.local` (copy `apps/mobile/.env.example`). Its table, and how to point a phone at this server, are in [mobile-dev.md](mobile-dev.md#environment). The server's `APP_VARIANT` must match the app's, since the server trusts only that variant's URL scheme.
+
+Leave `VITE_API_BASE_URL` unset when the server serves the web app (the built server does) or, in development, when Vite proxies the API. Set it when the web app is hosted on its own origin. The server then has to accept that page: its `APP_URL` must be the web app's origin (CORS and Better Auth's origin checks allow only `APP_URL`), the session cookie must reach the API (same site, or `SameSite=None` with `Secure`), and the HTML's Content-Security-Policy, which allows `connect-src 'self'`, must list the API origin if the server still serves the page.
 
 `.env.example` lists all of them with values that work with the compose file. `bun dev` and the `db:*`, `test:live` and `smoke` scripts read `.env` if it exists and `.env.example` otherwise; a variable set in your shell wins over both. To change a value, copy `.env.example` to `.env` and edit it. `.env` is ignored by git.
 

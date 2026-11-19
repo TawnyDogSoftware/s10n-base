@@ -47,6 +47,25 @@ The exclusion covers only the packages named, never their dependencies. bun 1.4.
 
 For a one-off command, `--minimum-release-age-excludes=<name>` does the same and replaces the `bunfig.toml` list for that command.
 
+## Expo and the 3-day rule
+
+Expo owns the versions of React, React Native and every native module. Add or move them only with `bunx expo install` in `apps/mobile`. By default `expo install` asks Expo's servers for the SDK's newest patch versions, which can be younger than 3 days, and bun then refuses them (`blocked by minimum-release-age`). Use the installed SDK's own version map instead, which the gate already allowed:
+
+```bash
+cd apps/mobile
+EXPO_OFFLINE=1 bunx expo install <package>
+EXPO_OFFLINE=1 bunx expo install --check   # what CI runs
+```
+
+The online `bunx expo install --check`, which the daily update runs, compares with Expo's newest patches and reports them as drift until they are old enough; moving `expo` itself to a newer patch brings its newer version map with it. On 2026-11-19 it reported `expo` 58.0.26, `expo-dev-client` 58.0.21, `expo-router` 58.0.32 and `expo-web-browser` 58.1.0, all published on 2026-11-17 and allowed from 2026-11-20.
+
+## Overrides
+
+`overrides` in the root `package.json` forces one version of a package everywhere in the tree. Each entry needs a reason, kept here:
+
+- `effect`: one copy of Effect for every workspace and dependency, so its schemas and errors are the same classes everywhere.
+- `minimatch` `^11.0.8`: Expo's `@expo/fingerprint` 0.21.10 asks for `^10.2.6`, and 10.x has a moderate advisory (GHSA-g3hv-75wg-m249, denial of service through glob pattern amplification, fixed in 11.0.1). The fingerprint of `apps/mobile` is the same with 11.0.8 as with 10.2.6. Remove the override when Expo's tooling moves to 11.
+
 ## The hold list
 
 `dependency-holds.json` lists the packages the daily update must not move freely. Each entry has `packages` (names, or patterns with `*`), a `reason`, and optionally:
@@ -76,7 +95,7 @@ To change a hold, edit the file and run `bun run test`.
 2. Starts from that PR's branch with `main` merged in, so fixes already pushed there carry forward. If the merge conflicts, or there is no open PR, it starts from `main`, and the PR body says when a conflict forced that.
 3. Runs `bun update -r --latest`, which moves every package to its newest release at least 3 days old, across major versions, keeping exact pins exact. bun's named and negated filters (`bun update typescript`, `bun update '!typescript'`) do not rewrite catalog entries, so the script updates everything, puts held packages back to their earlier spec, and reinstalls.
 4. Moves bun and Node to their newest releases at least 3 days old (Node on its current LTS major), and keeps `@types/node` on that major. A newer Node LTS major is reported, not applied.
-5. Runs `bunx expo install --check` in `apps/mobile` when that app exists and reports drift.
+5. Runs `bunx expo install --check` in `apps/mobile` (online, against Expo's newest SDK patches) and reports drift in the PR body. It does not apply it: move Expo packages with `bunx expo install`.
 6. If no file changed, stops and leaves any open PR alone. Otherwise it commits, pushes `deps/update-YYYY-MM-DD` (UTC date) and opens a PR with the label. If the open PR is already on today's branch, it pushes there (with a lease, since after a conflict the new commit does not descend from the old one) and updates the body instead; otherwise it comments on the old PR with a link to the new one, closes it and deletes its branch.
 
 The PR body describes everything the PR changes against `main`, including updates carried over from the PR it supersedes: direct dependency changes as major, minor and patch, indirect dependencies that moved in `bun.lock`, bun and Node changes, what was reported but not applied (held packages, a new Node LTS line, Expo drift), and the releases `bun outdated` shows as held back by the 3-day rule.

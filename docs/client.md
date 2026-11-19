@@ -1,16 +1,24 @@
 # The client package
 
-`packages/client` (`@s10n-base/client`) is how the web app, and the mobile app in phase 6, talk to the server: an RPC client, a session client, and session-gated query state on TanStack Query. It imports only `contracts` (and `effect`); `react` and `@tanstack/react-query` are peer dependencies. Import from its subpaths; there is no barrel:
+`packages/client` (`@s10n-base/client`) is how the web and mobile apps talk to the server: an RPC client, a session client, session-gated query state on TanStack Query, and the helpers both apps' screens share. It imports `contracts`, `shared` (the auth cookie prefix, for the test server) and `i18n` (message keys), and `effect`; `react` and `@tanstack/react-query` are peer dependencies. Import from its subpaths; there is no barrel:
 
-| Import                          | What it has                                                                                               |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `@s10n-base/client/rpc`         | `createRpcClient`, the three failure classes, `parseBaseUrl`                                              |
-| `@s10n-base/client/session`     | `createSessionClient`, `sessionQueryOptions`, `useSession`, `SESSION_QUERY_KEY`, `PUBLIC_META`            |
-| `@s10n-base/client/query-state` | `createSessionGate`, `SessionGateProvider`, `useProtectedQuery`, `protectedQueryKey`, `StaleSessionError` |
+| Import                                   | What it has                                                                                                                                       |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@s10n-base/client/rpc`                  | `createRpcClient`, the three failure classes, `parseBaseUrl`                                                                                      |
+| `@s10n-base/client/session`              | `createSessionClient`, `sessionQueryOptions`, `useSession`, `SESSION_QUERY_KEY`, `PUBLIC_META`                                                    |
+| `@s10n-base/client/query-state`          | `createSessionGate`, `SessionGateProvider`, `useProtectedQuery`, `protectedQueryKey`, `StaleSessionError`                                         |
+| `@s10n-base/client/auth`                 | `AuthResult`, `PasswordAuth`, `runAuthAction` and `trackNetworkFailures`: a Better Auth client's results as data, a lost answer as `NetworkError` |
+| `@s10n-base/client/validation`           | The form fields' checks (name from the contract, email, password within Better Auth's limits) and `fieldErrorText`                                |
+| `@s10n-base/client/messages`             | `errorMessageKey`: the `errors` message for any failure a screen shows                                                                            |
+| `@s10n-base/client/form`                 | `checkFields`: checks a form's fields together and focuses the first invalid one                                                                  |
+| `@s10n-base/client/use-pending`          | `usePending`: pending state for one action, ignoring a second press while it runs                                                                 |
+| `@s10n-base/client/testing/fake-backend` | Test code only: an in-memory server for both apps' screen tests                                                                                   |
 
 ## The base URL
 
 Every client takes an explicit `baseUrl`, the API's origin (`https://api.example.com`, no path). A relative URL works only in a browser on the same origin as the API, never in a native app. The web app passes `VITE_API_BASE_URL`, or its own origin when that is unset ([setup](setup.md#environment-variables)). Requests send cookies (`credentials: "include"`) unless you pass another `credentials` mode.
+
+A native app has no cookie jar. The mobile app passes `credentials: "omit"` and a `fetch` that adds the session cookie Better Auth's Expo client keeps in SecureStore (`withAuthCookie` in `apps/mobile/src/lib/auth.ts`); the session gate and its rules are the same.
 
 ## The RPC client and its three failures
 
@@ -59,4 +67,4 @@ const { session, query } = useProtectedQuery(["orders", status], (signal) =>
 
 ## Testing
 
-`packages/client` tests use a real `QueryClient` and a fake `fetch`. The web app's route tests render the whole app against an in-memory fake of the server's routes (`apps/web/src/test/fake-backend.ts`), which can hold an answer or make a request fail with or without the server having handled it.
+`packages/client` tests use a real `QueryClient` and a fake `fetch`. Both apps' screen tests run against an in-memory fake of the server's routes (`@s10n-base/client/testing/fake-backend`), which can hold an answer or make a request fail with or without the server having handled it. By default one user is signed in per fake server, as a browser's cookie jar would have it; with `{cookies: true}` sign-in answers with a session cookie and each request is authenticated by the cookie it carries, which is how the mobile app's tests run.

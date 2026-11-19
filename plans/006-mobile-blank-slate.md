@@ -1,6 +1,6 @@
 # 006: Mobile blank slate
 
-> Status: not started.
+> Status: implemented on 2026-11-19, first boot on a Mac pending (`docs/mobile-first-boot.md`). On branch `feature/001-strip-desktop-and-local-first` (PR #1, which carries the whole rework).
 
 Phase 6 of [000](000-hosted-starter-rework.md). Builds on [004](004-auth.md) and [005](005-web-blank-slate.md). Source labels such as `[S7]` are resolved in the private companion's README; nothing from that directory is copied into this repo.
 
@@ -133,4 +133,81 @@ Implemented when sections 4 to 10 are in and the above passes. **Done only after
 
 ## 12. How it was built
 
-Filled in by the implementor: versions, what Metro and the linker actually needed, what the Expo config could and could not import, the passkey findings in brief, and every departure with its reason.
+Implemented on 2026-11-19 on Linux, Node 26.13.1 and bun 1.4.4, with Docker for the local Postgres. Registry data was read the same day. **The app was not booted on any simulator or device**; everything below was proven on Linux, and the first boot waits for the owner (section 2).
+
+### Versions
+
+Every Expo-managed package went in through `EXPO_OFFLINE=1 bunx expo install` in `apps/mobile`, except `expo` itself, which `expo install` needs installed first: it went in with `bun add expo@~58.0.25`, the SDK patch the age gate allows.
+
+| Package | Version | Why |
+| --- | --- | --- |
+| `expo` | `~58.0.25` | the SDK; 58.0.26 (2026-11-17) is too young |
+| `react-native` | `0.88.1` | |
+| `expo-router` | `~58.0.31` | 58.0.32 (2026-11-17) is too young |
+| `expo-dev-client` | `~58.0.20` | 58.0.21 (2026-11-17) is too young |
+| `expo-secure-store` | `~58.0.3` | the session cookie |
+| `expo-linking`, `expo-constants`, `expo-network`, `expo-web-browser` | `~58.0.17`, `~58.0.16`, `~58.0.5`, `~58.0.8` | peers of `@better-auth/expo`; `expo-linking` and `expo-constants` are also expo-router's; `expo-web-browser` 58.1.0 (2026-11-17) is too young |
+| `expo-localization`, `expo-splash-screen`, `expo-status-bar`, `expo-system-ui` | `~58.0.5`, `~58.0.14`, `~58.0.5`, `~58.0.7` | locale, splash, status bar, light and dark on Android |
+| `react-native-screens`, `react-native-safe-area-context`, `@expo/metro-runtime` | `~4.30.1`, `~5.11.1`, `~58.0.17` | required peers of expo-router |
+| `react-native-web` (dev) | `~0.21.4` | the tests |
+| `uniwind` | `^1.13.2` (catalog) | D7; 1.14.0 (2026-11-17) is too young |
+
+Reused from the catalog: `react` 19.3.0, `better-auth` and `@better-auth/expo` 1.7.25, `@tanstack/react-query`, `i18next`, `react-i18next`, `tailwindcss`, `effect`, and the test stack. The lockfile went from 375 to 956 packages.
+
+**The age gate and `expo install` disagreed, as expected, and not where expected.** `expo install` does not read the installed SDK's `bundledNativeModules.json` by default: it asks Expo's servers for the newest version map of the SDK line, which on 2026-11-19 already named the 2026-11-17 patches, so its `bun add` failed with `blocked by minimum-release-age` for `expo-router`, `expo-dev-client` and `expo-web-browser`. With `EXPO_OFFLINE=1` it uses the installed `expo` package's own map, which the gate had allowed. The gate was not lifted. `EXPO_OFFLINE=1 bunx expo install --check` passes; the online check reports `expo` 58.0.26, `expo-dev-client` 58.0.21, `expo-router` 58.0.32 and `expo-web-browser` 58.1.0, all published 2026-11-17 and allowed from 2026-11-20, when the daily update brings them. CI runs the offline check, which depends only on the lockfile; the daily update runs the online one and reports the drift (dry run below).
+
+**`bun audit`** reported one advisory after the install: GHSA-g3hv-75wg-m249 (moderate, `minimatch` before 11.0.1), reached only through `expo` → `@expo/fingerprint` 0.21.10, which asks for `^10.2.6`. A root override `minimatch` `^11.0.8` clears it; `@expo/fingerprint`'s hash of `apps/mobile` is the same before and after (`c8e50df…`, 48 sources). Afterwards: no vulnerabilities (768 packages).
+
+### What Metro and bun's linker needed
+
+Nothing beyond Expo's defaults. With bun's default (isolated) linker, `expo export` bundles both platforms from a fresh clone, Metro follows the workspace symlinks and bundles `@s10n-base/client`, `contracts`, `i18n` and `shared` from their TypeScript source, and the bundle has one copy of `react`, `react-native`, `expo`, `expo-modules-core` and every other package (checked from the source maps by `scripts/mobile-bundle/check.ts`). `linker = "hoisted"` was not tried, because nothing failed without it. `metro.config.cjs` is Expo's config with the test files and `src/test/` block-listed, wrapped by Uniwind's.
+
+Two things the isolated linker does that look like problems and are not, as far as Linux can tell:
+
+- An incremental `bun add` left a second, unreferenced store entry of `react-native` and `expo`; a clean install has one. Clean installs are what CI and a fresh clone get.
+- `expo-doctor` reports `expo-linking` and `expo-status-bar` installed twice: the same version, stored under two peer-dependency hashes with identical links. The bundle has one copy of each, and `expo-modules-autolinking resolve` lists each of the 27 native modules once. Whether `pod install` agrees is a first-boot check. `expo-doctor` (1.21.8) passed 18 of 20 checks; the other failure is the online version drift above.
+
+### What the Expo config could and could not import
+
+Expo SDK 58 loads `app.config.ts` with Node: it strips the types and loads the file as CommonJS through `@expo/require-utils`. It **can** import relative files with an explicit `.ts` extension (hence `allowImportingTsExtensions` in the app's tsconfig), workspace files that import nothing themselves (`@s10n-base/shared/app-variants`, and the theme's token reader exported as `@s10n-base/theme/tokens`), and Node built-ins; `import.meta.url` works, so `createRequire(import.meta.url).resolve("@s10n-base/theme/theme.css")` finds the theme file. It **cannot** import a relative file without its extension (`Cannot find module './src/config/spike'`), or any workspace module whose own imports are extensionless (`@s10n-base/client/rpc` fails with `ERR_MODULE_NOT_FOUND` on `transport`), the same cause as plan 005's Vite config. So the variant table stays one table in `packages/shared`, with no change: the smallest arrangement was the existing one, plus the rule that its files import nothing.
+
+### The mobile passkey findings, in brief
+
+Not shippable without a real https domain. Better Auth's passkey client needs the browser's WebAuthn API; a native flow needs a native module (`expo-better-auth-passkey`, a community drop-in, or `react-native-passkeys`), associated domains on iOS with an `apple-app-site-association` file the server would serve, `assetlinks.json` on Android, and the passkey plugin's `origin` extended with an `android:apk-key-hash:` origin per signing certificate. The relying party id is `APP_URL`'s host, so `localhost` and plain http cannot work on a phone. Details and sources are in `docs/mobile-dev.md`. No passkey library was installed.
+
+### Departures from this plan, with reasons
+
+- **Screens live in `src/screens/`, and `src/app/` route files only re-export them**, because expo-router bundles every file under `src/app/`; tests sit next to the screens.
+- **Shared logic moved into `packages/client`** (section 7's rule): `runAuthAction` and `trackNetworkFailures` (the lost-response handling of the web adapter), the field validation, `errorMessageKey`, `checkFields`, `usePending`, and the web tests' fake server (with a new cookie mode). `packages/client` now imports `packages/i18n` (for the message keys) and `packages/shared` (the cookie prefix, for the fake server); plan 005 allowed only `contracts` and `shared`. Moving them found a bug: `checkFields` reported success when an invalid field's ref was not mounted.
+- **The cookie prefix moved to `packages/shared/src/auth.ts`**, which imports nothing, rather than to `contracts`; the server re-exports it from its options module.
+- **The splash and Android icon colours come from `packages/theme/theme.css`**, read when the config loads, so no colour is written in `apps/mobile` (section 7). The native config needs literal colours; the theme file stays the only source.
+- **The development variant allows plain http on iOS** (`NSAllowsArbitraryLoads` in development only), so a phone can reach a server on the local network without rebuilding when the address changes. Preview and production keep App Transport Security's defaults and require https at config time.
+- **Only the development variant registers the dev client's scheme** (`expo-dev-client`'s `addGeneratedScheme`), found in the generated projects: the scheme comes from the slug every variant shares, so three installed variants would all claim it.
+- **The development default API origin is `http://localhost:4210`**, the API server itself, not the Vite dev server.
+- **`typecheck` in `apps/mobile` first runs `expo customize tsconfig.json`**, which writes expo-router's typed-route declarations without a dev server (about a second, offline); a link to a missing route then fails `typecheck`. It leaves the committed tsconfig unchanged.
+- **`src/uniwind-types.d.ts` is committed and excluded from the formatter**: Uniwind regenerates it on every Metro or test run in its own format.
+- **CI**: the offline `expo install --check` in the existing job; a second job runs `bun run mobile:export` (both bundles and the bundle check) and `expo prebuild --no-install`, then `scripts/mobile-bundle/check-prebuild.ts` checks the generated identifiers. The second job takes about 90 seconds.
+- **`eas.json` uses `appVersionSource: "local"`**, so nothing reads versions from EAS's servers.
+- **Admin list on mobile** shows each user as a card with role, verification, status and join date, since a phone has no room for the web's table.
+- **Sign-out on mobile cannot be left "unknown"**: the Expo client clears the stored cookie before sending, so the session read afterwards is always signed out. The screen still runs it through `gate.settle` like the web.
+- **New i18n keys:** `auth.checkEmail.inBrowser`, `auth.checkEmail.toSignIn`, `auth.forgotPassword.inBrowser`, `profile.session.introApp`, `common.startError.*`.
+
+### Claims in plans 000 to 006 that did not hold
+
+- Plan 000: expo-router 58.0.32 is too young for the 3-day rule on 2026-11-19 (58.0.31), and so are `expo` 58.0.26, `expo-dev-client` 58.0.21 and `expo-web-browser` 58.1.0 (the research noted the last two).
+- Plan 000 and the research expected `linker = "hoisted"` might be needed for Metro: it was not, for bundling and autolinking. The native build is still unverified.
+- Section 4: `expo install` alone does not land on "the newest version inside the SDK's range that the gate allows": it fails until run with `EXPO_OFFLINE=1`.
+- Section 10, step 6 ("sign out on the web, return to the app: it notices"): a web sign-out ends only the browser's session; the app has its own. The checklist uses a password reset, which ends every session.
+- Section 9's "bunx expo-doctor" reports two failures that are not defects of this app (above).
+- Plan 005 section 11 listed four Uniwind questions for a device. The export shows the theme imported from another package resolves under Metro and its light and dark values reach the bundle, and that `--color-*: initial` and the font stack cause no build error. Whether they render correctly is still a device check.
+
+### Found, not fixed (for later phases)
+
+- **The session cookie is never refreshed.** `GET /api/app-auth/session` calls Better Auth's `getSession` server-side and drops any `Set-Cookie` it would send, and neither app calls `/api/auth/get-session`. Better Auth extends the session row when it is a day old, but the cookie keeps the expiry it had at sign-in (7 days), so an active user is signed out after 7 days on the web and on mobile (the Expo client drops an expired cookie itself). A fix is to forward the refreshed cookie from the session route, or to have the clients call Better Auth's own session route.
+- **Phase 7 (ESLint, knip, dependency-cruiser, coverage, audit):** ignore `apps/mobile/.expo/`, `expo-env.d.ts`, `src/uniwind-types.d.ts` and `dist/` (the generated router types start with `/* eslint-disable */`). knip should know that `expo-dev-client`, `expo-splash-screen`, `expo-system-ui`, `expo-web-browser`, `expo-network`'s peer role, `react-native-screens`, `react-native-safe-area-context` and `@expo/metro-runtime` are used natively or as peers, not imported; and that `@s10n-base/client/testing/fake-backend` and `scripts/mobile-bundle/*` are test or CI entry points. dependency-cruiser: `apps/mobile` imports `client`, `contracts`, `i18n`, `shared` and `theme` (CSS and `tokens` in the config), and `packages/client` now imports `i18n` and `shared`. The i18n rule should find nothing in `apps/mobile/src` outside tests; the variant display names are in `packages/shared`, not the catalog, because the Expo config cannot load i18next. Coverage of `apps/mobile` was not measured. Keep the `minimatch` override until Expo's tooling moves to 11; the research's `glob` override was not needed (no advisory today).
+- **Phase 9 (rename script):** the identity to rename is in `packages/shared/src/app-variants.ts` (schemes, bundle identifiers, display names), `packages/shared/src/auth.ts` (cookie prefix), `apps/mobile/src/config/expo-config.ts` (`slug: "s10n-base"`, which also names the dev client's scheme `exp+s10n-base`), `apps/mobile/package.json` (`@s10n-base/mobile`), and the generated iOS project name, which follows the display name. The SecureStore key prefix (`auth_<hex of the API origin>`) has no project name in it.
+- **The scrub check** must run without build output: Metro's exported source maps in `apps/mobile/dist` contain third-party code with common words on the denylist. `dist/` is ignored by git, so it never reaches the repo; delete it before the check.
+
+### Verification on the final commit (section 11)
+
+Filled in on the final commit; see below and the PR description.
