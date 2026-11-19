@@ -16,7 +16,10 @@ describe("readAppExtra", () => {
     ["no extra", {}],
     ["an unknown variant", { extra: { appVariant: "staging", apiBaseUrl: "https://a.example" } }],
     ["no API origin", { extra: { appVariant: "development" } }],
-    ["an API URL that is not a bare origin", { extra: { appVariant: "development", apiBaseUrl: "https://a.example/api" } }],
+    [
+      "an API URL that is not a bare origin",
+      { extra: { appVariant: "development", apiBaseUrl: "https://a.example/api" } },
+    ],
   ])("refuses a build with %s", (_case, expoConfig) => {
     expect(() => readAppExtra(expoConfig)).toThrow("This build's configuration is invalid");
   });

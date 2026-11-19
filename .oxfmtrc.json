@@ -3,6 +3,7 @@
   "ignorePatterns": [
     "plans/**",
     "apps/server/src/infra/email/sigv4-test-suite/**",
-    "apps/server/src/infra/postgres/generated/**"
+    "apps/server/src/infra/postgres/generated/**",
+    "apps/mobile/src/uniwind-types.d.ts"
   ]
 }

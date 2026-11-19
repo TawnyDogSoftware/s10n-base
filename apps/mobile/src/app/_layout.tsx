@@ -1,3 +1,1 @@
-import "../global.css";
-import { Stack } from "expo-router";
-export default function RootLayout() { return <Stack />; }
+export { RootLayout as default } from "../screens/root";

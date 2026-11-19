@@ -12,6 +12,7 @@ import {
   ScrollView,
   Text,
   TextInput,
+  type TextInputInstance,
   type TextInputProps,
   View,
 } from "react-native";
@@ -87,9 +88,7 @@ export function Button(props: {
         primary ? "bg-primary border-primary" : "border-border bg-background"
       } ${disabled ? "opacity-60" : ""}`}
     >
-      <Text
-        className={`font-semibold ${primary ? "text-primary-foreground" : "text-foreground"}`}
-      >
+      <Text className={`font-semibold ${primary ? "text-primary-foreground" : "text-foreground"}`}>
         {label}
       </Text>
     </Pressable>
@@ -113,7 +112,7 @@ export function Field(
     readonly onChangeText: (value: string) => void;
     readonly error?: string | undefined;
     readonly hint?: string;
-    readonly inputRef?: Ref<TextInput>;
+    readonly inputRef?: Ref<TextInputInstance>;
   } & Pick<
     TextInputProps,
     "autoComplete" | "textContentType" | "keyboardType" | "secureTextEntry" | "autoCapitalize"

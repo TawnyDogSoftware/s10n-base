@@ -4,7 +4,11 @@ import { describe, expect, it } from "vitest";
 
 import { appVariants } from "@s10n-base/shared/app-variants";
 
-import { buildExpoConfig as build, DEVELOPMENT_API_BASE_URL, type ExpoConfigEnv } from "./expo-config.ts";
+import {
+  buildExpoConfig as build,
+  DEVELOPMENT_API_BASE_URL,
+  type ExpoConfigEnv,
+} from "./expo-config.ts";
 
 const COLORS = { light: { background: "#fefefe" }, dark: { background: "#010101" } };
 const buildExpoConfig = (env: ExpoConfigEnv) => build(env, COLORS);
@@ -51,7 +55,10 @@ describe("buildExpoConfig", () => {
     ).toMatchObject({ apiBaseUrl: "http://192.168.1.20:4210" });
     for (const variant of ["preview", "production"]) {
       expect(() =>
-        buildExpoConfig({ APP_VARIANT: variant, EXPO_PUBLIC_API_BASE_URL: "http://api.example.com" }),
+        buildExpoConfig({
+          APP_VARIANT: variant,
+          EXPO_PUBLIC_API_BASE_URL: "http://api.example.com",
+        }),
       ).toThrow(`EXPO_PUBLIC_API_BASE_URL must be an https origin for the ${variant} variant`);
     }
   });
@@ -62,9 +69,9 @@ describe("buildExpoConfig", () => {
       expect(() => buildExpoConfig({ APP_VARIANT: variant })).toThrow(
         `EXPO_PUBLIC_API_BASE_URL is required for the ${variant} variant.`,
       );
-      expect(() => buildExpoConfig({ APP_VARIANT: variant, EXPO_PUBLIC_API_BASE_URL: " " })).toThrow(
-        `EXPO_PUBLIC_API_BASE_URL is required for the ${variant} variant.`,
-      );
+      expect(() =>
+        buildExpoConfig({ APP_VARIANT: variant, EXPO_PUBLIC_API_BASE_URL: " " }),
+      ).toThrow(`EXPO_PUBLIC_API_BASE_URL is required for the ${variant} variant.`);
     },
   );
 
@@ -84,8 +91,10 @@ describe("buildExpoConfig", () => {
 
   it("normalises the origin: trailing slash, case and default port", () => {
     expect(
-      buildExpoConfig({ APP_VARIANT: "production", EXPO_PUBLIC_API_BASE_URL: " HTTPS://API.Example.com:443/ " })
-        .extra,
+      buildExpoConfig({
+        APP_VARIANT: "production",
+        EXPO_PUBLIC_API_BASE_URL: " HTTPS://API.Example.com:443/ ",
+      }).extra,
     ).toMatchObject({ apiBaseUrl: "https://api.example.com" });
   });
 
@@ -109,7 +118,8 @@ describe("buildExpoConfig", () => {
       NSAllowsArbitraryLoads: true,
     });
     expect(
-      buildExpoConfig({ APP_VARIANT: "production", EXPO_PUBLIC_API_BASE_URL: HTTPS }).ios?.infoPlist,
+      buildExpoConfig({ APP_VARIANT: "production", EXPO_PUBLIC_API_BASE_URL: HTTPS }).ios
+        ?.infoPlist,
     ).not.toHaveProperty("NSAppTransportSecurity");
   });
 

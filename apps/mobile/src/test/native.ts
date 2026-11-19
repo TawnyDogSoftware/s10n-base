@@ -52,11 +52,7 @@ export const expoRouterModule = {
   Redirect: (props: { readonly href: string }) =>
     createElement(Text, { testID: "redirect" }, props.href),
   Link: (props: { readonly href: string; readonly children?: ReactNode }) =>
-    createElement(
-      Text,
-      { role: "link", onPress: () => router.push(props.href) },
-      props.children,
-    ),
+    createElement(Text, { role: "link", onPress: () => router.push(props.href) }, props.children),
   Stack: Object.assign(Navigator, { Screen }),
   Slot: () => null,
 };

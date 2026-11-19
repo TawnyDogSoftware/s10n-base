@@ -18,7 +18,8 @@ export function nativeColors(css: string): NativeColors {
   const modes = parseThemeModes(css);
   const background = (mode: "light" | "dark") => {
     const value = modes[mode]["--color-background"];
-    if (value === undefined) throw new Error(`The theme has no --color-background in ${mode} mode.`);
+    if (value === undefined)
+      throw new Error(`The theme has no --color-background in ${mode} mode.`);
     return value;
   };
   return { light: { background: background("light") }, dark: { background: background("dark") } };

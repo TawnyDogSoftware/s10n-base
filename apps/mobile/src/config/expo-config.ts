@@ -47,9 +47,7 @@ export function resolveAppVariant(value: string | undefined): AppVariant {
   const variant = trimmed(value);
   if (variant === "") return "development";
   if (!isAppVariant(variant)) {
-    throw new Error(
-      `APP_VARIANT must be one of ${APP_VARIANTS.join(", ")}; got "${variant}".`,
-    );
+    throw new Error(`APP_VARIANT must be one of ${APP_VARIANTS.join(", ")}; got "${variant}".`);
   }
   return variant;
 }
@@ -124,7 +122,9 @@ export function buildExpoConfig(env: ExpoConfigEnv, colors: NativeColors): ExpoC
       // http, which App Transport Security blocks unless told otherwise. Preview and production
       // require https (see resolveApiBaseUrl), so they keep the default.
       infoPlist:
-        variant === "development" ? { NSAppTransportSecurity: { NSAllowsArbitraryLoads: true } } : {},
+        variant === "development"
+          ? { NSAppTransportSecurity: { NSAllowsArbitraryLoads: true } }
+          : {},
     },
     android: {
       package: identity.bundleIdentifier,

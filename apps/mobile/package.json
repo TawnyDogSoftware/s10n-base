@@ -5,7 +5,13 @@
   "type": "module",
   "main": "expo-router/entry",
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "start": "expo start --dev-client",
+    "ios:simulator": "expo run:ios",
+    "ios:device": "expo run:ios --device",
+    "android": "expo run:android",
+    "export": "expo export --platform ios --platform android --source-maps --output-dir dist",
+    "typegen": "expo customize tsconfig.json",
+    "typecheck": "expo customize tsconfig.json > /dev/null && tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
