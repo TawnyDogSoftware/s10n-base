@@ -3,11 +3,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRouter, type RouterHistory } from "@tanstack/react-router";
 
 import { homeRoute } from "./routes/home";
-import { projectRoute } from "./routes/project";
 import { rootRoute } from "./routes/root";
-import { settingsRoute } from "./routes/settings";
 
-const routeTree = rootRoute.addChildren([homeRoute, projectRoute, settingsRoute]);
+const routeTree = rootRoute.addChildren([homeRoute]);
 
 export function getRouter(history: RouterHistory) {
   const queryClient = new QueryClient();

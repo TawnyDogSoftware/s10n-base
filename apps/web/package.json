@@ -16,8 +16,7 @@
     "@tanstack/react-router": "catalog:",
     "effect": "catalog:",
     "react": "catalog:",
-    "react-dom": "catalog:",
-    "zustand": "catalog:"
+    "react-dom": "catalog:"
   },
   "devDependencies": {
     "@tailwindcss/vite": "catalog:",

@@ -1,92 +1,93 @@
 import { RouterProvider, createMemoryHistory } from "@tanstack/react-router";
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getRouter } from "./router";
 
-class MockWebSocket {
-  static readonly instances: MockWebSocket[] = [];
-  readonly url: string;
-  private readonly listeners = new Map<string, Array<(event: MessageEvent) => void>>();
+const bootstrapConfig = {
+  appName: "S10N Base",
+  appVersion: "9.8.7",
+  apiBaseUrl: "http://127.0.0.1:4210",
+};
 
-  constructor(url: string) {
-    this.url = url;
-    MockWebSocket.instances.push(this);
-  }
-
-  addEventListener(type: string, listener: (event: MessageEvent) => void) {
-    const current = this.listeners.get(type) ?? [];
-    current.push(listener);
-    this.listeners.set(type, current);
-  }
-
-  close() {}
+function requestUrl(input: Parameters<typeof fetch>[0]) {
+  return typeof input === "string"
+    ? input
+    : input instanceof Request
+      ? input.url
+      : input.toString();
 }
 
-describe("router smoke", () => {
+describe("router", () => {
   const fetchMock = vi.fn<typeof fetch>();
+  let releaseConfig: () => void = () => {};
 
   beforeEach(() => {
-    vi.stubGlobal("fetch", fetchMock);
-    vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
-
-    fetchMock.mockImplementation(async (input, init) => {
-      const url =
-        typeof input === "string" ? input : input instanceof Request ? input.url : input.toString();
-
-      if (url.endsWith("/config")) {
-        return new Response(
-          JSON.stringify({
-            appName: "S10N Base",
-            appVersion: "0.0.0",
-            apiBaseUrl: "http://127.0.0.1:4210",
-            websocketUrl: "ws://127.0.0.1:4210/ws",
-            desktopHost: false,
-          }),
-        );
-      }
-
-      if (url.endsWith("/rpc")) {
-        const body = JSON.parse(String(init?.body)) as { method: string };
-
-        if (body.method === "projects.list") {
-          return new Response(JSON.stringify({ ok: true, data: { projects: [] } }));
-        }
-
-        if (body.method === "settings.get") {
-          return new Response(
-            JSON.stringify({
-              ok: true,
-              data: {
-                defaultProjectSort: "updatedAt",
-                showActivityFeed: true,
-                compactSidebar: false,
-                updatedAt: new Date().toISOString(),
-              },
-            }),
-          );
-        }
-      }
-
-      return new Response(JSON.stringify({ ok: true, data: {} }));
+    const configReleased = new Promise<void>((resolve) => {
+      releaseConfig = resolve;
     });
+
+    fetchMock.mockReset();
+    fetchMock.mockImplementation(async (input) => {
+      if (requestUrl(input).endsWith("/config")) {
+        await configReleased;
+        return new Response(JSON.stringify(bootstrapConfig));
+      }
+      return new Response("Not Found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
   });
 
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
   });
 
-  it("renders the home route inside the shell", async () => {
-    const router = getRouter(createMemoryHistory({ initialEntries: ["/"] }));
-
+  function renderAt(path: string) {
+    const router = getRouter(createMemoryHistory({ initialEntries: [path] }));
     render(<RouterProvider router={router} />);
+    return router;
+  }
+
+  it("renders the home route inside the shell", async () => {
+    renderAt("/");
+
+    const header = await screen.findByRole("banner");
+    expect(within(header).getByText("S10N Base")).toBeInTheDocument();
+
+    const main = screen.getByRole("main");
+    expect(within(main).getByRole("heading", { level: 2 })).toBeInTheDocument();
+    expect(main).not.toHaveTextContent(/project|note|live|websocket/i);
+  });
+
+  it("shows the version once /config resolves", async () => {
+    renderAt("/");
+
+    const footer = await screen.findByRole("contentinfo");
+    expect(footer).not.toHaveTextContent("9.8.7");
+
+    releaseConfig();
 
     await waitFor(() => {
-      expect(screen.getByText("Projects")).toBeInTheDocument();
+      expect(footer).toHaveTextContent("Version 9.8.7");
     });
-
-    expect(
-      screen.getByText("A reusable monorepo scaffold with a typed server boundary."),
-    ).toBeInTheDocument();
+    expect(fetchMock.mock.calls.map(([input]) => requestUrl(input))).toEqual(["/config"]);
   });
+
+  it.each(["/settings", "/projects/x"])(
+    "does not render a screen at the removed path %s",
+    async (path) => {
+      releaseConfig();
+      const router = renderAt(path);
+
+      await screen.findByRole("banner");
+      await waitFor(() => {
+        expect(router.state.status).toBe("idle");
+      });
+
+      expect(router.state.matches.map((match) => match.routeId)).toEqual(["__root__"]);
+      expect(screen.queryByText(/settings|project detail|notes/i)).not.toBeInTheDocument();
+      expect(fetchMock.mock.calls.map(([input]) => requestUrl(input))).not.toContain("/rpc");
+    },
+  );
 });

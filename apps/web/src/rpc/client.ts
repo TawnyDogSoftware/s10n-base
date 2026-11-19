@@ -1,11 +1,6 @@
 import { Schema } from "effect";
 
-import {
-  AppError,
-  StreamMessage,
-  type BootstrapConfig,
-  type RpcContract,
-} from "@s10n-base/contracts";
+import { AppError, type BootstrapConfig, type RpcContract } from "@s10n-base/contracts";
 
 import { getJson, postJson } from "../lib/http";
 
@@ -43,19 +38,4 @@ export async function callRpc<Payload, Success>(
   }
 
   return Schema.decodeUnknownSync(contract.success as never)(response.data) as Success;
-}
-
-export function connectActivityStream(
-  websocketUrl: string,
-  onMessage: (message: StreamMessage) => void,
-): () => void {
-  const socket = new WebSocket(websocketUrl);
-  socket.addEventListener("message", (event) => {
-    const payload = JSON.parse(String(event.data)) as unknown;
-    onMessage(Schema.decodeUnknownSync(StreamMessage)(payload));
-  });
-
-  return () => {
-    socket.close();
-  };
 }

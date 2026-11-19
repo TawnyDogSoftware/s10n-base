@@ -14,10 +14,6 @@ export default defineConfig({
       "/config": serverUrl,
       "/health": serverUrl,
       "/rpc": serverUrl,
-      "/ws": {
-        target: serverUrl,
-        ws: true,
-      },
     },
   },
   build: {
