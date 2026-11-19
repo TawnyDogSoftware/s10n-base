@@ -7,6 +7,12 @@ export interface VersionChange {
   readonly kind: ChangeKind;
 }
 
+export interface IndirectChange {
+  readonly name: string;
+  readonly from: string;
+  readonly to: string;
+}
+
 export interface RuntimeChange {
   readonly name: string;
   readonly from: string;
@@ -26,6 +32,8 @@ export interface PrBodyInput {
   readonly baseBranch: string;
   readonly freshStart: boolean;
   readonly changes: readonly VersionChange[];
+  /** Packages no manifest names directly that moved in bun.lock. */
+  readonly indirect: readonly IndirectChange[];
   readonly runtimes: readonly RuntimeChange[];
   readonly notApplied: readonly string[];
   readonly heldByAge: readonly AgeHeldPackage[];
@@ -33,7 +41,7 @@ export interface PrBodyInput {
 
 const byName = <T extends { readonly name: string }>(a: T, b: T) => a.name.localeCompare(b.name);
 
-function changeTable(changes: readonly VersionChange[]): string {
+function changeTable(changes: readonly IndirectChange[]): string {
   const rows = [...changes]
     .sort(byName)
     .map((change) => `| ${change.name} | ${change.from} | ${change.to} |`);
@@ -59,11 +67,19 @@ export function buildPrBody(input: PrBodyInput): string {
     ["patch", "Patch"],
   ];
   if (input.changes.length === 0) {
-    sections.push("No package versions changed.");
+    sections.push("No direct dependency changed.");
   }
   for (const [kind, title] of kinds) {
     const changes = input.changes.filter((change) => change.kind === kind);
     if (changes.length > 0) sections.push(`## ${title}\n\n${changeTable(changes)}`);
+  }
+
+  if (input.indirect.length > 0) {
+    const count = input.indirect.length;
+    const noun = count === 1 ? "indirect dependency" : "indirect dependencies";
+    sections.push(
+      `## Indirect dependencies\n\n<details>\n<summary>${count} ${noun} moved in bun.lock</summary>\n\n${changeTable(input.indirect)}\n\n</details>`,
+    );
   }
 
   if (input.runtimes.length > 0) {

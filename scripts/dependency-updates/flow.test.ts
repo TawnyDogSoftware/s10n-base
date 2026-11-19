@@ -80,7 +80,8 @@ class FakeIo implements Io {
     if (scenario.mobileApp === true) this.files.set("apps/mobile/package.json", "{}");
   }
 
-  private snapshot = "";
+  /** The files as they were when the starting point was checked out. */
+  private atCheckout = new Map<string, string>();
 
   run(
     command: string,
@@ -93,6 +94,7 @@ class FakeIo implements Io {
     const ok = (stdout = ""): Promise<CommandResult> =>
       Promise.resolve({ code: 0, stdout, stderr: "" });
 
+    if (line.startsWith("git checkout --detach")) this.atCheckout = new Map(this.files);
     if (line.startsWith("gh pr list")) {
       return ok(JSON.stringify(this.scenario.openPr === undefined ? [] : [this.scenario.openPr]));
     }
@@ -102,7 +104,6 @@ class FakeIo implements Io {
         : ok();
     }
     if (line === "bun update -r --latest --ignore-scripts") {
-      this.snapshot = this.files.get("package.json") ?? "";
       const latest = this.scenario.latest;
       if (latest !== undefined) {
         this.files.set("package.json", rootManifest(latest.catalog));
@@ -125,10 +126,8 @@ class FakeIo implements Io {
     }
     if (line === "bun outdated -r") return ok(outdatedOutput);
     if (line === "git status --porcelain") {
-      const changed =
-        this.files.get("package.json") !== rootManifest(startCatalog) ||
-        this.files.get(".nvmrc") !== "26.13.1\n";
-      return ok(changed ? " M package.json\n" : "");
+      const changed = [...this.files].filter(([path, text]) => this.atCheckout.get(path) !== text);
+      return ok(changed.map(([path]) => ` M ${path}\n`).join(""));
     }
     if (line.startsWith("gh pr create")) return ok("https://github.com/o/r/pull/9\n");
     if (line.startsWith("bunx expo install --check")) {
@@ -263,6 +262,19 @@ describe("runDependencyUpdate", () => {
     expect(io.inputs.get(io.commands.find((line) => line.startsWith("gh pr create")) ?? "")).toBe(
       body,
     );
+  });
+
+  it("reports indirect dependencies that moved when no direct one did", async () => {
+    const io = new FakeIo({
+      latest: { catalog: startCatalog, lock: { ...startLock, isbot: "5.2.3" } },
+    });
+    io.files.set("bun.lock", lockfile({ ...startLock, isbot: "5.1.39" }));
+
+    const outcome = await runDependencyUpdate(io, options);
+
+    const body = outcome.kind === "unchanged" ? "" : outcome.body;
+    expect(body).toContain("No direct dependency changed.");
+    expect(body).toContain("| isbot | 5.1.39 | 5.2.3 |");
   });
 
   it("commits as the configured author", async () => {

@@ -16,6 +16,7 @@ import { parseOutdated } from "./outdated";
 import {
   buildPrBody,
   type AgeHeldPackage,
+  type IndirectChange,
   type RuntimeChange,
   type VersionChange,
 } from "./pr-body";
@@ -296,6 +297,17 @@ function versionChanges(
   });
 }
 
+function indirectChanges(
+  direct: ReadonlySet<string>,
+  before: ReadonlyMap<string, string>,
+  after: ReadonlyMap<string, string>,
+): IndirectChange[] {
+  return [...after].flatMap(([name, to]) => {
+    const from = before.get(name);
+    return direct.has(name) || from === undefined || from === to ? [] : [{ name, from, to }];
+  });
+}
+
 export async function runDependencyUpdate(io: Io, options: FlowOptions): Promise<FlowOutcome> {
   const date = options.now.toISOString().slice(0, 10);
   const branch = `deps/update-${date}`;
@@ -337,15 +349,13 @@ export async function runDependencyUpdate(io: Io, options: FlowOptions): Promise
 
   const lockedAfter = parseLockedVersions(await io.readFile("bun.lock"));
   const declaredAfter = collectSpecs(await readManifests(io));
+  const direct = new Set([...declaredBefore.keys(), ...declaredAfter.keys()]);
   const body = buildPrBody({
     date,
     baseBranch: options.baseBranch,
     freshStart,
-    changes: versionChanges(
-      [...declaredBefore.keys(), ...declaredAfter.keys()],
-      lockedBefore,
-      lockedAfter,
-    ),
+    changes: versionChanges(direct, lockedBefore, lockedAfter),
+    indirect: indirectChanges(direct, lockedBefore, lockedAfter),
     runtimes,
     notApplied: [
       ...restorations.map(

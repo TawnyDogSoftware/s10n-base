@@ -7,6 +7,7 @@ const empty: PrBodyInput = {
   baseBranch: "main",
   freshStart: false,
   changes: [],
+  indirect: [],
   runtimes: [],
   notApplied: [],
   heldByAge: [],
@@ -36,8 +37,22 @@ describe("buildPrBody", () => {
     expect(body.indexOf("## Major")).toBeLessThan(body.indexOf("## Minor"));
   });
 
-  it("says so when no package changed", () => {
-    expect(buildPrBody(empty)).toContain("No package versions changed.");
+  it("says so when no direct dependency changed", () => {
+    expect(buildPrBody(empty)).toContain("No direct dependency changed.");
+  });
+
+  it("lists indirect dependencies that moved in the lockfile, folded", () => {
+    const body = buildPrBody({
+      ...empty,
+      indirect: [
+        { name: "isbot", from: "5.1.39", to: "5.2.3" },
+        { name: "@babel/runtime", from: "7.29.2", to: "7.29.14" },
+      ],
+    });
+
+    expect(body).toContain(
+      "## Indirect dependencies\n\n<details>\n<summary>2 indirect dependencies moved in bun.lock</summary>\n\n| Package | From | To |\n| --- | --- | --- |\n| @babel/runtime | 7.29.2 | 7.29.14 |\n| isbot | 5.1.39 | 5.2.3 |\n\n</details>",
+    );
   });
 
   it("lists bun and Node changes", () => {
