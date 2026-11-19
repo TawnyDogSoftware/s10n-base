@@ -1,0 +1,59 @@
+/*
+ * Design tokens shared by the web app (Tailwind 4) and the mobile app (Uniwind). Components use
+ * these names (`bg-background`, `text-muted`, `border-border`, `rounded-md`) and never write a
+ * colour or radius of their own.
+ *
+ * The format follows Uniwind's theming guide, so the mobile app can import this file unchanged:
+ * per-mode values in `@layer theme { :root { @variant light {…} @variant dark {…} } }`, with the
+ * same variables in every mode. `@theme` declares the same names with the light values, which is
+ * what makes Tailwind generate the utilities. The web app defines the `light` variant as
+ * `prefers-color-scheme: light` (Tailwind's `dark` variant is already `prefers-color-scheme`).
+ *
+ * Colours are hex so `src/theme.test.ts` can compute their contrast. It checks every pair the
+ * components use against WCAG AA in both modes; change a colour and run `bun run test`.
+ */
+
+@theme {
+  /* Only these colours exist: Tailwind's default palette is cleared. */
+  --color-*: initial;
+  --color-background: #ffffff;
+  --color-foreground: #111827;
+  --color-muted: #4b5563;
+  --color-border: #6b7280;
+  --color-primary: #1d4ed8;
+  --color-primary-foreground: #ffffff;
+  --color-danger: #b91c1c;
+  --color-success: #15803d;
+
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@layer theme {
+  :root {
+    @variant light {
+      --color-background: #ffffff;
+      --color-foreground: #111827;
+      --color-muted: #4b5563;
+      --color-border: #6b7280;
+      --color-primary: #1d4ed8;
+      --color-primary-foreground: #ffffff;
+      --color-danger: #b91c1c;
+      --color-success: #15803d;
+    }
+
+    @variant dark {
+      --color-background: #0b1120;
+      --color-foreground: #f3f4f6;
+      --color-muted: #9ca3af;
+      --color-border: #6b7280;
+      --color-primary: #93c5fd;
+      --color-primary-foreground: #0b1120;
+      --color-danger: #fca5a5;
+      --color-success: #86efac;
+    }
+  }
+}
