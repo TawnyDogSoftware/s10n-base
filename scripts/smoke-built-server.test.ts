@@ -1,10 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
 
-import { checkHealthBody, runSmoke } from "./smoke-built-server";
+import { checkHealthBody, runSmoke, smokeCommand } from "./smoke-built-server";
 
 const fixtureDir = mkdtempSync(path.join(tmpdir(), "smoke-fixture-"));
 
@@ -258,5 +258,150 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
     });
 
     expect(result.ok).toBe(true);
+  });
+});
+
+/** A server that answers each path with `answers[path]`, written as code. */
+function serverAnswering(name: string, answers: Record<string, string>): string {
+  const branches = Object.entries(answers)
+    .map(([url, code]) => `if (request.url === ${JSON.stringify(url)}) { ${code}; return; }`)
+    .join("\n  ");
+  return fixture(
+    name,
+    `import http from "node:http";
+const server = http.createServer((request, response) => {
+  ${branches}
+  response.statusCode = 404;
+  response.end();
+});
+server.listen(Number(process.env.PORT), "127.0.0.1");
+process.on("SIGTERM", () => server.close(() => process.exit(0)));
+`,
+  );
+}
+
+const OK = `response.setHeader("content-type", "application/json"); response.end('{"ok":true}')`;
+
+describe("runSmoke's other failures", () => {
+  it("fails when /health answers another status", async () => {
+    const entry = serverAnswering("health-503", {
+      "/health": `response.statusCode = 503; response.end("starting")`,
+    });
+
+    expect(await runSmoke({ serverEntry: entry, deadlineMs: 10_000 })).toMatchObject({
+      ok: false,
+      reason: "/health answered 503: starting",
+    });
+  });
+
+  it("fails when the server is gone by the time /ready is asked", async () => {
+    const entry = serverAnswering("gone-before-ready", {
+      "/health": `${OK}; server.close(); server.closeAllConnections()`,
+    });
+
+    const result = await runSmoke({ serverEntry: entry, deadlineMs: 10_000 });
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toMatch(/^\/ready did not answer: /);
+  });
+
+  it("fails when /ready's body never arrives", async () => {
+    const entry = serverAnswering("ready-body-lost", {
+      "/health": OK,
+      "/ready": `response.statusCode = 503; response.flushHeaders(); response.destroy()`,
+    });
+
+    expect(await runSmoke({ serverEntry: entry, deadlineMs: 10_000 })).toMatchObject({
+      ok: false,
+      reason: "/ready answered 503: (body could not be read)",
+    });
+  });
+
+  it("fails when / cannot be reached for the web app", async () => {
+    const entry = serverAnswering("gone-before-web", {
+      "/health": OK,
+      "/ready": `${OK}; server.close(); server.closeAllConnections()`,
+    });
+
+    const result = await runSmoke({ serverEntry: entry, deadlineMs: 10_000, expectWebApp: true });
+
+    expect(result.reason).toMatch(/^\/ did not answer: /);
+  });
+
+  it("names a missing content type when / answers without one", async () => {
+    const entry = serverAnswering("web-untyped", {
+      "/health": OK,
+      "/ready": OK,
+      "/": `response.end("<html>")`,
+    });
+
+    const result = await runSmoke({ serverEntry: entry, deadlineMs: 10_000, expectWebApp: true });
+
+    expect(result.reason).toBe("/ answered 200 (no type), not the web app's HTML");
+  });
+});
+
+/** A repo root whose built server is `source`, with or without a built web app. */
+function root(source: string, webBuilt: boolean): string {
+  const dir = mkdtempSync(path.join(fixtureDir, "root-"));
+  mkdirSync(path.join(dir, "apps/server/dist"), { recursive: true });
+  writeFileSync(path.join(dir, "apps/server/dist/bin.mjs"), source);
+  if (webBuilt) {
+    mkdirSync(path.join(dir, "apps/web/dist"), { recursive: true });
+    writeFileSync(path.join(dir, "apps/web/dist/index.html"), "<!doctype html>");
+  }
+  return dir;
+}
+
+function capture() {
+  const lines: string[] = [];
+  return {
+    lines,
+    out: {
+      log: (line: string) => lines.push(line),
+      error: (line: string) => lines.push(`! ${line}`),
+    },
+  };
+}
+
+describe("smokeCommand", () => {
+  it("reports a pass, and says when it also checked the web app", async () => {
+    const html = readFileSync(
+      serverAnswering("serves-html", {
+        "/health": OK,
+        "/ready": OK,
+        "/": `response.setHeader("content-type", "text/html"); response.end("<html>")`,
+      }),
+      "utf8",
+    );
+    const withWeb = root(html, true);
+    const { lines, out } = capture();
+
+    expect(await smokeCommand(withWeb, { SHUTDOWN_TIMEOUT_MS: "3000" }, out)).toBe(0);
+    expect(lines).toEqual([
+      `Smoke test passed: ${path.join(withWeb, "apps/server/dist/bin.mjs")} answered /health and /ready, served the web app and exited 0 on SIGTERM.`,
+    ]);
+
+    const plain = capture();
+    expect(
+      await smokeCommand(root(readFileSync(healthyServer, "utf8"), false), {}, plain.out),
+    ).toBe(0);
+    expect(plain.lines[0]).toMatch(/answered \/health and \/ready and exited 0 on SIGTERM\.$/);
+  });
+
+  it("reports a failure with the server's output, or says there was none", async () => {
+    const noisy = capture();
+    expect(
+      await smokeCommand(root('console.error("boom"); process.exit(2);', false), {}, noisy.out),
+    ).toBe(1);
+    expect(noisy.lines).toEqual([
+      "! Smoke test failed: the server exited with code 2 before /health answered",
+      "! Server output:",
+      "! boom\n",
+    ]);
+
+    const quiet = capture();
+    expect(await smokeCommand(root("process.exit(3);", false), {}, quiet.out)).toBe(1);
+    expect(quiet.lines.at(-1)).toBe("! (none)");
   });
 });

@@ -12,7 +12,6 @@ import path from "node:path";
 
 import { loadLocalEnv } from "./local-env";
 
-const ROOT = path.resolve(import.meta.dirname, "..");
 const STOP_GRACE_MS = 15_000;
 
 export interface Supervised {
@@ -58,12 +57,6 @@ export async function supervise(
   return outcome.code === 0 ? 1 : outcome.code;
 }
 
-async function run(command: string, args: ReadonlyArray<string>, env: Record<string, string>) {
-  const child = spawn(command, args, { cwd: ROOT, env, stdio: "inherit" });
-  const code = await exitOf(child);
-  if (code !== 0) throw new Error(`${command} ${args.join(" ")} exited with code ${String(code)}`);
-}
-
 /**
  * The local inbox URL when `SES_ENDPOINT` points at the capture server, or undefined when it is
  * unset (email then goes to real SES, and no capture server is started).
@@ -76,67 +69,124 @@ export function localInboxUrl(
   return `${new URL(endpoint).origin}/`;
 }
 
-const noop = () => {};
+/** A process `bun dev` keeps running: the command, its arguments, and where it runs. */
+export interface DevProcess {
+  readonly name: string;
+  readonly command: string;
+  readonly args: ReadonlyArray<string>;
+  readonly cwd: string;
+}
 
-async function main(): Promise<number> {
-  const { source, env } = loadLocalEnv(ROOT, process.env);
-  console.log(`bun dev: using ${source}`);
-
-  let requestStop: () => void = noop;
-  const stop = new Promise<void>((resolve) => {
-    requestStop = resolve;
-  });
-  process.on("SIGINT", () => {
-    requestStop();
-  });
-  process.on("SIGTERM", () => {
-    requestStop();
-  });
-
-  await run("docker", ["compose", "-f", "docker-compose.local.yml", "up", "-d", "--wait"], env);
-  await run("bun", ["apps/server/src/migrate.ts", "up"], env);
-
-  const inbox = localInboxUrl(env);
-  const children: Supervised[] = [
-    ...(inbox === undefined
+/**
+ * What `bun dev` runs once its setup is done: the capture server when `SES_ENDPOINT` is set, the
+ * API server in watch mode, and the web dev server. `bun` is the bun running this script.
+ */
+export function devProcesses(
+  env: Readonly<Record<string, string | undefined>>,
+  root: string,
+  bun: string,
+): DevProcess[] {
+  const capture: DevProcess[] =
+    localInboxUrl(env) === undefined
       ? []
-      : [
-          {
-            name: "ses-local",
-            child: spawn(process.execPath, ["scripts/ses-local/main.ts"], {
-              cwd: ROOT,
-              env,
-              stdio: "inherit",
-            }),
-          },
-        ]),
+      : [{ name: "ses-local", command: bun, args: ["scripts/ses-local/run.main.ts"], cwd: root }];
+  return [
+    ...capture,
     {
       name: "server",
-      child: spawn(process.execPath, ["--watch", "src/bin.ts"], {
-        cwd: path.join(ROOT, "apps/server"),
-        env,
-        stdio: "inherit",
-      }),
+      command: bun,
+      args: ["--watch", "src/bin.ts"],
+      cwd: path.join(root, "apps/server"),
     },
     {
       name: "web",
-      child: spawn(path.join(ROOT, "apps/web/node_modules/.bin/vite"), [], {
-        cwd: path.join(ROOT, "apps/web"),
+      command: path.join(root, "apps/web/node_modules/.bin/vite"),
+      args: [],
+      cwd: path.join(root, "apps/web"),
+    },
+  ];
+}
+
+/** What `bun dev` does to the world, so a test can stand in for it. */
+export interface DevIo {
+  readonly root: string;
+  readonly bun: string;
+  readonly env: Readonly<Record<string, string | undefined>>;
+  /** Called once with a function to call on Ctrl-C or SIGTERM. */
+  readonly onInterrupt: (stop: () => void) => void;
+  readonly log: (line: string) => void;
+  readonly error: (line: string) => void;
+  /** Runs a setup command to its end. @throws when it exits with another code than 0. */
+  readonly run: (
+    command: string,
+    args: ReadonlyArray<string>,
+    env: Record<string, string>,
+  ) => Promise<void>;
+  readonly start: (process: DevProcess, env: Record<string, string>) => Supervised;
+}
+
+/** Spawns `command` with the terminal's output, and waits for it to exit with code 0. */
+export async function runCommand(
+  command: string,
+  args: ReadonlyArray<string>,
+  options: { readonly cwd: string; readonly env: Record<string, string> },
+): Promise<void> {
+  const child = spawn(command, args, { cwd: options.cwd, env: options.env, stdio: "inherit" });
+  const code = await exitOf(child);
+  if (code !== 0) throw new Error(`${command} ${args.join(" ")} exited with code ${String(code)}`);
+}
+
+/** The real `DevIo`: this process, its environment, and child processes in the terminal. */
+export function processDevIo(root: string): DevIo {
+  return {
+    root,
+    bun: process.execPath,
+    env: process.env,
+    onInterrupt: (stop) => {
+      process.on("SIGINT", stop);
+      process.on("SIGTERM", stop);
+    },
+    log: (line) => {
+      console.log(line);
+    },
+    error: (line) => {
+      console.error(line);
+    },
+    run: (command, args, env) => runCommand(command, args, { cwd: root, env }),
+    start: (devProcess, env) => ({
+      name: devProcess.name,
+      child: spawn(devProcess.command, devProcess.args, {
+        cwd: devProcess.cwd,
         env,
         stdio: "inherit",
       }),
-    },
-  ];
-  console.log(`bun dev: open ${env.APP_URL ?? "the APP_URL origin"}`);
-  if (inbox !== undefined) console.log(`bun dev: emails are captured, not sent; inbox: ${inbox}`);
-  return supervise(children, stop);
+    }),
+  };
 }
 
-if (import.meta.main) {
+/** Runs `bun dev` and returns the exit code. */
+export async function runDev(io: DevIo): Promise<number> {
+  const { source, env } = loadLocalEnv(io.root, io.env);
+  io.log(`bun dev: using ${source}`);
+  const stop = new Promise<void>((resolve) => {
+    io.onInterrupt(resolve);
+  });
   try {
-    process.exitCode = await main();
+    await io.run(
+      "docker",
+      ["compose", "-f", "docker-compose.local.yml", "up", "-d", "--wait"],
+      env,
+    );
+    await io.run(io.bun, ["apps/server/src/migrate.ts", "up"], env);
   } catch (error) {
-    console.error(`bun dev: ${error instanceof Error ? error.message : String(error)}`);
-    process.exitCode = 1;
+    io.error(`bun dev: ${(error as Error).message}`);
+    return 1;
   }
+  const children = devProcesses(env, io.root, io.bun).map((devProcess) =>
+    io.start(devProcess, env),
+  );
+  io.log(`bun dev: open ${env.APP_URL ?? "the APP_URL origin"}`);
+  const inbox = localInboxUrl(env);
+  if (inbox !== undefined) io.log(`bun dev: emails are captured, not sent; inbox: ${inbox}`);
+  return supervise(children, stop);
 }

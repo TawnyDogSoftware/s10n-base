@@ -39,15 +39,32 @@ export function parseArgs(argv: readonly string[]): Args {
   return { dryRun, from };
 }
 
-class ProcessIo implements Io {
-  constructor(private readonly root: string) {}
+/**
+ * The headers for a JSON request: a User-Agent, which GitHub requires, and the token for GitHub's
+ * API when there is one, which raises its rate limit.
+ */
+export function requestHeaders(url: string, token: string | undefined): Record<string, string> {
+  const headers: Record<string, string> = { "User-Agent": "dependency-updates-script" };
+  if (url.startsWith("https://api.github.com/") && token !== undefined && token !== "") {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+/** The real `Io`: commands, files and requests from `root`, lines to `log`. */
+export class ProcessIo implements Io {
+  constructor(
+    private readonly root: string,
+    private readonly token: string | undefined,
+    private readonly print: (line: string) => void,
+  ) {}
 
   run(
     command: string,
     args: readonly string[],
     options?: { readonly cwd?: string; readonly input?: string },
   ): Promise<CommandResult> {
-    console.log(`$ ${[command, ...args].join(" ")}`);
+    this.print(`$ ${[command, ...args].join(" ")}`);
     return new Promise((resolve, reject) => {
       const child = spawn(command, args, {
         cwd: path.join(this.root, options?.cwd ?? ""),
@@ -59,6 +76,7 @@ class ProcessIo implements Io {
       child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
       child.on("error", reject);
       child.on("close", (code) => {
+        // No code means a signal ended it: a failure all the same.
         resolve({ code: code ?? 1, stdout, stderr });
       });
       child.stdin.end(options?.input ?? "");
@@ -101,74 +119,90 @@ class ProcessIo implements Io {
   }
 
   async fetchJson(url: string): Promise<unknown> {
-    const headers: Record<string, string> = { "User-Agent": "dependency-updates-script" };
-    const token = process.env.GH_TOKEN;
-    if (url.startsWith("https://api.github.com/") && token !== undefined && token !== "") {
-      headers.Authorization = `Bearer ${token}`;
-    }
-    const response = await fetch(url, { headers, signal: AbortSignal.timeout(30_000) });
+    const response = await fetch(url, {
+      headers: requestHeaders(url, this.token),
+      signal: AbortSignal.timeout(30_000),
+    });
     if (!response.ok) throw new Error(`GET ${url} answered ${String(response.status)}`);
     return response.json() as Promise<unknown>;
   }
 
   log(line: string): void {
-    console.log(line);
+    this.print(line);
   }
 }
 
-async function git(cwd: string, args: readonly string[]): Promise<void> {
-  const result = await new ProcessIo(cwd).run("git", args);
+/** What `deps:update` reads and where it reports; the flow is a parameter for tests. */
+export interface UpdateCommandIo {
+  readonly repoRoot: string;
+  readonly env: Readonly<Record<string, string | undefined>>;
+  readonly now: Date;
+  readonly log: (line: string) => void;
+  readonly error: (line: string) => void;
+  readonly flow?: typeof runDependencyUpdate;
+}
+
+async function git(io: Io, args: readonly string[]): Promise<void> {
+  const result = await io.run("git", args);
   if (result.code !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr.trim()}`);
 }
 
-async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
-  const repoRoot = path.resolve(import.meta.dirname, "../..");
-  const name = process.env.DEPS_UPDATE_GIT_NAME;
-  const email = process.env.DEPS_UPDATE_GIT_EMAIL;
+function flowOptions(args: Args, io: UpdateCommandIo): FlowOptions {
+  const name = io.env.DEPS_UPDATE_GIT_NAME;
+  const email = io.env.DEPS_UPDATE_GIT_EMAIL;
   if (!args.dryRun && (name === undefined || email === undefined)) {
     throw new Error("Set DEPS_UPDATE_GIT_NAME and DEPS_UPDATE_GIT_EMAIL, or pass --dry-run.");
   }
-  const options: FlowOptions = {
+  return {
     dryRun: args.dryRun,
     baseBranch: "main",
     ...(args.from === undefined ? {} : { startRef: args.from }),
-    now: new Date(),
+    now: io.now,
     label: "dependency-update",
     author: {
       name: name ?? "dependency-updates dry run",
       email: email ?? "dry-run@localhost.invalid",
     },
   };
+}
+
+async function update(argv: readonly string[], io: UpdateCommandIo): Promise<void> {
+  const args = parseArgs(argv);
+  const options = flowOptions(args, io);
+  const flow = io.flow ?? runDependencyUpdate;
+  const token = io.env.GH_TOKEN;
 
   if (!args.dryRun) {
-    const outcome = await runDependencyUpdate(new ProcessIo(repoRoot), options);
-    console.log(
+    const outcome = await flow(new ProcessIo(io.repoRoot, token, io.log), options);
+    io.log(
       outcome.kind === "unchanged" ? "No update PR needed." : `${outcome.kind}: ${outcome.url}`,
     );
     return;
   }
 
+  const repo = new ProcessIo(io.repoRoot, token, io.log);
   const worktree = await mkdtemp(path.join(tmpdir(), "deps-update-"));
-  await git(repoRoot, ["worktree", "add", "--detach", worktree, "HEAD"]);
+  await git(repo, ["worktree", "add", "--detach", worktree, "HEAD"]);
   try {
-    const outcome = await runDependencyUpdate(new ProcessIo(worktree), options);
-    console.log(
+    const outcome = await flow(new ProcessIo(worktree, token, io.log), options);
+    io.log(
       outcome.kind === "unchanged"
         ? "Dry run: no update PR needed."
         : `Dry run: would have ${outcome.kind} ${outcome.branch}.`,
     );
   } finally {
-    await git(repoRoot, ["worktree", "remove", "--force", worktree]);
+    await git(repo, ["worktree", "remove", "--force", worktree]);
     await rm(worktree, { recursive: true, force: true });
   }
 }
 
-if (import.meta.main) {
+/** `bun run deps:update [--dry-run] [--from <ref>]`. Returns the exit code. */
+export async function updateCommand(argv: readonly string[], io: UpdateCommandIo): Promise<number> {
   try {
-    await main();
+    await update(argv, io);
+    return 0;
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 1;
+    io.error((error as Error).message);
+    return 1;
   }
 }

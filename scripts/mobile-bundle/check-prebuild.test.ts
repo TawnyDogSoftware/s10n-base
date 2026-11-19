@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+import { afterAll, describe, expect, it } from "vitest";
 
 import { appVariants } from "../../packages/shared/src/app-variants";
-import { checkPrebuild, type PrebuildFiles } from "./check-prebuild";
+import { checkPrebuild, checkPrebuildCommand, type PrebuildFiles } from "./check-prebuild";
 
 const dev = appVariants.development;
 
@@ -40,5 +44,68 @@ describe("checkPrebuild", () => {
 
   it("checks against the variant asked for", () => {
     expect(checkPrebuild(files(), "production")).toHaveLength(6);
+  });
+});
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
+/** An app directory holding generated native projects with `content`. */
+function generatedApp(content: PrebuildFiles): string {
+  const app = mkdtempSync(path.join(tmpdir(), "prebuild-"));
+  roots.push(app);
+  const write = (file: string, text: string) => {
+    mkdirSync(path.dirname(path.join(app, file)), { recursive: true });
+    writeFileSync(path.join(app, file), text);
+  };
+  write("ios/App.xcodeproj/project.pbxproj", content.pbxproj);
+  write("ios/App/Info.plist", content.infoPlist);
+  write("android/app/build.gradle", content.buildGradle);
+  write("android/app/src/main/AndroidManifest.xml", content.androidManifest);
+  write("android/app/src/main/res/values/strings.xml", content.androidStrings);
+  return app;
+}
+
+function capture() {
+  const lines: string[] = [];
+  return {
+    lines,
+    out: {
+      log: (line: string) => lines.push(line),
+      error: (line: string) => lines.push(`! ${line}`),
+    },
+  };
+}
+
+describe("checkPrebuildCommand", () => {
+  it("passes generated projects that carry the variant's identity", () => {
+    const { lines, out } = capture();
+
+    expect(checkPrebuildCommand([generatedApp(files()), "development"], out)).toBe(0);
+    expect(lines).toEqual(["The native projects carry the development variant's identity."]);
+  });
+
+  it("lists every mismatch and exits 1", () => {
+    const { lines, out } = capture();
+
+    expect(checkPrebuildCommand([generatedApp(files()), "production"], out)).toBe(1);
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines.every((line) => line.startsWith("! "))).toBe(true);
+  });
+
+  it("exits 2 for an unknown variant or a directory without native projects", () => {
+    const unknown = capture();
+    expect(checkPrebuildCommand(["apps/mobile", "staging"], unknown.out)).toBe(2);
+    expect(unknown.lines).toEqual(["! Unknown variant staging."]);
+
+    const empty = mkdtempSync(path.join(tmpdir(), "prebuild-empty-"));
+    roots.push(empty);
+    mkdirSync(path.join(empty, "ios"));
+    const missing = capture();
+    expect(checkPrebuildCommand([empty], missing.out)).toBe(2);
+    expect(missing.lines).toEqual([`! No Xcode project in ${path.join(empty, "ios")}.`]);
   });
 });

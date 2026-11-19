@@ -20,7 +20,7 @@ bun install
 bun dev
 ```
 
-`bun dev` (`scripts/dev.ts`):
+`bun dev` (`scripts/dev.ts`, started by `scripts/dev.main.ts`):
 
 1. starts Postgres from `docker-compose.local.yml` and waits until it is healthy,
 2. applies migrations (`db:migrate`),

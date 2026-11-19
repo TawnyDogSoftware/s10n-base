@@ -3,13 +3,14 @@
  * identifier, URL scheme and display name, and the Android application id, scheme and app name.
  * pod install and Gradle need macOS and the Android SDK, so this is what Linux can check.
  *
- * Usage: `bun scripts/mobile-bundle/check-prebuild.ts apps/mobile development`, after
+ * Usage: `bun scripts/mobile-bundle/check-prebuild.main.ts apps/mobile development`, after
  * `bunx expo prebuild --no-install --platform all` in `apps/mobile`.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { APP_VARIANTS, type AppVariant, appVariants } from "../../packages/shared/src/app-variants";
+import type { CheckOutput } from "./check";
 
 type AppVariantIdentity = (typeof appVariants)[AppVariant];
 
@@ -85,15 +86,26 @@ function read(appRoot: string): PrebuildFiles {
   };
 }
 
-if (import.meta.main) {
-  const [appRoot = "apps/mobile", variant = "development"] = process.argv.slice(2);
+/**
+ * Checks the native projects under `appRoot` (default `apps/mobile`) against `variant` (default
+ * `development`), and returns the exit code: 2 for an unknown variant or no native projects.
+ */
+export function checkPrebuildCommand(args: ReadonlyArray<string>, out: CheckOutput): number {
+  const [appRoot = "apps/mobile", variant = "development"] = args;
   if (!(APP_VARIANTS as readonly string[]).includes(variant)) {
-    console.error(`Unknown variant ${variant}.`);
-    process.exit(2);
+    out.error(`Unknown variant ${variant}.`);
+    return 2;
   }
-  const problems = checkPrebuild(read(appRoot), variant as AppVariant);
-  for (const problem of problems) console.error(problem);
-  if (problems.length === 0)
-    console.log(`The native projects carry the ${variant} variant's identity.`);
-  process.exit(problems.length === 0 ? 0 : 1);
+  let files: PrebuildFiles;
+  try {
+    files = read(appRoot);
+  } catch (error) {
+    out.error((error as Error).message);
+    return 2;
+  }
+  const problems = checkPrebuild(files, variant as AppVariant);
+  for (const problem of problems) out.error(problem);
+  if (problems.length > 0) return 1;
+  out.log(`The native projects carry the ${variant} variant's identity.`);
+  return 0;
 }

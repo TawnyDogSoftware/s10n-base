@@ -5,7 +5,7 @@ import { parseEnv } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { loadLocalEnv } from "./local-env";
+import { loadLocalEnv, runWithEnv } from "./local-env";
 
 const dirs: string[] = [];
 
@@ -90,5 +90,44 @@ describe(".env.example", () => {
     };
 
     expect(turbo.globalEnv).toEqual(expect.arrayContaining([...variables, ...optional]));
+  });
+});
+
+describe("runWithEnv", () => {
+  it("runs the command with the file's variables and resolves with its exit code", async () => {
+    const dir = workspace({ ".env.example": "EXIT_WITH=7\n" });
+
+    const code = await runWithEnv(
+      ["node", "-e", "process.exit(Number(process.env.EXIT_WITH))"],
+      dir,
+      { PATH: process.env.PATH },
+      () => {},
+    );
+
+    expect(code).toBe(7);
+  });
+
+  it("passes SIGTERM on to the command, and resolves with 128 when a signal ended it", async () => {
+    const dir = workspace({ ".env.example": "" });
+    const listeners = process.listenerCount("SIGTERM");
+    const running = runWithEnv(
+      ["node", "-e", "setInterval(() => {}, 1000)"],
+      dir,
+      { PATH: process.env.PATH },
+      () => {},
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    process.emit("SIGTERM");
+
+    expect(await running).toBe(128);
+    expect(process.listenerCount("SIGTERM")).toBe(listeners);
+  });
+
+  it("prints the usage and resolves with 2 without a command", async () => {
+    const lines: string[] = [];
+
+    expect(await runWithEnv([], workspace({}), {}, (line) => lines.push(line))).toBe(2);
+    expect(lines).toEqual(["Usage: bun scripts/with-env.main.ts <command> [args...]"]);
   });
 });

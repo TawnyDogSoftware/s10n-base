@@ -114,7 +114,7 @@ Uniwind compiles Tailwind classes at build time. The tokens are `packages/theme/
 
 Route files in `src/app/` only re-export screens from `src/screens/`, because expo-router bundles every file in `src/app/`. Metro's `blockList` keeps every `*.test.*` file and `src/test/` out of the bundle.
 
-`bun run mobile:export` also runs `scripts/mobile-bundle/check.ts` on the exported source maps. It fails on a second copy of React or another package that must be single, on test code in the bundle, or on a workspace package not bundled from its TypeScript source. CI runs it, and also generates the native projects (`expo prebuild --no-install`) and checks they carry the development variant's bundle identifier, scheme and name (`scripts/mobile-bundle/check-prebuild.ts`). `pod install` and Gradle need macOS and the Android SDK, so CI does not build native code.
+`bun run mobile:export` also runs `scripts/mobile-bundle/check.main.ts` on the exported source maps. It fails on a second copy of React or another package that must be single, on test code in the bundle, or on a workspace package not bundled from its TypeScript source. CI runs it, and also generates the native projects (`expo prebuild --no-install`) and checks they carry the development variant's bundle identifier, scheme and name (`scripts/mobile-bundle/check-prebuild.main.ts`). `pod install` and Gradle need macOS and the Android SDK, so CI does not build native code.
 
 ## Native modules and versions
 

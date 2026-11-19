@@ -5,7 +5,7 @@
  * from their TypeScript source, and no test code. bun's default linker gives each package its own
  * directory under `node_modules/.bun`, so a second copy shows up as a second directory.
  *
- * Usage, from the repository root: `bun scripts/mobile-bundle/check.ts apps/mobile/dist` (after
+ * Usage, from the repository root: `bun scripts/mobile-bundle/check.main.ts apps/mobile/dist` (after
  * `bun run mobile:export`).
  */
 import { readdirSync, readFileSync, realpathSync } from "node:fs";
@@ -108,11 +108,26 @@ function realDirectory(root: string): ResolveDirectory {
   };
 }
 
-function main(directory: string): number {
-  const resolve = realDirectory(process.cwd());
-  const maps = sourceMaps(directory);
+/** Where a command's lines go. */
+export interface CheckOutput {
+  readonly log: (line: string) => void;
+  readonly error: (line: string) => void;
+}
+
+/**
+ * Checks every source map under `directory` (default `apps/mobile/dist`), resolving package
+ * directories from `root`. Returns the exit code.
+ */
+export function checkBundleCommand(
+  args: ReadonlyArray<string>,
+  root: string,
+  out: CheckOutput,
+): number {
+  const [directory = "apps/mobile/dist"] = args;
+  const resolve = realDirectory(root);
+  const maps = sourceMaps(path.resolve(root, directory));
   if (maps.length === 0) {
-    console.error(`No source maps under ${directory}: export with --source-maps.`);
+    out.error(`No source maps under ${directory}: export with --source-maps.`);
     return 1;
   }
   let failed = false;
@@ -120,15 +135,11 @@ function main(directory: string): number {
     const { sources } = JSON.parse(readFileSync(map, "utf8")) as { sources: string[] };
     const problems = checkBundleSources(sources, resolve);
     const react = [...(packageInstances(sources, resolve).get("react") ?? [])];
-    console.log(
-      `${path.relative(directory, map)}: ${String(sources.length)} files; react from ${react.join(", ")}`,
+    out.log(
+      `${path.relative(path.resolve(root, directory), map)}: ${String(sources.length)} files; react from ${react.join(", ")}`,
     );
-    for (const problem of problems) console.error(`  ${problem}`);
+    for (const problem of problems) out.error(`  ${problem}`);
     failed ||= problems.length > 0;
   }
   return failed ? 1 : 0;
-}
-
-if (import.meta.main) {
-  process.exit(main(process.argv[2] ?? "apps/mobile/dist"));
 }

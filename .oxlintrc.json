@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   // Every rule change below is an allowance a framework or library needs, with its reason.
-  // Inline disable comments are refused by scripts/check-lint-directives.ts; see docs/quality.md.
+  // Inline disable comments are refused by scripts/quality/lint-directives.ts; see docs/quality.md.
   "plugins": ["eslint", "typescript", "unicorn", "oxc", "react", "import", "jsx-a11y", "vitest"],
   "categories": {
     "correctness": "error",

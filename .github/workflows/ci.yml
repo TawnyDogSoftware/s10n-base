@@ -91,4 +91,4 @@ jobs:
         working-directory: apps/mobile
         run: bunx expo prebuild --no-install --platform all
       - name: Check the generated projects carry the development variant's identity
-        run: bun scripts/mobile-bundle/check-prebuild.ts apps/mobile development
+        run: bun scripts/mobile-bundle/check-prebuild.main.ts apps/mobile development

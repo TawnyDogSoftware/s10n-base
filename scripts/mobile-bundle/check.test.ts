@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
-import { checkBundleSources, packageInstances } from "./check";
+import { afterAll, describe, expect, it } from "vitest";
+
+import { checkBundleCommand, checkBundleSources, packageInstances } from "./check";
 
 const store = (dir: string, name: string, file = "index.js") =>
   `/node_modules/.bun/${dir}/node_modules/${name}/${file}`;
@@ -89,5 +93,92 @@ describe("checkBundleSources", () => {
     expect(checkBundleSources(WORKSPACE.filter((file) => !file.includes("/i18n/")))).toEqual([
       "@s10n-base/i18n is not bundled from packages/i18n/src",
     ]);
+  });
+});
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
+function capture() {
+  const lines: string[] = [];
+  return {
+    lines,
+    out: {
+      log: (line: string) => lines.push(line),
+      error: (line: string) => lines.push(`! ${line}`),
+    },
+  };
+}
+
+/** A repository with an exported bundle whose source maps list `bundles`' sources. */
+function exported(bundles: Record<string, readonly string[]>): string {
+  const root = mkdtempSync(path.join(tmpdir(), "bundle-"));
+  roots.push(root);
+  for (const [file, sources] of Object.entries(bundles)) {
+    const map = path.join(root, "apps/mobile/dist", file);
+    mkdirSync(path.dirname(map), { recursive: true });
+    writeFileSync(map, JSON.stringify({ sources }));
+  }
+  // The app's expo link points into bun's store, as bun's isolated linker leaves it.
+  mkdirSync(path.join(root, "node_modules/.bun/expo@58.0.25+abc/node_modules/expo"), {
+    recursive: true,
+  });
+  mkdirSync(path.join(root, "apps/mobile/node_modules"), { recursive: true });
+  symlinkSync(
+    path.join(root, "node_modules/.bun/expo@58.0.25+abc/node_modules/expo"),
+    path.join(root, "apps/mobile/node_modules/expo"),
+  );
+  return root;
+}
+
+const GOOD = [
+  store("react@19.3.0", "react"),
+  "/apps/mobile/node_modules/expo/internal/async-require-module.js",
+  store("expo@58.0.25+abc", "expo", "src/Expo.ts"),
+  ...WORKSPACE,
+];
+
+describe("checkBundleCommand", () => {
+  it("passes every bundle that is clean, and follows the linker's symlinks", () => {
+    const root = exported({
+      "_expo/static/js/ios/entry.js.map": GOOD,
+      "_expo/static/js/android/entry.js.map": GOOD,
+    });
+    const { lines, out } = capture();
+
+    expect(checkBundleCommand([], root, out)).toBe(0);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatch(
+      /entry\.js\.map: 8 files; react from \/node_modules\/\.bun\/react@19\.3\.0/,
+    );
+  });
+
+  it("lists each problem under its bundle and exits 1", () => {
+    const root = exported({ "entry.js.map": [...GOOD, "/apps/mobile/src/lib/auth.test.ts"] });
+    const { lines, out } = capture();
+
+    expect(checkBundleCommand(["apps/mobile/dist"], root, out)).toBe(1);
+    expect(lines).toContain("!   test code in the bundle: /apps/mobile/src/lib/auth.test.ts");
+  });
+
+  it("says where React came from even when it is missing", () => {
+    const root = exported({ "entry.js.map": GOOD.filter((source) => !source.includes("react@")) });
+    const { lines, out } = capture();
+
+    checkBundleCommand([], root, out);
+
+    expect(lines[0]).toMatch(/; react from $/);
+  });
+
+  it("exits 1 when there are no source maps to read", () => {
+    const root = exported({});
+    mkdirSync(path.join(root, "apps/mobile/dist"), { recursive: true });
+    const { lines, out } = capture();
+
+    expect(checkBundleCommand([], root, out)).toBe(1);
+    expect(lines).toEqual(["! No source maps under apps/mobile/dist: export with --source-maps."]);
   });
 });

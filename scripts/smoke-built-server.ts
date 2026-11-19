@@ -10,7 +10,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { once } from "node:events";
-import { createServer } from "node:net";
+import { type AddressInfo, createServer } from "node:net";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -52,13 +52,11 @@ async function findFreePort(): Promise<number> {
   const probe = createServer();
   probe.listen(0, "127.0.0.1");
   await once(probe, "listening");
-  const address = probe.address();
+  // A TCP server listening on a host and port always has an AddressInfo.
+  const { port } = probe.address() as AddressInfo;
   probe.close();
   await once(probe, "close");
-  if (address === null || typeof address === "string") {
-    throw new Error("could not read the probe port");
-  }
-  return address.port;
+  return port;
 }
 
 type Probe = { readonly done: true; readonly reason?: string } | { readonly done: false };
@@ -75,7 +73,8 @@ async function probeHealth(url: string): Promise<Probe> {
   try {
     text = await response.text();
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
+    // fetch fails with an Error, here a TypeError for a dropped connection.
+    const detail = (error as Error).message;
     return {
       done: true,
       reason: `/health answered ${String(response.status)} but its body could not be read: ${detail}`,
@@ -95,7 +94,7 @@ async function checkReady(url: string): Promise<string | undefined> {
   try {
     response = await fetch(url, { signal: AbortSignal.timeout(5_000) });
   } catch (error) {
-    return `/ready did not answer: ${error instanceof Error ? error.message : String(error)}`;
+    return `/ready did not answer: ${(error as Error).message}`;
   }
   const text = await response.text().catch(() => "(body could not be read)");
   if (response.status !== 200) return `/ready answered ${String(response.status)}: ${text}`;
@@ -111,7 +110,7 @@ async function checkWebApp(url: string): Promise<string | undefined> {
       signal: AbortSignal.timeout(5_000),
     });
   } catch (error) {
-    return `/ did not answer: ${error instanceof Error ? error.message : String(error)}`;
+    return `/ did not answer: ${(error as Error).message}`;
   }
   await response.body?.cancel();
   const type = response.headers.get("content-type")?.split(";", 1)[0] ?? "(no type)";
@@ -204,25 +203,39 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeResult> {
   return reason === undefined ? { ok: true, output } : { ok: false, reason, output };
 }
 
-if (import.meta.main) {
-  const serverEntry = path.resolve(import.meta.dirname, "../apps/server/dist/bin.mjs");
-  const webIndex = path.resolve(import.meta.dirname, "../apps/web/dist/index.html");
+/** Where the output of `smokeCommand` goes. */
+export interface SmokeOutput {
+  readonly log: (line: string) => void;
+  readonly error: (line: string) => void;
+}
+
+/**
+ * `bun run smoke`: smoke-tests the built server under `root`, expecting the web app at `/` when
+ * it was built, and returns the exit code.
+ */
+export async function smokeCommand(
+  root: string,
+  env: Readonly<Record<string, string | undefined>>,
+  out: SmokeOutput,
+): Promise<number> {
+  const serverEntry = path.join(root, "apps/server/dist/bin.mjs");
+  const expectWebApp = existsSync(path.join(root, "apps/web/dist/index.html"));
+  const shutdown = env.SHUTDOWN_TIMEOUT_MS;
   const result = await runSmoke({
     serverEntry,
     deadlineMs: 30_000,
-    expectWebApp: existsSync(webIndex),
-    ...(process.env.SHUTDOWN_TIMEOUT_MS
-      ? { shutdownDeadlineMs: Number(process.env.SHUTDOWN_TIMEOUT_MS) }
-      : {}),
+    expectWebApp,
+    ...(shutdown === undefined ? {} : { shutdownDeadlineMs: Number(shutdown) }),
   });
   if (result.ok) {
-    console.log(
-      `Smoke test passed: ${serverEntry} answered /health and /ready${webIndex && existsSync(webIndex) ? ", served the web app" : ""} and exited 0 on SIGTERM.`,
+    const web = expectWebApp ? ", served the web app" : "";
+    out.log(
+      `Smoke test passed: ${serverEntry} answered /health and /ready${web} and exited 0 on SIGTERM.`,
     );
-  } else {
-    console.error(`Smoke test failed: ${String(result.reason)}`);
-    console.error("Server output:");
-    console.error(result.output.trim() === "" ? "(none)" : result.output);
-    process.exitCode = 1;
+    return 0;
   }
+  out.error(`Smoke test failed: ${String(result.reason)}`);
+  out.error("Server output:");
+  out.error(result.output.trim() === "" ? "(none)" : result.output);
+  return 1;
 }
