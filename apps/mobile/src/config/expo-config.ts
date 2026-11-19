@@ -135,6 +135,9 @@ export function buildExpoConfig(env: ExpoConfigEnv, colors: NativeColors): ExpoC
     },
     plugins: [
       "expo-router",
+      // The dev client's own scheme (`exp+<slug>`) is the same for every variant, so only the
+      // development build, the one that runs the dev client, claims it.
+      ["expo-dev-client", { addGeneratedScheme: variant === "development" }],
       // No biometric prompt guards the stored session, so no Face ID usage string.
       ["expo-secure-store", { faceIDPermission: false }],
       "expo-localization",

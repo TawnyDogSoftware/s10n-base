@@ -52,6 +52,12 @@ jobs:
       - run: bun run typecheck
       - run: bun run test
       - run: bun run build
+      # Against the installed Expo SDK's own version map, so the result depends only on the
+      # lockfile. Online, the check compares with Expo's newest patches, which the 3-day rule may
+      # not allow yet; the daily dependency update reports that drift instead.
+      - name: Check the Expo-managed packages match the installed SDK
+        working-directory: apps/mobile
+        run: EXPO_OFFLINE=1 bunx expo install --check
       - name: Create the test database
         run: docker exec -i ${{ job.services.postgres.id }} psql --username=s10n_base --dbname=s10n_base --set=ON_ERROR_STOP=1 < docker/postgres/init/01-create-test-database.sql
       - run: bun run db:migrate
@@ -59,3 +65,30 @@ jobs:
       - run: bun run test:live
       - name: Start the built server, check /health and /ready, and stop it with SIGTERM
         run: bun run smoke
+
+  mobile:
+    name: Bundle and prebuild the mobile app
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      # Metro bundles both platforms from a clean install with bun's default linker, then the
+      # bundle check reads the source maps: one React, the workspace from source, no test code.
+      - name: Export the iOS and Android bundles and check them
+        run: bun run mobile:export
+      # The native projects generated from the config. pod install and Gradle need macOS and the
+      # Android SDK; this checks the config plugins and the generated identifiers only.
+      - name: Generate the native projects
+        working-directory: apps/mobile
+        run: bunx expo prebuild --no-install --platform all
+      - name: Check the generated projects carry the development variant's identity
+        run: bun scripts/mobile-bundle/check-prebuild.ts apps/mobile development

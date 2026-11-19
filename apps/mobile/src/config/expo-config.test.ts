@@ -130,10 +130,26 @@ describe("buildExpoConfig", () => {
 
     expect(names).toEqual([
       "expo-router",
+      "expo-dev-client",
       "expo-secure-store",
       "expo-localization",
       "expo-web-browser",
       "expo-splash-screen",
+    ]);
+  });
+
+  it("gives only the development variant the dev client's own URL scheme", () => {
+    // The dev client's scheme comes from the slug, which every variant shares, so two installed
+    // variants would both claim it.
+    const devClient = (env: ExpoConfigEnv) =>
+      buildExpoConfig(env).plugins?.find(
+        (plugin) => Array.isArray(plugin) && plugin[0] === "expo-dev-client",
+      );
+
+    expect(devClient({})).toEqual(["expo-dev-client", { addGeneratedScheme: true }]);
+    expect(devClient({ APP_VARIANT: "preview", EXPO_PUBLIC_API_BASE_URL: HTTPS })).toEqual([
+      "expo-dev-client",
+      { addGeneratedScheme: false },
     ]);
   });
 
