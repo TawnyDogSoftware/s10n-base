@@ -1,8 +1,9 @@
 import { defineConfig } from "tsdown";
 
 export default defineConfig({
-  // The server, and the migrate entry point that runs separately (the server never migrates).
-  entry: ["src/bin.ts", "src/migrate.ts"],
+  // The server; the migrate entry point that runs separately (the server never migrates); and
+  // auth:set-role, which creates the first admin.
+  entry: ["src/bin.ts", "src/migrate.ts", "src/set-role.ts"],
   format: ["esm"],
   // The entry is a program, not a library. Without this, tsdown emits declarations
   // because `composite` in tsconfig.json implies `declaration`.

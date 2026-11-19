@@ -65,7 +65,8 @@
     "db:reset": "bun scripts/with-env.ts bun apps/server/src/migrate.ts reset",
     "db:generate": "bun scripts/with-env.ts bun run --cwd apps/server db:generate",
     "db:generate:check": "bun scripts/with-env.ts bun run --cwd apps/server db:generate:check",
-    "db:test:sweep": "bun scripts/with-env.ts bun apps/server/src/test/sweep.ts"
+    "db:test:sweep": "bun scripts/with-env.ts bun apps/server/src/test/sweep.ts",
+    "auth:set-role": "bun scripts/with-env.ts bun apps/server/src/set-role.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",

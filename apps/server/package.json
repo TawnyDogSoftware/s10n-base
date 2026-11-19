@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "db:generate": "kysely-codegen --dialect postgres --default-schema public --out-file src/infra/postgres/generated/db.ts",
-    "db:generate:check": "kysely-codegen --dialect postgres --default-schema public --out-file src/infra/postgres/generated/db.ts --verify"
+    "db:generate:check": "kysely-codegen --dialect postgres --default-schema public --out-file src/infra/postgres/generated/db.ts --verify",
+    "set-role": "node dist/set-role.mjs"
   },
   "dependencies": {
     "@better-auth/expo": "catalog:",
