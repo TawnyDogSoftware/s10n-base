@@ -210,6 +210,24 @@ describe("startServer", () => {
     expect(logs.map((line) => line.message)).toContain("http_server_forced_close");
   });
 
+  it("reports a forced stop when the pool does not close within the deadline", async () => {
+    const events: string[] = [];
+    const pool = createFakePool(events);
+    pool.end = () => new Promise(() => {});
+    const logs: string[] = [];
+    const server = await startServer(testConfig({ shutdownTimeoutMs: 300 }), {
+      createPool: () => pool,
+      write: (line) => logs.push(line),
+    });
+
+    const startedAt = Date.now();
+    const result = await server.stop();
+
+    expect(result).toEqual({ forced: true });
+    expect(Date.now() - startedAt).toBeLessThan(2000);
+    expect(logs.join("")).toContain("database_pool_close_timed_out");
+  });
+
   it("fails to start when the database cannot be reached, and closes the pool", async () => {
     const events: string[] = [];
     const pool = createFakePool(events);

@@ -57,6 +57,8 @@ export interface DatabaseService {
   readonly db: Kysely<DB>;
   /** `select 1` within two seconds. Never throws. */
   readonly checkReadiness: () => Promise<boolean>;
+  /** Whether the last release gave up waiting for the pool to close. */
+  readonly closeTimedOut: () => boolean;
 }
 
 export class Database extends Context.Service<Database, DatabaseService>()(
@@ -110,6 +112,7 @@ const databaseLayer = (options: ServerLayerOptions) =>
     Effect.gen(function* () {
       const config = yield* AppConfig;
       const logger = yield* AppLogger;
+      let closeTimedOut = false;
       const db = yield* Effect.acquireRelease(
         Effect.sync(() => createDb((options.createPool ?? defaultPool)(config, logger))),
         (db) =>
@@ -117,11 +120,16 @@ const databaseLayer = (options: ServerLayerOptions) =>
             // A query still running holds its connection; do not wait on it forever.
             Effect.timeoutOption(Duration.millis(config.shutdownTimeoutMs)),
             Effect.tap((closed) =>
-              Effect.sync(() =>
-                Option.isSome(closed)
-                  ? logger.info("database_pool_closed")
-                  : logger.warn("database_pool_close_timed_out"),
-              ),
+              Effect.sync(() => {
+                if (Option.isSome(closed)) {
+                  logger.info("database_pool_closed");
+                } else {
+                  closeTimedOut = true;
+                  logger.warn("database_pool_close_timed_out", {
+                    deadlineMs: config.shutdownTimeoutMs,
+                  });
+                }
+              }),
             ),
           ),
       );
@@ -137,7 +145,7 @@ const databaseLayer = (options: ServerLayerOptions) =>
             Effect.orElseSucceed(() => false),
           ),
         );
-      return { db, checkReadiness };
+      return { db, checkReadiness, closeTimedOut: () => closeTimedOut };
     }),
   );
 
@@ -223,7 +231,10 @@ export function serverLayer(
 }
 
 export interface StopResult {
-  /** True when requests were still running at the deadline and were cut off. */
+  /**
+   * True when requests were still running at the deadline and were cut off, or the pool did not
+   * close within the deadline.
+   */
   readonly forced: boolean;
 }
 
@@ -265,13 +276,14 @@ export async function startWithConfigLayer(
   }
   const context = built.value;
   const httpServer = Context.get(context, HttpServer);
+  const database = Context.get(context, Database);
   let stopping: Promise<StopResult> | undefined;
   return {
     port: httpServer.port,
     config: Context.get(context, AppConfig),
     stop: () =>
       (stopping ??= Effect.runPromise(Scope.close(scope, Exit.void)).then(() => ({
-        forced: httpServer.forced(),
+        forced: httpServer.forced() || database.closeTimedOut(),
       }))),
   };
 }

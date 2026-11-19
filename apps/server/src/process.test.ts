@@ -84,6 +84,7 @@ describe("runServerProcess", () => {
 
     expect(stop).toHaveBeenCalledTimes(1);
     expect(runtime.exitCode).toBe(0);
+    expect(runtime.exits).toEqual([0]);
     expect(output.messages()).toEqual(["shutdown_started", "shutdown_complete"]);
     expect(listeners("SIGTERM")).toBe(0);
   });
@@ -101,6 +102,7 @@ describe("runServerProcess", () => {
     await vi.runAllTimersAsync();
 
     expect(runtime.exitCode).toBe(1);
+    expect(runtime.exits).toEqual([1]);
   });
 
   it("ignores a second signal during shutdown", async () => {
@@ -138,6 +140,7 @@ describe("runServerProcess", () => {
     });
 
     expect(runtime.exitCode).toBe(1);
+    expect(runtime.exits).toEqual([1]);
     expect(output.lines).toEqual([
       expect.objectContaining({
         level: "error",
@@ -187,6 +190,7 @@ describe("runServerProcess", () => {
     await vi.runAllTimersAsync();
 
     expect(runtime.exitCode).toBe(1);
+    expect(runtime.exits).toEqual([1]);
     expect(output.messages()).toContain("shutdown_failed");
   });
 

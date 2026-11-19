@@ -3,6 +3,9 @@
  * during startup is not lost; the first SIGTERM or SIGINT stops the server, and later ones are
  * logged and ignored. Exit codes: 0 after a clean stop, 1 after a forced stop, a failed stop or
  * a failed startup.
+ *
+ * The process exits explicitly once it is done rather than waiting for the event loop to empty:
+ * under `bun --watch` (the dev script) an emptied loop leaves the process running.
  */
 import type { Logger } from "./observability/logger";
 
@@ -10,6 +13,7 @@ export interface ProcessRuntime {
   exitCode: number | string | null | undefined;
   on(signal: "SIGTERM" | "SIGINT", listener: () => void): unknown;
   off(signal: "SIGTERM" | "SIGINT", listener: () => void): unknown;
+  /** Ends the process with `code`, after any log output already written. */
   exit(code: number): unknown;
 }
 
@@ -57,12 +61,14 @@ export async function runServerProcess(options: ServerProcessOptions): Promise<v
         removeHandlers();
         logger.info("shutdown_complete", { forced: result.forced });
         runtime.exitCode = result.forced ? 1 : 0;
+        runtime.exit(result.forced ? 1 : 0);
       },
       (error: unknown) => {
         clearTimeout(hardStop);
         removeHandlers();
         logger.error("shutdown_failed", { error });
         runtime.exitCode = 1;
+        runtime.exit(1);
       },
     );
   };
@@ -85,6 +91,7 @@ export async function runServerProcess(options: ServerProcessOptions): Promise<v
     removeHandlers();
     logger.error("startup_failed", { error });
     runtime.exitCode = 1;
+    runtime.exit(1);
     return;
   }
   if (stopRequested) stop(running);
