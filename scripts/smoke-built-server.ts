@@ -78,11 +78,11 @@ async function probeHealth(url: string): Promise<Probe> {
     const detail = error instanceof Error ? error.message : String(error);
     return {
       done: true,
-      reason: `/health answered ${response.status} but its body could not be read: ${detail}`,
+      reason: `/health answered ${String(response.status)} but its body could not be read: ${detail}`,
     };
   }
   if (response.status !== 200) {
-    return { done: true, reason: `/health answered ${response.status}: ${text}` };
+    return { done: true, reason: `/health answered ${String(response.status)}: ${text}` };
   }
   const problem = checkHealthBody(text);
   return problem === undefined
@@ -98,7 +98,7 @@ async function checkReady(url: string): Promise<string | undefined> {
     return `/ready did not answer: ${error instanceof Error ? error.message : String(error)}`;
   }
   const text = await response.text().catch(() => "(body could not be read)");
-  if (response.status !== 200) return `/ready answered ${response.status}: ${text}`;
+  if (response.status !== 200) return `/ready answered ${String(response.status)}: ${text}`;
   const problem = checkHealthBody(text);
   return problem === undefined ? undefined : `/ready answered 200 but ${problem}`;
 }
@@ -117,7 +117,7 @@ async function checkWebApp(url: string): Promise<string | undefined> {
   const type = response.headers.get("content-type")?.split(";", 1)[0] ?? "(no type)";
   return response.status === 200 && type === "text/html"
     ? undefined
-    : `/ answered ${response.status} ${type}, not the web app's HTML`;
+    : `/ answered ${String(response.status)} ${type}, not the web app's HTML`;
 }
 
 export async function runSmoke(options: SmokeOptions): Promise<SmokeResult> {
@@ -130,7 +130,7 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeResult> {
       ...options.env,
       HOST: "127.0.0.1",
       PORT: String(port),
-      APP_URL: `http://127.0.0.1:${port}`,
+      APP_URL: `http://127.0.0.1:${String(port)}`,
       SHUTDOWN_TIMEOUT_MS: String(shutdownDeadlineMs),
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -145,14 +145,14 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeResult> {
     exitCode = code as number | null;
   });
 
-  const base = `http://127.0.0.1:${port}`;
+  const base = `http://127.0.0.1:${String(port)}`;
   const deadline = Date.now() + options.deadlineMs;
-  let reason: string | undefined = `/health did not answer within ${options.deadlineMs} ms`;
+  let reason: string | undefined = `/health did not answer within ${String(options.deadlineMs)} ms`;
 
   try {
     while (Date.now() < deadline) {
       if (exitCode !== undefined) {
-        reason = `the server exited with code ${exitCode} before /health answered`;
+        reason = `the server exited with code ${String(exitCode)} before /health answered`;
         break;
       }
       const probe = await probeHealth(`${base}/health`);
@@ -176,13 +176,13 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeResult> {
       ]);
       if (!stopped) {
         child.kill("SIGKILL");
-        reason ??= `the server did not exit within ${shutdownDeadlineMs} ms of SIGTERM`;
+        reason ??= `the server did not exit within ${String(shutdownDeadlineMs)} ms of SIGTERM`;
       }
     }
     await exited;
   }
   if (reason === undefined && exitCode !== 0) {
-    reason = `the server exited with code ${exitCode} after SIGTERM, not 0`;
+    reason = `the server exited with code ${String(exitCode)} after SIGTERM, not 0`;
   }
 
   return reason === undefined ? { ok: true, output } : { ok: false, reason, output };
@@ -204,7 +204,7 @@ if (import.meta.main) {
       `Smoke test passed: ${serverEntry} answered /health and /ready${webIndex && existsSync(webIndex) ? ", served the web app" : ""} and exited 0 on SIGTERM.`,
     );
   } else {
-    console.error(`Smoke test failed: ${result.reason}`);
+    console.error(`Smoke test failed: ${String(result.reason)}`);
     console.error("Server output:");
     console.error(result.output.trim() === "" ? "(none)" : result.output);
     process.exitCode = 1;

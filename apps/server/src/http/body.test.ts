@@ -35,7 +35,7 @@ async function start(read: (request: http.IncomingMessage) => Promise<unknown>) 
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   const address = server.address() as net.AddressInfo;
-  return { url: `http://127.0.0.1:${address.port}/`, port: address.port };
+  return { url: `http://127.0.0.1:${String(address.port)}/`, port: address.port };
 }
 
 function post(url: string, body: string, contentType = "application/json") {

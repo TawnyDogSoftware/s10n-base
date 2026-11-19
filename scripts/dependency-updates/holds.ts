@@ -36,7 +36,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function parseHolds(json: unknown): Hold[] {
   const entries = isRecord(json) && Array.isArray(json.holds) ? (json.holds as unknown[]) : [];
   return entries.map((entry, index) => {
-    const label = `dependency-holds.json entry ${index + 1}`;
+    const label = `dependency-holds.json entry ${String(index + 1)}`;
     if (!isRecord(entry)) throw new Error(`${label} must be an object`);
     const { packages, reason, range, group } = entry;
     if (

@@ -102,7 +102,7 @@ export async function runAuthAction(
   const { error } = result;
   if (error === null) return { ok: true, data: result.data };
   if (error.code === undefined && LOST_ANSWER.has(error.status)) {
-    throw new NetworkError(`The server's answer was lost (HTTP ${error.status}).`);
+    throw new NetworkError(`The server's answer was lost (HTTP ${String(error.status)}).`);
   }
   if (error.status === 429) return { ok: false, code: "RATE_LIMITED", status: 429 };
   return { ok: false, code: error.code ?? "UNKNOWN", status: error.status };

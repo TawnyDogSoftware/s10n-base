@@ -141,9 +141,9 @@ export function createTransport(options: TransportOptions): Transport {
       const envelope = decodeEnvelope(body);
       if (envelope._tag === "None") {
         if (LOST_ANSWER.has(status)) {
-          throw new NetworkError(`The server's answer was lost (HTTP ${status}).`);
+          throw new NetworkError(`The server's answer was lost (HTTP ${String(status)}).`);
         }
-        throw new DecodeError(`Unexpected answer from the server (HTTP ${status}).`);
+        throw new DecodeError(`Unexpected answer from the server (HTTP ${String(status)}).`);
       }
       if (!envelope.value.ok) {
         throw new RpcError(envelope.value.error.code, envelope.value.error.message, status);

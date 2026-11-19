@@ -85,7 +85,7 @@ async function startWithSlowMethod(events: string[], config: Partial<ServerConfi
     handlers: [handler],
     write: (line) => logs.push(JSON.parse(line) as Record<string, unknown>),
   });
-  const base = `http://127.0.0.1:${started.port}`;
+  const base = `http://127.0.0.1:${String(started.port)}`;
   const call = () =>
     fetch(`${base}/rpc`, {
       method: "POST",

@@ -4,7 +4,7 @@
  */
 export function parseLockedVersions(lockText: string): Map<string, string> {
   const versions = new Map<string, string>();
-  const entry = /^\s+"([^"]+)": \["((?:@[^/"]+\/)?[^@"]+)@([^"]+)"/gm;
+  const entry = /^[ \t]+"([^"]+)": \["((?:@[^/"]+\/)?[^@"]+)@([^"]+)"/gm;
   for (const match of lockText.matchAll(entry)) {
     const [, key, name, version] = match;
     if (key !== undefined && key === name && version !== undefined) {

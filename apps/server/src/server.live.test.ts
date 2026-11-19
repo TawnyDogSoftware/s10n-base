@@ -24,7 +24,7 @@ function config(): ServerConfig {
 describe("server against Postgres", () => {
   it("answers /ready 200 with a real pool, and stops cleanly", async () => {
     started = await startServer(config(), { write: () => {} });
-    const base = `http://127.0.0.1:${started.port}`;
+    const base = `http://127.0.0.1:${String(started.port)}`;
 
     const ready = await fetch(`${base}/ready`);
 

@@ -88,7 +88,9 @@ async function mustRun(
   const result = await io.run(command, args, options);
   if (result.code !== 0) {
     const detail = (result.stderr.trim() || result.stdout.trim()).slice(0, 2_000);
-    throw new Error(`${[command, ...args].join(" ")} failed (exit ${result.code}): ${detail}`);
+    throw new Error(
+      `${[command, ...args].join(" ")} failed (exit ${String(result.code)}): ${detail}`,
+    );
   }
   return result;
 }
@@ -107,7 +109,7 @@ async function readManifests(io: Io): Promise<ManifestFile[]> {
       : [];
   const paths = (await Promise.all(patterns.map((pattern) => io.glob(`${pattern}/package.json`))))
     .flat()
-    .toSorted();
+    .toSorted((left, right) => left.localeCompare(right));
   const workspaceFiles = await Promise.all(
     paths.map(async (path) => ({ path, json: JSON.parse(await io.readFile(path)) as Manifest })),
   );
@@ -172,6 +174,12 @@ interface BaseSnapshot {
   readonly bun: string;
 }
 
+/** The bun version a manifest's `packageManager` names, or "" when it names none. */
+function bunVersionOf(manifest: Manifest | undefined): string {
+  const value = manifest?.packageManager;
+  return typeof value === "string" ? value.replace(/^bun@/, "") : "";
+}
+
 async function readAtCommit(io: Io, sha: string, path: string): Promise<string | undefined> {
   const result = await io.run("git", ["show", `${sha}:${path}`]);
   return result.code === 0 ? result.stdout : undefined;
@@ -192,14 +200,14 @@ async function readBase(io: Io, sha: string): Promise<BaseSnapshot> {
     specs: collectSpecs(files),
     locked: parseLockedVersions((await readAtCommit(io, sha, "bun.lock")) ?? ""),
     node: ((await readAtCommit(io, sha, ".nvmrc")) ?? "").trim(),
-    bun: String(root?.packageManager ?? "").replace(/^bun@/, ""),
+    bun: bunVersionOf(root),
   };
 }
 
 /** bun and Node changes the PR makes against the base. */
 async function runtimeChanges(io: Io, base: BaseSnapshot): Promise<RuntimeChange[]> {
   const root = JSON.parse(await io.readFile("package.json")) as Manifest;
-  const bun = String(root.packageManager ?? "").replace(/^bun@/, "");
+  const bun = bunVersionOf(root);
   const node = (await io.readFile(".nvmrc")).trim();
   const changes: RuntimeChange[] = [];
   if (base.bun !== "" && bun !== base.bun) {
@@ -251,7 +259,7 @@ async function updatePackages(
 async function updateRuntimes(io: Io, now: Date): Promise<string[]> {
   const root = JSON.parse(await io.readFile("package.json")) as Manifest;
   const currentNode = (await io.readFile(".nvmrc")).trim();
-  const currentBun = String(root.packageManager ?? "").replace(/^bun@/, "");
+  const currentBun = bunVersionOf(root);
   const notApplied: string[] = [];
 
   const bun = pickBunRelease((await io.fetchJson(BUN_RELEASES_URL)) as GitHubRelease[], now);
@@ -279,7 +287,7 @@ async function updateRuntimes(io: Io, now: Date): Promise<string[]> {
   }
   if (node.newerLtsMajor !== undefined) {
     notApplied.push(
-      `Node ${node.newerLtsMajor} is a newer LTS line. Moving to it is a manual change: it also moves \`@types/node\` to that major and any Docker base image.`,
+      `Node ${String(node.newerLtsMajor)} is a newer LTS line. Moving to it is a manual change: it also moves \`@types/node\` to that major and any Docker base image.`,
     );
   }
   return notApplied;

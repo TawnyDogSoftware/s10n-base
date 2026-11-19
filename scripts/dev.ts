@@ -54,14 +54,14 @@ export async function supervise(
   const outcome = await Promise.race([firstExit, stop.then(() => undefined)]);
   await stopAll(children, graceMs);
   if (outcome === undefined) return 0;
-  console.error(`${outcome.name} exited with code ${outcome.code}; stopped the others.`);
+  console.error(`${outcome.name} exited with code ${String(outcome.code)}; stopped the others.`);
   return outcome.code === 0 ? 1 : outcome.code;
 }
 
 async function run(command: string, args: ReadonlyArray<string>, env: Record<string, string>) {
   const child = spawn(command, args, { cwd: ROOT, env, stdio: "inherit" });
   const code = await exitOf(child);
-  if (code !== 0) throw new Error(`${command} ${args.join(" ")} exited with code ${code}`);
+  if (code !== 0) throw new Error(`${command} ${args.join(" ")} exited with code ${String(code)}`);
 }
 
 /**

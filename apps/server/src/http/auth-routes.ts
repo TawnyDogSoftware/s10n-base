@@ -83,7 +83,7 @@ export async function handleAuthRequest(
         response,
         413,
         ERROR_CODES.invalidRequest,
-        `The request body is larger than ${context.bodyLimitBytes} bytes.`,
+        `The request body is larger than ${String(context.bodyLimitBytes)} bytes.`,
       );
       return;
     }

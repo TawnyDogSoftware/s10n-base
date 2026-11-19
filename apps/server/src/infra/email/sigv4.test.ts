@@ -64,7 +64,7 @@ function parseSuiteRequest(text: string): SuiteRequest {
 const cases = readdirSync(SUITE, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .map((entry) => entry.name)
-  .toSorted();
+  .toSorted((left, right) => left.localeCompare(right));
 
 function read(name: string, file: string): string {
   return readFileSync(path.join(SUITE, name, file), "utf8");
@@ -103,7 +103,7 @@ function suiteCase(name: string) {
 
 describe("signRequest against the AWS SigV4 test suite", () => {
   it("has the published cases", () => {
-    expect(cases.length).toBe(38);
+    expect(cases).toHaveLength(38);
   });
 
   it.each(cases)("%s", (name) => {
@@ -117,7 +117,7 @@ describe("signRequest against the AWS SigV4 test suite", () => {
     const authorization = read(name, "header-signed-request.txt")
       .split("\n")
       .find((line) => line.startsWith("Authorization:"));
-    expect(`Authorization:${signed.headers.authorization}`).toBe(authorization);
+    expect(signed.headers.authorization).toBe(authorization?.slice("Authorization:".length));
   });
 });
 

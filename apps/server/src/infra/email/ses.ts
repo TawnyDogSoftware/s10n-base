@@ -49,11 +49,11 @@ export class SesSendError extends Data.TaggedError("SesSendError")<{
 }> {
   override get message(): string {
     const detail = [
-      this.status === undefined ? undefined : `status ${this.status}`,
+      this.status === undefined ? undefined : `status ${String(this.status)}`,
       this.awsErrorType,
       this.reason,
     ].filter((part) => part !== undefined);
-    return `SES did not send the email (${this.kind}; ${detail.join(", ")}; ${this.attempts} attempt${this.attempts === 1 ? "" : "s"}).`;
+    return `SES did not send the email (${this.kind}; ${detail.join(", ")}; ${String(this.attempts)} attempt${this.attempts === 1 ? "" : "s"}).`;
   }
 }
 
@@ -157,13 +157,9 @@ async function awsErrorType(response: Response): Promise<{ type?: string; messag
   } catch {
     // Not JSON: a proxy's error page, for instance.
   }
-  const fromBody = [body.__type, body.code].find((value) => typeof value === "string") as
-    | string
-    | undefined;
+  const fromBody = [body.__type, body.code].find((value) => typeof value === "string");
   const type = header || fromBody?.split("#").at(-1);
-  const message = [body.message, body.Message].find((value) => typeof value === "string") as
-    | string
-    | undefined;
+  const message = [body.message, body.Message].find((value) => typeof value === "string");
   return { ...(type ? { type } : {}), ...(message === undefined ? {} : { message }) };
 }
 

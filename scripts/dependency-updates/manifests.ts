@@ -53,14 +53,14 @@ export function applySpecs(
   specs: ReadonlyMap<string, string>,
 ): ManifestFile[] {
   return files.flatMap((file) => {
-    let changed = false;
+    const changed = new Set<string>();
     const replace = (record: Record<string, string>) => {
       const next = { ...record };
       for (const [name, spec] of Object.entries(record)) {
         const wanted = specs.get(name);
         if (wanted !== undefined && isVersionSpec(spec) && wanted !== spec) {
           next[name] = wanted;
-          changed = true;
+          changed.add(name);
         }
       }
       return next;
@@ -74,7 +74,7 @@ export function applySpecs(
     for (const section of DEPENDENCY_SECTIONS) {
       if (section in file.json) json[section] = replace(asStringRecord(file.json[section]));
     }
-    return changed ? [{ path: file.path, json }] : [];
+    return changed.size > 0 ? [{ path: file.path, json }] : [];
   });
 }
 

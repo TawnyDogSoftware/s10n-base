@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { readCatalog } from "./manifests";
+import { readCatalog, type Manifest } from "./manifests";
 import { parseLockedDependencies, parseLockedVersions } from "./lockfile";
 import { enforceHolds, findHold, matchesPattern, parseHolds, type Hold } from "./holds";
 import { satisfies, specBaseVersion } from "./semver";
@@ -129,7 +129,7 @@ describe("dependency-holds.json", () => {
     JSON.parse(readFileSync(path.join(repoRoot, "dependency-holds.json"), "utf8")) as unknown,
   );
   const catalog = readCatalog(
-    JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8")),
+    JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8")) as Manifest,
   );
   const locked = parseLockedVersions(readFileSync(path.join(repoRoot, "bun.lock"), "utf8"));
   const heldInCatalog = [...catalog.keys()].flatMap((name) => {

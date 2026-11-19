@@ -40,15 +40,9 @@ describe("profile.get", () => {
   });
 
   it("has exactly the profile fields", () => {
-    expect(Object.keys(Profile.fields).toSorted()).toEqual([
-      "createdAt",
-      "email",
-      "emailVerified",
-      "image",
-      "name",
-      "role",
-      "userId",
-    ]);
+    expect(
+      Object.keys(Profile.fields).toSorted((left, right) => left.localeCompare(right)),
+    ).toEqual(["createdAt", "email", "emailVerified", "image", "name", "role", "userId"]);
   });
 });
 

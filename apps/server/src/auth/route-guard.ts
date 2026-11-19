@@ -68,10 +68,10 @@ export function createAuthRouteGuard(
   const endpoints: Record<string, Endpoint> = {};
   let index = 0;
   for (const [path, methods] of byPath) {
-    endpoints[`route${index++}`] = createEndpoint(
+    endpoints[`route${String(index++)}`] = createEndpoint(
       path,
       { method: methods as ["GET"], disableBody: true },
-      async () => new Response(null, { status: 204 }),
+      () => Promise.resolve(new Response(null, { status: 204 })),
     );
   }
   // The settings Better Auth's own router uses.

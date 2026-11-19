@@ -246,8 +246,8 @@ function withUsers(count: number) {
   const backend = signedIn("admin@example.com", "admin");
   for (let index = 0; index < count; index += 1) {
     backend.addUser({
-      email: `user${index}@example.com`,
-      name: `User ${index}`,
+      email: `user${String(index)}@example.com`,
+      name: `User ${String(index)}`,
       verified: index % 2 === 0,
     });
   }

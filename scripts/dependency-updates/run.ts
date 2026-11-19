@@ -31,7 +31,9 @@ export function parseArgs(argv: readonly string[]): Args {
       index += 1;
       if (from === undefined || from.startsWith("--")) throw new Error("--from needs a git ref");
     } else {
-      throw new Error(`Unknown argument: ${arg}. Usage: deps:update [--dry-run] [--from <ref>]`);
+      throw new Error(
+        `Unknown argument: ${String(arg)}. Usage: deps:update [--dry-run] [--from <ref>]`,
+      );
     }
   }
   return { dryRun, from };
@@ -105,7 +107,7 @@ class ProcessIo implements Io {
       headers.Authorization = `Bearer ${token}`;
     }
     const response = await fetch(url, { headers, signal: AbortSignal.timeout(30_000) });
-    if (!response.ok) throw new Error(`GET ${url} answered ${response.status}`);
+    if (!response.ok) throw new Error(`GET ${url} answered ${String(response.status)}`);
     return response.json() as Promise<unknown>;
   }
 

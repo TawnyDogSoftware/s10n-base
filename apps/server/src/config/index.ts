@@ -104,7 +104,7 @@ export class ServerConfigError extends Data.TaggedError("ServerConfigError")<{
   override get message(): string {
     const count = this.problems.length;
     return [
-      `Invalid configuration (${count} ${count === 1 ? "problem" : "problems"}):`,
+      `Invalid configuration (${String(count)} ${count === 1 ? "problem" : "problems"}):`,
       ...this.problems.map((entry) => `- ${entry.variable} ${entry.problem}`),
     ].join("\n");
   }

@@ -135,7 +135,7 @@ describe("UsersScreen", () => {
   it("lists users for an admin, a page at a time", async () => {
     const { backend, services } = await signedIn("admin");
     for (let index = 0; index < ADMIN_USERS_PAGE_SIZE; index += 1) {
-      backend.addUser({ email: `user${index}@example.com`, name: `User ${index}` });
+      backend.addUser({ email: `user${String(index)}@example.com`, name: `User ${String(index)}` });
     }
     renderScreen(<UsersScreen />, { backend, services });
 

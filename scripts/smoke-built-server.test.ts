@@ -160,7 +160,7 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
     expect(result.ok).toBe(true);
     const seen = JSON.parse(result.output.trim().split("\n")[0] ?? "") as Record<string, string>;
     expect(seen).toEqual({
-      app: `http://127.0.0.1:${seen.port}`,
+      app: `http://127.0.0.1:${String(seen.port)}`,
       db: "postgres://u:p@h/db",
       deadline: "3000",
       port: seen.port,

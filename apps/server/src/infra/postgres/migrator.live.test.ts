@@ -29,10 +29,10 @@ function createTable(name: string): Migration {
   };
 }
 
-const fixtureMigrations: Record<string, Migration> = {
+const fixtureMigrations = {
   "001_create_widget": createTable("widget"),
   "002_create_gadget": createTable("gadget"),
-};
+} satisfies Record<string, Migration>;
 
 let fixture: FixtureSchema;
 const opened: Array<Kysely<unknown>> = [];
@@ -115,7 +115,7 @@ describe("migrator against Postgres", () => {
     const status = await migrationStatus({
       db: openDb(),
       schema: fixture.schema,
-      migrations: { "001_create_widget": fixtureMigrations["001_create_widget"]! },
+      migrations: { "001_create_widget": fixtureMigrations["001_create_widget"] },
     });
 
     expect(status).toEqual({
@@ -130,7 +130,7 @@ describe("migrator against Postgres", () => {
       db: openDb(),
       schema: fixture.schema,
       migrations: {
-        "001_create_widget": fixtureMigrations["001_create_widget"]!,
+        "001_create_widget": fixtureMigrations["001_create_widget"],
         "002_broken": {
           up: async (db: Kysely<unknown>) => {
             await sql`alter table no_such_table add column x int`.execute(db);
@@ -171,7 +171,7 @@ describe("migrator against Postgres", () => {
       db: openDb(1),
       schema: fixture.schema,
       migrations: fixtureMigrations,
-    }).then((applied) => events.push(`second:applied ${applied.length}`));
+    }).then((applied) => events.push(`second:applied ${String(applied.length)}`));
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(events).toEqual(["first:start"]);
 
@@ -186,6 +186,9 @@ describe("migrator against Postgres", () => {
       migrateUp({ db: openDb(1), schema: fixture.schema, migrations: fixtureMigrations }),
     ]);
 
-    expect(runs.flat().toSorted()).toEqual(["001_create_widget", "002_create_gadget"]);
+    expect(runs.flat().toSorted((left, right) => left.localeCompare(right))).toEqual([
+      "001_create_widget",
+      "002_create_gadget",
+    ]);
   });
 });

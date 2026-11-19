@@ -43,12 +43,12 @@ let nextIp = 1;
 
 /** A client with an address no other test uses. */
 function client(origin?: string | null) {
-  const ip = `198.51.100.${nextIp++}`;
+  const ip = `198.51.100.${String(nextIp++)}`;
   return new TestClient(app.base, ip, origin === null ? undefined : (origin ?? app.base));
 }
 
 function email(name: string) {
-  return `${name}-${nextIp}@example.com`;
+  return `${name}-${String(nextIp)}@example.com`;
 }
 
 async function signUp(browser: TestClient, address: string, password = PASSWORD) {

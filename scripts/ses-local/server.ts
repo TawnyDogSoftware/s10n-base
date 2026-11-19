@@ -101,7 +101,7 @@ function inboxPage(emails: readonly StoredEmail[]): string {
 <style>body{font-family:system-ui,sans-serif;margin:2rem;max-width:60rem}article{border-top:1px solid #ccc;padding:1rem 0}.meta{color:#555}pre{white-space:pre-wrap;word-break:break-word}</style>
 </head><body>
 <h1>Local inbox</h1>
-<p>${emails.length} email${emails.length === 1 ? "" : "s"}, newest first. Emails the server sends through <code>SES_ENDPOINT</code> land here instead of being delivered. Reload to see new ones.</p>
+<p>${String(emails.length)} email${emails.length === 1 ? "" : "s"}, newest first. Emails the server sends through <code>SES_ENDPOINT</code> land here instead of being delivered. Reload to see new ones.</p>
 ${items || "<p>No emails yet.</p>"}
 </body></html>`;
 }
@@ -117,9 +117,15 @@ interface Content {
   readonly Data?: unknown;
 }
 
+/** An SES v2 `SendEmail` body read as an email, or what is wrong with it. */
+type ParsedSendEmail =
+  | { readonly email: Omit<StoredEmail, "messageId" | "at"> }
+  | { readonly error: string };
+
 /** Reads an SES v2 `SendEmail` body with simple content, or describes what is wrong with it. */
-function parseSendEmail(body: unknown): Omit<StoredEmail, "messageId" | "at"> | string {
-  if (typeof body !== "object" || body === null) return "The body must be a JSON object.";
+function parseSendEmail(body: unknown): ParsedSendEmail {
+  if (typeof body !== "object" || body === null)
+    return { error: "The body must be a JSON object." };
   const request = body as {
     FromEmailAddress?: unknown;
     Destination?: { ToAddresses?: unknown; CcAddresses?: unknown; BccAddresses?: unknown };
@@ -131,7 +137,10 @@ function parseSendEmail(body: unknown): Omit<StoredEmail, "messageId" | "at"> | 
     };
   };
   if (request.Content?.Raw !== undefined || request.Content?.Template !== undefined) {
-    return "The local capture server accepts only Simple content: raw MIME and templates are not supported, and the server never sends them.";
+    return {
+      error:
+        "The local capture server accepts only Simple content: raw MIME and templates are not supported, and the server never sends them.",
+    };
   }
   const simple = request.Content?.Simple;
   const to = stringArray(request.Destination?.ToAddresses);
@@ -141,23 +150,26 @@ function parseSendEmail(body: unknown): Omit<StoredEmail, "messageId" | "at"> | 
   const subject = simple?.Subject?.Data;
   const text = simple?.Body?.Text?.Data;
   const html = simple?.Body?.Html?.Data;
-  if (typeof request.FromEmailAddress !== "string") return "FromEmailAddress is required.";
+  if (typeof request.FromEmailAddress !== "string")
+    return { error: "FromEmailAddress is required." };
   if (to === undefined || cc === undefined || bcc === undefined || replyTo === undefined) {
-    return "Addresses must be arrays of strings.";
+    return { error: "Addresses must be arrays of strings." };
   }
-  if (to.length + cc.length + bcc.length === 0) return "Destination needs an address.";
-  if (typeof subject !== "string") return "Content.Simple.Subject.Data is required.";
+  if (to.length + cc.length + bcc.length === 0) return { error: "Destination needs an address." };
+  if (typeof subject !== "string") return { error: "Content.Simple.Subject.Data is required." };
   if (typeof text !== "string" && typeof html !== "string") {
-    return "Content.Simple.Body needs Text or Html data.";
+    return { error: "Content.Simple.Body needs Text or Html data." };
   }
   return {
-    from: request.FromEmailAddress,
-    destination: { to, cc, bcc },
-    replyTo,
-    subject,
-    body: {
-      ...(typeof text === "string" ? { text } : {}),
-      ...(typeof html === "string" ? { html } : {}),
+    email: {
+      from: request.FromEmailAddress,
+      destination: { to, cc, bcc },
+      replyTo,
+      subject,
+      body: {
+        ...(typeof text === "string" ? { text } : {}),
+        ...(typeof html === "string" ? { html } : {}),
+      },
     },
   };
 }
@@ -222,14 +234,14 @@ export async function startSesLocal(options: SesLocalOptions): Promise<SesLocal>
       return;
     }
     const parsed = parseSendEmail(body);
-    if (typeof parsed === "string") {
-      awsError(response, 400, "BadRequestException", parsed);
+    if ("error" in parsed) {
+      awsError(response, 400, "BadRequestException", parsed.error);
       return;
     }
     const stored: StoredEmail = {
       messageId: randomUUID(),
       at: new Date().toISOString(),
-      ...parsed,
+      ...parsed.email,
     };
     emails = [...emails, stored].slice(-maxEmails);
     sendJson(response, 200, { MessageId: stored.messageId });
@@ -237,7 +249,7 @@ export async function startSesLocal(options: SesLocalOptions): Promise<SesLocal>
 
   async function handle(request: IncomingMessage, response: ServerResponse) {
     const path = (request.url ?? "/").split("?", 1)[0];
-    const route = `${request.method ?? ""} ${path}`;
+    const route = `${request.method ?? ""} ${String(path)}`;
     if (route === `POST ${SEND_PATH}`) return receive(request, response);
     request.resume();
     if (route === "GET /store") {
@@ -283,7 +295,7 @@ export async function startSesLocal(options: SesLocalOptions): Promise<SesLocal>
   const address = server.address() as AddressInfo;
   const host = address.family === "IPv6" ? `[${address.address}]` : address.address;
   return {
-    url: `http://${host}:${address.port}`,
+    url: `http://${host}:${String(address.port)}`,
     emails: () => emails,
     stop: () =>
       new Promise((resolve) => {

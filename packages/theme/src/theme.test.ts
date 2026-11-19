@@ -39,8 +39,8 @@ describe("theme.css", () => {
     ["light", light],
     ["dark", dark],
   ] as const)("defines every semantic colour in %s mode, and nothing else", (_mode, values) => {
-    expect(Object.keys(values).toSorted()).toEqual(
-      COLOURS.map((name) => `--color-${name}`).toSorted(),
+    expect(Object.keys(values).toSorted((left, right) => left.localeCompare(right))).toEqual(
+      COLOURS.map((name) => `--color-${name}`).toSorted((left, right) => left.localeCompare(right)),
     );
   });
 

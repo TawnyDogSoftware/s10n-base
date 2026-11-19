@@ -31,12 +31,12 @@ type Responder = (attempt: number) => Response | Error;
 function fakeFetch(respond: Responder) {
   const calls: Recorded[] = [];
   const fetchImpl = (input: string | URL | Request, init?: RequestInit) => {
-    const url = String(input);
+    const url = input instanceof Request ? input.url : input.toString();
     calls.push({
       url,
       method: init?.method ?? "GET",
       headers: new Headers(init?.headers),
-      body: String(init?.body),
+      body: typeof init?.body === "string" ? init.body : "",
     });
     const result = respond(calls.length);
     return result instanceof Error ? Promise.reject(result) : Promise.resolve(result);
@@ -213,7 +213,7 @@ describe("createSesClient", () => {
 
   it("does not retry a timeout, because SES may already have accepted the email", async () => {
     const { ses, calls } = client(
-      () => Object.assign(new DOMException("The operation timed out.", "TimeoutError")),
+      () => new DOMException("The operation timed out.", "TimeoutError"),
       { timeoutMs: 50 },
     );
 
@@ -228,7 +228,8 @@ describe("createSesClient", () => {
     const hanging = ((_input: unknown, init?: RequestInit) =>
       new Promise((_resolve, reject) => {
         init?.signal?.addEventListener("abort", () => {
-          reject(init.signal?.reason);
+          const reason: unknown = init.signal?.reason;
+          reject(reason instanceof Error ? reason : new Error("aborted"));
         });
       })) as typeof fetch;
     const ses = createSesClient({

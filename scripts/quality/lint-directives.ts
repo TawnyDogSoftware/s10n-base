@@ -23,10 +23,7 @@ const AT_START = [
   /^(?<directive>@ts-(?:ignore|nocheck|expect-error))\b/,
 ];
 // Coverage tools accept their hints with other text around them, so these match anywhere.
-const ANYWHERE = [
-  /\b(?<tool>v8|c8|istanbul)\s+(?<verb>ignore)\b/,
-  /(?<tool>\bnode:coverage)\s+(?<verb>ignore|disable)\b/,
-];
+const ANYWHERE = [/\b(v8|c8|istanbul)\s+(ignore)\b/, /\b(node:coverage)\s+(ignore|disable)\b/];
 const EXPECT_ERROR = "@ts-expect-error";
 
 export function isTypeTestFile(file: string): boolean {
@@ -41,9 +38,7 @@ function directiveIn(text: string): { directive: string; index: number } | undef
   }
   for (const pattern of ANYWHERE) {
     const match = pattern.exec(text);
-    if (match?.groups !== undefined) {
-      return { directive: `${match.groups.tool} ${match.groups.verb}`, index: match.index };
-    }
+    if (match !== null) return { directive: match.slice(1).join(" "), index: match.index };
   }
   return undefined;
 }
@@ -79,7 +74,7 @@ export function listSourceFiles(root: string): string[] {
     .split("\0")
     .filter((file) => SOURCE_EXTENSIONS.has(path.extname(file)))
     .filter((file) => existsSync(path.join(root, file)))
-    .toSorted();
+    .toSorted((left, right) => left.localeCompare(right));
 }
 
 /** Runs the gate over `root` and returns the exit code. */
@@ -90,14 +85,16 @@ export function runLintDirectiveCheck(root: string, print: (line: string) => voi
   );
   if (findings.length > 0) {
     for (const finding of findings) {
-      print(`${finding.file}:${finding.line}:${finding.column} ${finding.directive}`);
+      print(
+        `${finding.file}:${String(finding.line)}:${String(finding.column)} ${finding.directive}`,
+      );
     }
     print(
-      `${findings.length} suppressions found. Fix the code or the test instead; see docs/quality.md.`,
+      `${String(findings.length)} suppressions found. Fix the code or the test instead; see docs/quality.md.`,
     );
     return 1;
   }
-  print(`No lint, type or coverage suppression in ${files.length} files.`);
+  print(`No lint, type or coverage suppression in ${String(files.length)} files.`);
   const typeTests = files.filter(isTypeTestFile);
   print(`Type-level tests, where expect-error is allowed: ${typeTests.join(", ") || "none"}`);
   return 0;

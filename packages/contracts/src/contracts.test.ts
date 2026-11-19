@@ -37,14 +37,9 @@ describe("AppSession", () => {
   };
 
   it("has exactly the fields clients rely on", () => {
-    expect(Object.keys(AppSession.fields).toSorted()).toEqual([
-      "email",
-      "emailVerified",
-      "image",
-      "name",
-      "role",
-      "userId",
-    ]);
+    expect(
+      Object.keys(AppSession.fields).toSorted((left, right) => left.localeCompare(right)),
+    ).toEqual(["email", "emailVerified", "image", "name", "role", "userId"]);
   });
 
   it("decodes a session and a signed-out response", () => {
@@ -77,11 +72,9 @@ describe("BootstrapConfig", () => {
   });
 
   it("has exactly the three fields, without the removed desktop and live-stream fields", () => {
-    expect(Object.keys(BootstrapConfig.fields).toSorted()).toEqual([
-      "apiBaseUrl",
-      "appName",
-      "appVersion",
-    ]);
+    expect(
+      Object.keys(BootstrapConfig.fields).toSorted((left, right) => left.localeCompare(right)),
+    ).toEqual(["apiBaseUrl", "appName", "appVersion"]);
   });
 });
 

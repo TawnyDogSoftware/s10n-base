@@ -12,8 +12,7 @@ export type Rgb = readonly [number, number, number];
 export function parseHexColor(value: string): Rgb {
   const match = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(value.trim());
   if (match?.[1] === undefined) throw new Error(`Not a hex colour: ${value}`);
-  const hex =
-    match[1].length === 3 ? [...match[1]].map((digit) => digit + digit).join("") : match[1];
+  const hex = match[1].length === 3 ? match[1].replace(/./g, "$&$&") : match[1];
   return [0, 2, 4].map((start) =>
     Number.parseInt(hex.slice(start, start + 2), 16),
   ) as unknown as Rgb;
@@ -65,8 +64,10 @@ function blockBody(css: string, opener: RegExp): string {
 
 function declarations(body: string): Declarations {
   const values: Record<string, string> = {};
-  for (const [, name = "", value = ""] of body.matchAll(/(--[\w*-]+)\s*:\s*([^;{}]+);/g)) {
-    values[name] = value.trim();
+  for (const part of body.split(/[;{}]/)) {
+    const colon = part.indexOf(":");
+    const name = part.slice(0, colon).trim();
+    if (colon > 0 && name.startsWith("--")) values[name] = part.slice(colon + 1).trim();
   }
   return values;
 }

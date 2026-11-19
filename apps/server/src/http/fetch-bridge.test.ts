@@ -123,7 +123,7 @@ describe("sendFetchResponse", () => {
     await new Promise<void>((resolve) => server?.listen(0, "127.0.0.1", resolve));
     const port = (server.address() as AddressInfo).port;
     return new Promise<http.IncomingMessage & { body: string }>((resolve) => {
-      http.get(`http://127.0.0.1:${port}/`, (message) => {
+      http.get(`http://127.0.0.1:${String(port)}/`, (message) => {
         let body = "";
         message.on("data", (chunk: Buffer) => (body += chunk.toString()));
         message.on("end", () => {

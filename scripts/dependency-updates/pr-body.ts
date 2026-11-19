@@ -78,7 +78,7 @@ export function buildPrBody(input: PrBodyInput): string {
     const count = input.indirect.length;
     const noun = count === 1 ? "indirect dependency" : "indirect dependencies";
     sections.push(
-      `## Indirect dependencies\n\n<details>\n<summary>${count} ${noun} moved in bun.lock</summary>\n\n${changeTable(input.indirect)}\n\n</details>`,
+      `## Indirect dependencies\n\n<details>\n<summary>${String(count)} ${noun} moved in bun.lock</summary>\n\n${changeTable(input.indirect)}\n\n</details>`,
     );
   }
 
@@ -91,7 +91,7 @@ export function buildPrBody(input: PrBodyInput): string {
 
   if (input.notApplied.length > 0) {
     sections.push(
-      `## Reported, not applied\n\n${input.notApplied.map((line) => `- ${line}`).join("\n")}`,
+      ["## Reported, not applied", "", ...input.notApplied.map((line) => `- ${line}`)].join("\n"),
     );
   }
 

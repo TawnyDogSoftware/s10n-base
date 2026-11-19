@@ -113,7 +113,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
 
   function addUser(input: Partial<FakeUser> & { email: string }): FakeUser {
     const user: FakeUser = {
-      id: `user-${nextId++}`,
+      id: `user-${String(nextId++)}`,
       name: "Test User",
       password: "correct horse",
       verified: true,
@@ -127,7 +127,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
   }
 
   function issueToken(email: string, kind: "verify" | "reset"): string {
-    const token = `${kind}-${nextId++}`;
+    const token = `${kind}-${String(nextId++)}`;
     tokens.set(token, { email, kind });
     return token;
   }
@@ -201,7 +201,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
           return authError(403, "EMAIL_NOT_VERIFIED");
         }
         signedIn = user.id;
-        const token = `session-${nextId++}`;
+        const token = `session-${String(nextId++)}`;
         sessions.set(token, user.id);
         return withCookie(
           json({ redirect: false, token: "t", user: { id: user.id } }),
@@ -296,7 +296,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
         // that stores the renewal stays signed in.
         renewNext = false;
         sessions.delete(token);
-        const renewed = `session-${nextId++}`;
+        const renewed = `session-${String(nextId++)}`;
         sessions.set(renewed, userId);
         return withCookie(
           response,

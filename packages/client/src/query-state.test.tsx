@@ -101,14 +101,18 @@ describe("protected queries", () => {
         <Profile />
       </SessionGateProvider>,
     );
-    await act(async () => answers.get("alice")?.resolve("alice's profile"));
+    act(() => {
+      answers.get("alice")?.resolve("alice's profile");
+    });
     await screen.findByText("alice's profile");
 
     act(() => {
       accept(gate, bob);
     });
     await screen.findByText("loading");
-    await act(async () => answers.get("bob")?.resolve("bob's profile"));
+    act(() => {
+      answers.get("bob")?.resolve("bob's profile");
+    });
     await screen.findByText("bob's profile");
 
     expect(renders).toContainEqual(["alice", "alice's profile"]);
@@ -125,11 +129,11 @@ describe("when the signed-in user changes", () => {
     accept(gate, alice);
     queryClient.setQueryData(["user", "alice", "profile"], "alice's profile");
     queryClient.setQueryData(["plain"], "not marked");
+    queryClient.setQueryDefaults(["config"], { meta: { public: true } });
     queryClient.setQueryData(["config"], "public");
-    queryClient.getQueryCache().find({ queryKey: ["config"] })!.options.meta = { public: true };
     let signal: AbortSignal | undefined;
     const inFlight = queryClient
-      .fetchQuery({
+      .query({
         queryKey: ["user", "alice", "slow"],
         queryFn: ({ signal: querySignal }) => {
           signal = querySignal;
@@ -259,7 +263,7 @@ describe("an auth.unauthenticated error from a protected call", () => {
       Promise.reject(new RpcError("auth.unauthenticated", "Sign in.", 401)),
     );
 
-    await expect(gate.queryClient.fetchQuery(options)).rejects.toBeInstanceOf(RpcError);
+    await expect(gate.queryClient.query(options)).rejects.toBeInstanceOf(RpcError);
 
     await waitFor(() => {
       expect(gate.current()).toBeNull();
@@ -346,7 +350,7 @@ describe("security actions", () => {
     const early = deferred<AppSession | null>();
     server.fetchSession.mockImplementationOnce(() => early.promise);
     const earlyRead = gate.queryClient
-      .fetchQuery({ ...gate.sessionQueryOptions(), staleTime: 0 })
+      .query({ ...gate.sessionQueryOptions(), staleTime: 0 })
       .catch(() => undefined);
     server.set(alice);
 

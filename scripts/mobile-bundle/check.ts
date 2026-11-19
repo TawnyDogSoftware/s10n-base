@@ -74,8 +74,11 @@ export function checkBundleSources(
   const problems: string[] = [];
   const instances = packageInstances(sources, resolve);
   for (const name of SINGLETONS) {
-    const found = [...(instances.get(name) ?? [])].toSorted();
-    if (found.length > 1) problems.push(`${found.length} copies of ${name}: ${found.join(", ")}`);
+    const found = [...(instances.get(name) ?? [])].toSorted((left, right) =>
+      left.localeCompare(right),
+    );
+    if (found.length > 1)
+      problems.push(`${String(found.length)} copies of ${name}: ${found.join(", ")}`);
   }
   for (const source of sources) {
     if (isTestCode(source)) problems.push(`test code in the bundle: ${source}`);
@@ -118,7 +121,7 @@ function main(directory: string): number {
     const problems = checkBundleSources(sources, resolve);
     const react = [...(packageInstances(sources, resolve).get("react") ?? [])];
     console.log(
-      `${path.relative(directory, map)}: ${sources.length} files; react from ${react.join(", ")}`,
+      `${path.relative(directory, map)}: ${String(sources.length)} files; react from ${react.join(", ")}`,
     );
     for (const problem of problems) console.error(`  ${problem}`);
     failed ||= problems.length > 0;

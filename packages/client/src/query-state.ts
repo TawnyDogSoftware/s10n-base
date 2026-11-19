@@ -173,7 +173,7 @@ export function createSessionGate(options: {
   const refresh = async () => {
     await queryClient.cancelQueries({ queryKey: SESSION_QUERY_KEY });
     try {
-      return await queryClient.fetchQuery({ ...sessionOptions(), staleTime: 0 });
+      return await queryClient.query({ ...sessionOptions(), staleTime: 0 });
     } catch {
       return undefined;
     }
@@ -199,7 +199,7 @@ export function createSessionGate(options: {
     sessionQueryOptions: sessionOptions,
     current: () => (accepted === NOT_SEEN ? undefined : accepted),
     epoch: () => epoch,
-    ensure: () => queryClient.fetchQuery(sessionOptions()),
+    ensure: () => queryClient.query(sessionOptions()),
     refresh,
     protectedQueryOptions: (session, parts, fetcher) => ({
       queryKey: protectedQueryKey(session, parts),

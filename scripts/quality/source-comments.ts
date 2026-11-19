@@ -36,7 +36,11 @@ export function parseSource(file: string, text: string): ts.SourceFile {
 }
 
 const LEADING_MARKER = /^\s*(?:\/\/+|\/\*+|\*+(?!\/))?\s*/;
-const TRAILING_MARKER = /\s*\*+\/\s*$/;
+
+function withoutClosingMarker(text: string): string {
+  const trimmed = text.trimEnd();
+  return trimmed.endsWith("*/") ? trimmed.slice(0, -2).trimEnd() : trimmed;
+}
 
 function commentRangesOf(sourceFile: ts.SourceFile): ts.CommentRange[] {
   const text = sourceFile.text;
@@ -69,7 +73,7 @@ export function commentLines(sourceFile: ts.SourceFile): CommentLine[] {
       lines.push({
         line: start.line + 1,
         column: start.character + 1,
-        text: raw.slice(marker.length).replace(TRAILING_MARKER, ""),
+        text: withoutClosingMarker(raw.slice(marker.length)),
       });
       offset += raw.length + 1;
     }

@@ -107,7 +107,7 @@ function columnProblem(wanted: ColumnShape, found: ColumnShape): string | undefi
 export function authSchemaDifferences(expected: TableShapes, actual: TableShapes): string[] {
   const problems: string[] = [];
   const tableNames = new Set([...Object.keys(expected), ...Object.keys(actual)]);
-  for (const table of [...tableNames].toSorted()) {
+  for (const table of [...tableNames].toSorted((left, right) => left.localeCompare(right))) {
     const want = expected[table];
     const have = actual[table];
     if (want === undefined) {
@@ -119,7 +119,7 @@ export function authSchemaDifferences(expected: TableShapes, actual: TableShapes
       continue;
     }
     const columnNames = new Set([...Object.keys(want), ...Object.keys(have)]);
-    for (const column of [...columnNames].toSorted()) {
+    for (const column of [...columnNames].toSorted((left, right) => left.localeCompare(right))) {
       const wanted = want[column];
       const found = have[column];
       if (wanted === undefined) {
@@ -181,8 +181,8 @@ export async function readAuthTables(db: Kysely<unknown>, schema: string): Promi
     const reference = foreignKeys.rows.find(
       (key) => key.table === row.table && key.column === row.column,
     );
-    tables[row.table] ??= {};
-    tables[row.table]![row.column] = {
+    const table = (tables[row.table] ??= {});
+    table[row.column] = {
       type: row.type,
       nullable: row.nullable === "YES",
       unique: leading.some((index) => index.unique && index.width === 1),

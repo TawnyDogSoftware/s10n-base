@@ -34,8 +34,10 @@ type Comparator = (version: string) => boolean;
 function comparatorsFor(term: string, range: string): Comparator[] {
   const xRange = /^(\d+)\.(\d+)\.[x*]$/.exec(term);
   if (xRange !== null) {
-    const floor = `${xRange[1]}.${xRange[2]}.0`;
-    const ceiling = `${xRange[1]}.${Number(xRange[2]) + 1}.0`;
+    const major = Number(xRange[1]);
+    const minor = Number(xRange[2]);
+    const floor = `${String(major)}.${String(minor)}.0`;
+    const ceiling = `${String(major)}.${String(minor + 1)}.0`;
     return [(v) => compareVersions(v, floor) >= 0, (v) => compareVersions(v, ceiling) < 0];
   }
   const match = /^(\^|~|>=|<=|>|<|=)?(\d+\.\d+\.\d+)$/.exec(term);
@@ -47,11 +49,11 @@ function comparatorsFor(term: string, range: string): Comparator[] {
   const [major, minor] = parse(target);
   switch (operator) {
     case "^": {
-      const ceiling = major > 0 ? `${major + 1}.0.0` : `0.${minor + 1}.0`;
+      const ceiling = major > 0 ? `${String(major + 1)}.0.0` : `0.${String(minor + 1)}.0`;
       return [(v) => compareVersions(v, target) >= 0, (v) => compareVersions(v, ceiling) < 0];
     }
     case "~": {
-      const ceiling = `${major}.${minor + 1}.0`;
+      const ceiling = `${String(major)}.${String(minor + 1)}.0`;
       return [(v) => compareVersions(v, target) >= 0, (v) => compareVersions(v, ceiling) < 0];
     }
     case ">=":

@@ -21,10 +21,20 @@ const expected: TableShapes = {
   },
 };
 
+function defined<T>(value: T | undefined, what: string): T {
+  if (value === undefined) throw new Error(`The fixture has no ${what}.`);
+  return value;
+}
+
 function change(table: string, column: string, shape: Partial<ColumnShape> | undefined) {
   const copy = structuredClone(expected) as Record<string, Record<string, ColumnShape>>;
-  if (shape === undefined) delete copy[table]![column];
-  else copy[table]![column] = { ...copy[table]![column]!, ...shape };
+  const columns = defined(copy[table], table);
+  if (shape === undefined) {
+    copy[table] = Object.fromEntries(Object.entries(columns).filter(([name]) => name !== column));
+  } else {
+    // A column the fixture lacks starts from a plain text column.
+    columns[column] = { ...(columns[column] ?? text), ...shape };
+  }
   return copy;
 }
 
@@ -61,8 +71,8 @@ describe("authSchemaDifferences", () => {
 
   it("reports a column only the database has, and a table only one side has", () => {
     const actual = change("ba_user", "nickname", { ...text });
-    const withTable = { ...actual, ba_extra: { id: expected.ba_user!.id! } };
-    const withoutSession = { ba_user: expected.ba_user! };
+    const withTable = { ...actual, ba_extra: { id: defined(expected.ba_user?.id, "ba_user.id") } };
+    const withoutSession = { ba_user: defined(expected.ba_user, "ba_user") };
 
     expect(authSchemaDifferences(expected, withTable)).toEqual([
       "ba_extra: in the database, but Better Auth does not use it",

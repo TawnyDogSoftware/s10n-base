@@ -124,7 +124,7 @@ async function start(options: StartOptions = {}) {
   server = http.createServer(createRequestHandler(context));
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
-  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  return `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
 }
 
 function rpc(base: string, body: unknown, headers: Record<string, string> = {}) {

@@ -20,7 +20,9 @@ export interface PrebuildFiles {
 }
 
 const all = (text: string, pattern: RegExp) =>
-  [...new Set([...text.matchAll(pattern)].map((match) => match[1] ?? ""))].toSorted();
+  [...new Set([...text.matchAll(pattern)].map((match) => match[1] ?? ""))].toSorted((left, right) =>
+    left.localeCompare(right),
+  );
 
 /** Everything that does not match the variant, as sentences; empty when it all matches. */
 export function checkPrebuild(files: PrebuildFiles, variant: AppVariant): string[] {
@@ -39,7 +41,9 @@ export function checkPrebuild(files: PrebuildFiles, variant: AppVariant): string
     files.infoPlist,
   )?.[1];
   if (iosName !== identity.displayName) {
-    problems.push(`the iOS display name is ${iosName}, expected ${identity.displayName}`);
+    problems.push(
+      `the iOS display name is ${iosName ?? "missing"}, expected ${identity.displayName}`,
+    );
   }
   const androidIds = all(files.buildGradle, /applicationId '([^']+)'/g);
   if (androidIds.join() !== identity.bundleIdentifier) {
@@ -52,7 +56,9 @@ export function checkPrebuild(files: PrebuildFiles, variant: AppVariant): string
   }
   const androidName = /<string name="app_name">([^<]*)<\/string>/.exec(files.androidStrings)?.[1];
   if (androidName !== identity.displayName) {
-    problems.push(`the Android app name is ${androidName}, expected ${identity.displayName}`);
+    problems.push(
+      `the Android app name is ${androidName ?? "missing"}, expected ${identity.displayName}`,
+    );
   }
   return problems;
 }

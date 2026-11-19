@@ -64,7 +64,11 @@ export async function readJsonBody(request: IncomingMessage, limit: number): Pro
   if (!read.ok) {
     return read.reason === "aborted"
       ? { ok: false, status: "aborted" }
-      : { ok: false, status: 413, message: `The request body is larger than ${limit} bytes.` };
+      : {
+          ok: false,
+          status: 413,
+          message: `The request body is larger than ${String(limit)} bytes.`,
+        };
   }
   try {
     return { ok: true, value: JSON.parse(read.body.toString("utf8")) as unknown };

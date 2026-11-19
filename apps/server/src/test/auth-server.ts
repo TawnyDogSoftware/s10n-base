@@ -51,7 +51,7 @@ export async function startAuthServer(
   const schema = await createMigratedSchema();
   const ses = await startSesLocal({ host: "127.0.0.1", port: 0 });
   const port = await freePort();
-  const base = `http://127.0.0.1:${port}`;
+  const base = `http://127.0.0.1:${String(port)}`;
   const defaults = testServerConfig();
   const config = testServerConfig({
     appOrigin: base,

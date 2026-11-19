@@ -27,7 +27,7 @@ export function parseOutdated(output: string): OutdatedRow[] {
     rows.push({
       name: packageCell.replace(/ \((?:dev|peer|optional)\)$/, ""),
       current,
-      latest: latest.replace(/\s*\*$/, ""),
+      latest: latest.replace(/\*$/, "").trimEnd(),
       heldByAge: update.endsWith("*") || latest.endsWith("*"),
     });
   }

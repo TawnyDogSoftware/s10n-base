@@ -40,7 +40,7 @@ export function connectQueryLifecycle(): () => void {
   return () => {
     focusManager.setEventListener(() => undefined);
     onlineManager.setEventListener(() => undefined);
-    focusManager.setFocused(undefined);
+    focusManager.setFocused();
     onlineManager.setOnline(true);
   };
 }

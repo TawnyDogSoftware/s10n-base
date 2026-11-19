@@ -35,7 +35,8 @@ const HARD_STOP_MARGIN_MS = 5_000;
 export async function runServerProcess(options: ServerProcessOptions): Promise<void> {
   const { runtime, logger } = options;
   let running: RunningServer | undefined;
-  let stopRequested = false;
+  // An object, so TypeScript does not narrow it to its first value across the await below.
+  const shutdown = { requested: false };
   let stopping = false;
 
   const removeHandlers = () => {
@@ -54,7 +55,7 @@ export async function runServerProcess(options: ServerProcessOptions): Promise<v
       },
       2 * server.shutdownTimeoutMs + HARD_STOP_MARGIN_MS,
     );
-    hardStop.unref?.();
+    hardStop.unref();
     server.stop().then(
       (result) => {
         clearTimeout(hardStop);
@@ -74,11 +75,11 @@ export async function runServerProcess(options: ServerProcessOptions): Promise<v
   };
 
   function onSignal(signal?: string) {
-    if (stopRequested) {
+    if (shutdown.requested) {
       logger.warn("shutdown_already_in_progress", { signal });
       return;
     }
-    stopRequested = true;
+    shutdown.requested = true;
     logger.info("shutdown_started", { signal });
     if (running !== undefined) stop(running);
   }
@@ -94,5 +95,5 @@ export async function runServerProcess(options: ServerProcessOptions): Promise<v
     runtime.exit(1);
     return;
   }
-  if (stopRequested) stop(running);
+  if (shutdown.requested) stop(running);
 }

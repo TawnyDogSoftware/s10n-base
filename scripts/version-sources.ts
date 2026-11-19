@@ -51,7 +51,7 @@ export function checkVersionSources(sources: VersionSources): string[] {
         `engines.node must be ">=${sources.nvmrc}" to match .nvmrc, found ${describeFound(sources.enginesNode)}`,
       );
     }
-    const nodeMajor = sources.nvmrc.split(".")[0];
+    const nodeMajor = sources.nvmrc.slice(0, sources.nvmrc.indexOf("."));
     if (sources.typesNode === undefined) {
       problems.push("@types/node must be in the root catalog");
     } else if (/^[\^~]?(\d+)\./.exec(sources.typesNode)?.[1] !== nodeMajor) {

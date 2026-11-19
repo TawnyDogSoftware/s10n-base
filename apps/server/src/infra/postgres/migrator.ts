@@ -126,9 +126,14 @@ export function resetSchema(target: MigrationTarget): Promise<ReadonlyArray<stri
   });
 }
 
+function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : Number(left > right);
+}
+
 /** Applied, pending and unknown migrations. Read-only: it never creates Kysely's tables. */
 export async function migrationStatus(target: MigrationTarget): Promise<MigrationStatus> {
-  const expected = Object.keys(target.migrations).toSorted();
+  // Kysely orders migrations by plain code-unit comparison, so the status does too.
+  const expected = Object.keys(target.migrations).toSorted(compareCodeUnits);
   const applied = await target.db
     .transaction()
     .setAccessMode("read only")

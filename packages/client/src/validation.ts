@@ -57,7 +57,8 @@ export function validateName(input: string): Validated {
 }
 
 /** Something, `@`, a domain with a dot, and no spaces. The server has the final say. */
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// The domain is dot-separated labels, so no two parts of the pattern can match the same text.
+const EMAIL = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
 
 export function validateEmail(input: string): Validated {
   const trimmed = input.trim();

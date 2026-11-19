@@ -77,7 +77,9 @@ describe(".env.example", () => {
   const optional = ["AWS_SESSION_TOKEN"];
 
   it("lists every variable", () => {
-    expect(Object.keys(example).toSorted()).toEqual([...variables].toSorted());
+    expect(Object.keys(example).toSorted((left, right) => left.localeCompare(right))).toEqual(
+      [...variables].toSorted((left, right) => left.localeCompare(right)),
+    );
     const text = readFileSync(path.join(root, ".env.example"), "utf8");
     for (const name of optional) expect(text).toContain(`\n# ${name}=\n`);
   });

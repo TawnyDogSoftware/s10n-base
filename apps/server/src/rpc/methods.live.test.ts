@@ -11,11 +11,11 @@ let app: AuthServer;
 let nextIp = 1;
 
 function client() {
-  return new TestClient(app.base, `198.51.100.${nextIp++}`);
+  return new TestClient(app.base, `198.51.100.${String(nextIp++)}`);
 }
 
 function address(name: string) {
-  return `${name}-${nextIp}@example.com`;
+  return `${name}-${String(nextIp)}@example.com`;
 }
 
 async function signedInUser(email: string, name = "Test User") {

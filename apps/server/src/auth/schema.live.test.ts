@@ -45,7 +45,7 @@ describe("the auth migration against Better Auth's schema", () => {
   it("has every table, column, type, nullability, unique column, index and foreign key Better Auth expects for our options, and nothing else", async () => {
     const actual = await readAuthTables(schema.db as Kysely<unknown>, schema.fixture.schema);
 
-    expect(Object.keys(actual).toSorted()).toEqual([
+    expect(Object.keys(actual).toSorted((left, right) => left.localeCompare(right))).toEqual([
       "ba_account",
       "ba_passkey",
       "ba_rate_limit",

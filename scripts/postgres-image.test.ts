@@ -7,7 +7,9 @@ const root = path.resolve(import.meta.dirname, "..");
 
 function postgresImages(file: string): string[] {
   const text = readFileSync(path.join(root, file), "utf8");
-  return [...text.matchAll(/^\s*image:\s*(postgres:\S+)\s*$/gm)].map((match) => match[1] ?? "");
+  return [...text.matchAll(/^[ \t]*image:[ \t]*(postgres:\S+)[ \t]*$/gm)].map(
+    (match) => match[1] ?? "",
+  );
 }
 
 describe("Postgres image", () => {
