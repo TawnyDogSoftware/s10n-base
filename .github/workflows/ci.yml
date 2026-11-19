@@ -14,9 +14,28 @@ concurrency:
 
 jobs:
   check:
-    name: Check, test, build and smoke-test
+    name: Check, test, build, live-test and smoke-test
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    services:
+      postgres:
+        # Keep this tag equal to docker-compose.local.yml's (scripts/postgres-image.test.ts checks).
+        image: postgres:18.7
+        env:
+          POSTGRES_USER: s10n_base
+          POSTGRES_PASSWORD: s10n_base
+          POSTGRES_DB: s10n_base
+        ports:
+          - 54320:5432
+        options: >-
+          --health-cmd "pg_isready --host=127.0.0.1 --username=s10n_base --dbname=s10n_base"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      # The same values as .env.example, which the compose file also uses.
+      DATABASE_URL: postgres://s10n_base:s10n_base@127.0.0.1:54320/s10n_base
+      TEST_DATABASE_URL: postgres://s10n_base:s10n_base@127.0.0.1:54320/s10n_base_test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -33,5 +52,10 @@ jobs:
       - run: bun run typecheck
       - run: bun run test
       - run: bun run build
-      - name: Start the built server and check /health
+      - name: Create the test database
+        run: docker exec -i ${{ job.services.postgres.id }} psql --username=s10n_base --dbname=s10n_base --set=ON_ERROR_STOP=1 < docker/postgres/init/01-create-test-database.sql
+      - run: bun run db:migrate
+      - run: bun run db:generate:check
+      - run: bun run test:live
+      - name: Start the built server, check /health and /ready, and stop it with SIGTERM
         run: bun run smoke

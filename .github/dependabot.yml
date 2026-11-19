@@ -1,7 +1,7 @@
-# Dependabot covers GitHub Actions only. Bun packages, bun and Node are updated by the
-# daily dependency-update workflow (.github/workflows/dependency-updates.yml), because
-# Dependabot cannot update a bun workspace catalog. Docker entries are added by the
-# changes that add Docker files.
+# Dependabot covers GitHub Actions and the local Postgres image. Bun packages, bun and Node
+# are updated by the daily dependency-update workflow
+# (.github/workflows/dependency-updates.yml), because Dependabot cannot update a bun
+# workspace catalog.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -14,3 +14,16 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+
+  # The Postgres image in docker-compose.local.yml. CI's service container uses the same tag
+  # and must be changed in the same PR (scripts/postgres-image.test.ts fails otherwise).
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
+    ignore:
+      # A new Postgres major needs a data migration; move to it by hand.
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
