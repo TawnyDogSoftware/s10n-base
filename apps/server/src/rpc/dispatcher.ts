@@ -23,7 +23,7 @@ export type Actor =
   | { readonly kind: "anonymous" }
   | { readonly kind: "user"; readonly userId: string; readonly role: Role };
 
-/** Finds the caller of a request. Phase 4 replaces the anonymous resolver with a session lookup. */
+/** Finds the caller of a request: in the server, a session lookup (`auth/session-actor.ts`). */
 export type ActorResolver = (request: IncomingMessage | undefined) => Promise<Actor>;
 
 export const anonymousActorResolver: ActorResolver = () => Promise.resolve({ kind: "anonymous" });
@@ -37,7 +37,11 @@ export interface RpcCallContext {
 
 /** What a handler receives besides its payload. */
 export interface RpcHandlerContext extends RpcCallContext {
-  readonly actor: Actor;
+  /**
+   * The caller. Already looked up for a method that needs a session; a public method's handler
+   * pays for the lookup only if it asks. Looked up at most once per call.
+   */
+  readonly getActor: () => Promise<Actor>;
 }
 
 /** Serves one RPC method. Build it with {@link defineHandler} so its types follow the contract. */
@@ -120,9 +124,13 @@ export function createRpcDispatcher(options: RpcDispatcherOptions): RpcDispatche
       return failure(404, ERROR_CODES.methodNotFound, `Unknown RPC method ${request.method}`);
     }
     const { contract } = handler;
-    const actor = await options.resolveActor(context.request);
-    const denied = authorize(contract.auth, actor);
-    if (denied !== null) return denied;
+    let lookup: Promise<Actor> | undefined;
+    const getActor = () => (lookup ??= options.resolveActor(context.request));
+    // A public method costs no session lookup.
+    if (contract.auth !== "public") {
+      const denied = authorize(contract.auth, await getActor());
+      if (denied !== null) return denied;
+    }
 
     const decoded = Schema.decodeUnknownExit(contract.payload)(request.payload);
     if (decoded._tag === "Failure") {
@@ -130,7 +138,7 @@ export function createRpcDispatcher(options: RpcDispatcherOptions): RpcDispatche
     }
     let result: unknown;
     try {
-      result = await handler.handle(decoded.value, { ...context, actor });
+      result = await handler.handle(decoded.value, { ...context, getActor });
     } catch (error) {
       if (error instanceof RpcFailure) return failure(error.status, error.code, error.message);
       throw error;

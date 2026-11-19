@@ -1,7 +1,7 @@
 /**
- * The server's lifecycle, as Effect layers: config, then logger, then database, then HTTP server.
- * `Layer` acquires them in that order and releases them in reverse when the scope closes, so the
- * HTTP server has drained before the database pool is closed.
+ * The server's lifecycle, as Effect layers: config, then logger, then database, then auth, then
+ * the HTTP server. `Layer` acquires them in that order and releases them in reverse when the
+ * scope closes, so the HTTP server has drained before the database pool is closed.
  *
  * Releasing the HTTP server: mark not-ready, stop accepting connections, close idle keep-alive
  * connections, let requests in flight finish, and once `SHUTDOWN_TIMEOUT_MS` has passed close
@@ -26,18 +26,18 @@ import {
 } from "effect";
 import type { Kysely, PostgresPool } from "kysely";
 
+import { createSesAuthEmailSender, type AuthEmailSender } from "./auth/email/sender";
+import { createAppAuth, type AppAuth } from "./auth/instance";
+import { buildAuthOptions } from "./auth/options";
+import { createSessionActorResolver } from "./auth/session-actor";
 import { loadServerConfig, type ServerConfig } from "./config";
+import { createSesClient } from "./infra/email/ses";
 import type { DB } from "./infra/postgres/generated/db";
 import { pingDatabase, waitForDatabase } from "./infra/postgres/connect";
 import { createDb, createPool } from "./infra/postgres/pool";
 import { createRequestHandler } from "./http/routes";
 import { createLogger, type Logger, type LogWriter } from "./observability/logger";
-import {
-  anonymousActorResolver,
-  type ActorResolver,
-  createRpcDispatcher,
-  type RpcHandler,
-} from "./rpc/dispatcher";
+import { type ActorResolver, createRpcDispatcher, type RpcHandler } from "./rpc/dispatcher";
 import { rpcHandlers } from "./rpc/handlers";
 
 /** How long `/ready` waits for `select 1`. */
@@ -65,6 +65,9 @@ export class Database extends Context.Service<Database, DatabaseService>()(
   "s10n-base/server/Database",
 ) {}
 
+/** Better Auth, over the database, sending email through SES. */
+export class Auth extends Context.Service<Auth, AppAuth>()("s10n-base/server/Auth") {}
+
 export interface HttpServerService {
   readonly port: number;
   /** Whether the last release had to force-close requests at the deadline. */
@@ -83,7 +86,10 @@ export interface ServerLayerOptions {
   /** Retry schedule for the first database connection. */
   readonly connectSchedule?: Schedule.Schedule<unknown, unknown>;
   readonly handlers?: ReadonlyArray<RpcHandler>;
+  /** Defaults to the session lookup. */
   readonly resolveActor?: ActorResolver;
+  /** Defaults to SES, at `SES_ENDPOINT` when it is set. */
+  readonly emailSender?: AuthEmailSender;
 }
 
 function defaultPool(config: ServerConfig, logger: Logger): PostgresPool {
@@ -149,6 +155,52 @@ const databaseLayer = (options: ServerLayerOptions) =>
     }),
   );
 
+function sesEmailSender(config: ServerConfig, logger: Logger): AuthEmailSender {
+  const { ses } = config.email;
+  const token = ses.credentials.sessionToken;
+  return createSesAuthEmailSender({
+    ses: createSesClient({
+      region: ses.region,
+      endpoint: ses.endpoint,
+      credentials: {
+        accessKeyId: ses.credentials.accessKeyId,
+        secretAccessKey: Redacted.value(ses.credentials.secretAccessKey),
+        ...(token === undefined ? {} : { sessionToken: Redacted.value(token) }),
+      },
+    }),
+    from: config.email.from,
+    supportEmail: config.email.supportEmail,
+    logger,
+  });
+}
+
+const authLayer = (options: ServerLayerOptions) =>
+  Layer.effect(
+    Auth,
+    Effect.gen(function* () {
+      const config = yield* AppConfig;
+      const logger = yield* AppLogger;
+      const database = yield* Database;
+      return createAppAuth(
+        buildAuthOptions(
+          {
+            appName: config.appName,
+            appOrigin: config.appOrigin,
+            nodeEnv: config.nodeEnv,
+            appVariant: config.appVariant,
+            secret: Redacted.value(config.auth.secret),
+            logLevel: config.logLevel,
+          },
+          {
+            db: database.db,
+            emailSender: options.emailSender ?? sesEmailSender(config, logger),
+            logger,
+          },
+        ),
+      );
+    }),
+  );
+
 function listen(server: http.Server, config: ServerConfig): Promise<number> {
   return new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -166,18 +218,20 @@ const httpServerLayer = (options: ServerLayerOptions) =>
       const config = yield* AppConfig;
       const logger = yield* AppLogger;
       const database = yield* Database;
+      const auth = yield* Auth;
       let shuttingDown = false;
       let forced = false;
 
       const dispatcher = createRpcDispatcher({
         handlers: options.handlers ?? rpcHandlers,
-        resolveActor: options.resolveActor ?? anonymousActorResolver,
+        resolveActor: options.resolveActor ?? createSessionActorResolver(auth),
       });
       const server = http.createServer(
         createRequestHandler({
           config,
           logger,
           dispatcher,
+          auth,
           checkReadiness: database.checkReadiness,
           isShuttingDown: () => shuttingDown,
         }),
@@ -216,14 +270,15 @@ const httpServerLayer = (options: ServerLayerOptions) =>
   );
 
 /**
- * Every layer the server needs, given a config layer. Acquired config → logger → database → HTTP
- * server; released in reverse.
+ * Every layer the server needs, given a config layer. Acquired config → logger → database → auth
+ * → HTTP server; released in reverse.
  */
 export function serverLayer(
   config: Layer.Layer<AppConfig, unknown>,
   options: ServerLayerOptions = {},
 ) {
   return httpServerLayer(options).pipe(
+    Layer.provideMerge(authLayer(options)),
     Layer.provideMerge(databaseLayer(options)),
     Layer.provideMerge(loggerLayer(options)),
     Layer.provideMerge(config),

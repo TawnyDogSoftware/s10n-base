@@ -10,9 +10,17 @@ import { Schema } from "effect";
 
 import { BootstrapConfig, ERROR_CODES, RpcRequest } from "@s10n-base/contracts";
 
+import type { AppAuth } from "../auth/instance";
 import type { ServerConfig } from "../config";
 import type { Logger } from "../observability/logger";
 import type { RpcDispatcher } from "../rpc/dispatcher";
+import {
+  handleAuthRequest,
+  isAllowedOrigin,
+  isAuthPath,
+  isCrossSiteGuarded,
+  readAppSession,
+} from "./auth-routes";
 import { readJsonBody } from "./body";
 import { resolveClientIp } from "./client-ip";
 import { applyCors } from "./cors";
@@ -23,6 +31,7 @@ export interface HttpContext {
   readonly config: ServerConfig;
   readonly logger: Logger;
   readonly dispatcher: RpcDispatcher;
+  readonly auth: AppAuth;
   /** Whether the database answers; backs `/ready`. */
   readonly checkReadiness: () => Promise<boolean>;
   /** True once shutdown has started: `/ready` answers 503 and connections are not kept alive. */
@@ -35,6 +44,7 @@ interface RequestState {
   readonly url: URL;
   readonly requestId: string;
   readonly logger: Logger;
+  readonly clientIp: string | undefined;
 }
 
 type RouteHandler = (state: RequestState, context: HttpContext) => Promise<void>;
@@ -97,6 +107,11 @@ const routes: Readonly<Record<string, Readonly<Record<string, RouteHandler>>>> =
       return Promise.resolve();
     },
   },
+  "/api/app-auth/session": {
+    GET: async ({ request, response }, context) => {
+      sendJson(response, 200, { ok: true, data: await readAppSession(request, context.auth) });
+    },
+  },
   "/rpc": {
     POST: async ({ request, response, requestId, logger }, context) => {
       const body = await readJsonBody(request, context.config.requestBodyLimitBytes);
@@ -148,6 +163,21 @@ async function route(state: RequestState, context: HttpContext): Promise<void> {
   if (cors === "preflight-allowed") {
     response.statusCode = 204;
     response.end();
+    return;
+  }
+
+  if (isCrossSiteGuarded(url.pathname) && !(await isAllowedOrigin(request, context.auth))) {
+    request.resume();
+    sendError(response, 403, ERROR_CODES.forbidden, "This origin is not allowed.");
+    return;
+  }
+  if (isAuthPath(url.pathname)) {
+    await handleAuthRequest(state, {
+      auth: context.auth,
+      appOrigin: context.config.appOrigin,
+      bodyLimitBytes: context.config.requestBodyLimitBytes,
+      sendError,
+    });
     return;
   }
 
@@ -222,13 +252,15 @@ export function createRequestHandler(context: HttpContext) {
       return;
     }
 
-    route({ request, response, url, requestId, logger }, context).catch((error: unknown) => {
-      logger.error("request_failed", { method: request.method, path: url.pathname, error });
-      if (response.headersSent) {
-        response.destroy();
-        return;
-      }
-      sendJson(response, 500, UNEXPECTED_ERROR_BODY);
-    });
+    route({ request, response, url, requestId, logger, clientIp }, context).catch(
+      (error: unknown) => {
+        logger.error("request_failed", { method: request.method, path: url.pathname, error });
+        if (response.headersSent) {
+          response.destroy();
+          return;
+        }
+        sendJson(response, 500, UNEXPECTED_ERROR_BODY);
+      },
+    );
   };
 }

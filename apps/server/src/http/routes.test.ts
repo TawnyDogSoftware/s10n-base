@@ -11,6 +11,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { defineRpc, ERROR_CODES } from "@s10n-base/contracts";
 
 import type { ServerConfig } from "../config";
+import type { AppAuth } from "../auth/instance";
+import { CLIENT_IP_HEADER } from "../auth/options";
 import { createLogger } from "../observability/logger";
 import { testServerConfig } from "../test/config";
 import {
@@ -23,6 +25,19 @@ import { HTML_CONTENT_SECURITY_POLICY } from "./security-headers";
 import { UNEXPECTED_ERROR_BODY, createRequestHandler, type HttpContext } from "./routes";
 
 const APP_ORIGIN = "http://localhost:5173";
+
+/** An AppAuth that admits nothing and knows no session unless a test says otherwise. */
+function fakeAuth(overrides: Partial<AppAuth> = {}): AppAuth {
+  return {
+    handler: () => Promise.resolve(new Response("{}", { status: 200 })),
+    guard: () => Promise.resolve(false),
+    routes: [],
+    getSession: () => Promise.resolve(null),
+    isTrustedOrigin: (origin) =>
+      Promise.resolve(origin === APP_ORIGIN || origin.startsWith("s10nbase-dev://")),
+    ...overrides,
+  };
+}
 let parent: string;
 let webDistDir: string;
 let server: http.Server | undefined;
@@ -73,6 +88,7 @@ const defaultDispatcher = createRpcDispatcher({
 });
 
 interface StartOptions {
+  readonly auth?: Partial<AppAuth>;
   readonly appOrigin?: string;
   readonly webDistDir?: string;
   readonly checkReadiness?: () => Promise<boolean>;
@@ -98,6 +114,7 @@ async function start(options: StartOptions = {}) {
       write: (line) => logLines.push(JSON.parse(line) as Record<string, unknown>),
     }),
     dispatcher: options.dispatcher ?? defaultDispatcher,
+    auth: fakeAuth(options.auth),
     checkReadiness: options.checkReadiness ?? (() => Promise.resolve(true)),
     isShuttingDown: options.isShuttingDown ?? (() => false),
   };
@@ -226,12 +243,11 @@ describe("CORS", () => {
   it("sends no CORS headers to another origin", async () => {
     const base = await start();
 
-    const response = await rpc(
-      base,
-      { method: "fixture.echo", payload: { text: "hi" } },
-      { origin: "https://evil.example.com" },
-    );
+    const response = await fetch(`${base}/config`, {
+      headers: { origin: "https://evil.example.com" },
+    });
 
+    expect(response.status).toBe(200);
     expect(response.headers.get("access-control-allow-origin")).toBeNull();
     expect(response.headers.get("access-control-allow-credentials")).toBeNull();
   });
@@ -510,5 +526,178 @@ describe("the web app", () => {
       404,
     );
     expect((await fetch(`${base}/health`)).status).toBe(200);
+  });
+});
+
+describe("cross-site requests", () => {
+  it("refuses /rpc from an origin that is not trusted, before any work is done", async () => {
+    const handle = vi.fn(() => Promise.resolve({ text: "hi" }));
+    const dispatcher = createRpcDispatcher({
+      handlers: [defineHandler(echo, handle)],
+      resolveActor: anonymousActorResolver,
+    });
+    const base = await start({ dispatcher });
+
+    const response = await rpc(
+      base,
+      { method: "fixture.echo", payload: { text: "hi" } },
+      { origin: "https://evil.example.com" },
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: { code: ERROR_CODES.forbidden, message: "This origin is not allowed." },
+    });
+    expect(handle).not.toHaveBeenCalled();
+  });
+
+  it("refuses an opaque null origin", async () => {
+    const base = await start();
+
+    const response = await rpc(
+      base,
+      { method: "fixture.echo", payload: { text: "hi" } },
+      {
+        origin: "null",
+      },
+    );
+
+    expect(response.status).toBe(403);
+  });
+
+  it("lets /rpc through from APP_URL, from a trusted app scheme, and with no Origin at all", async () => {
+    const base = await start();
+    const call = (headers: Record<string, string>) =>
+      rpc(base, { method: "fixture.echo", payload: { text: "hi" } }, headers);
+
+    expect((await call({ origin: APP_ORIGIN })).status).toBe(200);
+    expect((await call({ origin: "s10nbase-dev://" })).status).toBe(200);
+    expect((await call({})).status).toBe(200);
+  });
+
+  it("refuses /api/app-auth/* from an origin that is not trusted", async () => {
+    const getSession = vi.fn(() => Promise.resolve(null));
+    const base = await start({ auth: { getSession } });
+
+    const response = await fetch(`${base}/api/app-auth/session`, {
+      headers: { origin: "https://evil.example.com" },
+    });
+
+    expect(response.status).toBe(403);
+    expect(getSession).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/app-auth/session", () => {
+  const session = {
+    userId: "u1",
+    email: "user@example.com",
+    name: "User",
+    image: null,
+    role: "user" as const,
+    emailVerified: true,
+  };
+
+  it("answers the session as an AppSession, uncached, reading the request's cookie", async () => {
+    const getSession = vi.fn((_headers: Headers) => Promise.resolve(session));
+    const base = await start({ auth: { getSession } });
+
+    const response = await fetch(`${base}/api/app-auth/session`, {
+      headers: { cookie: "s10n-base.session_token=abc" },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toEqual({ ok: true, data: { session } });
+    expect(getSession.mock.calls[0]?.[0].get("cookie")).toBe("s10n-base.session_token=abc");
+  });
+
+  it("answers null when signed out", async () => {
+    const base = await start();
+
+    const response = await fetch(`${base}/api/app-auth/session`);
+
+    expect(await response.json()).toEqual({ ok: true, data: { session: null } });
+  });
+
+  it("answers 405 to another method", async () => {
+    const base = await start();
+
+    expect((await fetch(`${base}/api/app-auth/session`, { method: "POST" })).status).toBe(405);
+  });
+});
+
+describe("/api/auth", () => {
+  it("answers 404 JSON for a route the guard refuses, without reading the body or calling Better Auth", async () => {
+    const handler = vi.fn(() => Promise.resolve(new Response("{}")));
+    const guard = vi.fn((_method: string, _url: URL) => Promise.resolve(false));
+    const base = await start({ auth: { handler, guard } });
+
+    const response = await fetch(`${base}/api/auth/not-a-route?x=1`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: { code: ERROR_CODES.notFound, message: "Not found." },
+    });
+    expect(handler).not.toHaveBeenCalled();
+    expect(guard).toHaveBeenCalledWith("POST", new URL(`${APP_ORIGIN}/api/auth/not-a-route?x=1`));
+  });
+
+  it("passes an admitted request to Better Auth under APP_URL, with the body and the resolved client IP", async () => {
+    const handler = vi.fn((_request: Request) => {
+      const headers = new Headers({ "content-type": "application/json" });
+      headers.append("set-cookie", "a=1; Path=/");
+      headers.append("set-cookie", "b=2; Path=/");
+      return Promise.resolve(new Response('{"token":"t"}', { status: 200, headers }));
+    });
+    const base = await start({ auth: { handler, guard: () => Promise.resolve(true) } });
+
+    const response = await fetch(`${base}/api/auth/sign-in/email`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        host: "evil.example.com",
+        [CLIENT_IP_HEADER]: "6.6.6.6",
+      },
+      body: '{"email":"a@example.com"}',
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.getSetCookie()).toEqual(["a=1; Path=/", "b=2; Path=/"]);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.text()).toBe('{"token":"t"}');
+    const request = handler.mock.calls[0]?.[0];
+    expect(request?.url).toBe(`${APP_ORIGIN}/api/auth/sign-in/email`);
+    expect(await request?.text()).toBe('{"email":"a@example.com"}');
+    expect(request?.headers.get(CLIENT_IP_HEADER)).toBe("127.0.0.1");
+  });
+
+  it("refuses a body over the limit with 413, without calling Better Auth", async () => {
+    const handler = vi.fn(() => Promise.resolve(new Response("{}")));
+    const base = await start({ auth: { handler, guard: () => Promise.resolve(true) } });
+
+    const response = await fetch(`${base}/api/auth/sign-up/email`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "x".repeat(4096) }),
+    });
+
+    expect(response.status).toBe(413);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("sends a GET without a body", async () => {
+    const handler = vi.fn((_request: Request) => Promise.resolve(new Response("null")));
+    const base = await start({ auth: { handler, guard: () => Promise.resolve(true) } });
+
+    await fetch(`${base}/api/auth/get-session`);
+
+    expect(handler.mock.calls[0]?.[0].body).toBeNull();
   });
 });

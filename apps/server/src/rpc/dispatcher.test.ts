@@ -10,6 +10,7 @@ import {
   createRpcDispatcher,
   defineHandler,
   type RpcCallContext,
+  type RpcHandlerContext,
 } from "./dispatcher";
 
 const Payload = Schema.Struct({ count: Schema.FiniteFromString });
@@ -163,15 +164,39 @@ describe("createRpcDispatcher", () => {
   });
 
   it("passes the caller and request to the handler", async () => {
-    const handle = vi.fn(() => Promise.resolve({ doubled: 0 }));
-    const { dispatch } = setup(user, [defineHandler(sessionEcho, handle)]);
+    const handle = vi.fn((_payload: { count: number }, _context: RpcHandlerContext) =>
+      Promise.resolve({ doubled: 0 }),
+    );
+    const { dispatch, resolveActor } = setup(user, [defineHandler(sessionEcho, handle)]);
 
     await dispatch("fixture.session", { count: "0" });
 
-    expect(handle).toHaveBeenCalledWith(
-      { count: 0 },
-      expect.objectContaining({ actor: user, requestId: "r1" }),
-    );
+    expect(handle).toHaveBeenCalledWith({ count: 0 }, expect.objectContaining({ requestId: "r1" }));
+    expect(await handle.mock.calls[0]?.[1].getActor()).toEqual(user);
+    expect(resolveActor).toHaveBeenCalledOnce();
+  });
+
+  it("does not look up the caller for a public method", async () => {
+    const { dispatch, resolveActor } = setup(user);
+
+    await dispatch("fixture.public", { count: "1" });
+
+    expect(resolveActor).not.toHaveBeenCalled();
+  });
+
+  it("lets a public method's handler ask for the caller, looking it up once", async () => {
+    let seen: Actor | undefined;
+    const handler = defineHandler(publicEcho, async (_payload, context) => {
+      seen = await context.getActor();
+      await context.getActor();
+      return { doubled: 0 };
+    });
+    const { dispatch, resolveActor } = setup(admin, [handler]);
+
+    await dispatch("fixture.public", { count: "1" });
+
+    expect(seen).toEqual(admin);
+    expect(resolveActor).toHaveBeenCalledOnce();
   });
 
   it("refuses two handlers for one method", () => {
