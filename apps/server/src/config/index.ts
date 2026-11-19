@@ -9,8 +9,22 @@
  */
 import { Config, ConfigProvider, Data, Effect, Option, Redacted, Schema } from "effect";
 
+import { APP_VARIANTS, type AppVariant } from "@s10n-base/shared/app-variants";
+
 import serverPackage from "../../package.json" with { type: "json" };
 import { WEB_DIST_DIR } from "../paths";
+
+/**
+ * The `BETTER_AUTH_SECRET` in `.env.example`. Fine for a laptop; refused in production, where
+ * anyone who has read this repo would know it.
+ */
+export const EXAMPLE_AUTH_SECRET = "development-only-secret-replace-me-in-production";
+
+/**
+ * The AWS keys `.env.example` gives the server, which the local capture server
+ * (`bun run ses:local`) checks every signature against. Refused in production.
+ */
+export const LOCAL_SES_CREDENTIALS = { accessKeyId: "local", secretAccessKey: "local" } as const;
 
 export const NODE_ENVS = ["development", "test", "production"] as const;
 export type NodeEnv = (typeof NODE_ENVS)[number];
@@ -35,6 +49,34 @@ export interface ServerConfig {
   readonly logLevel: LogLevel;
   /** The built web app, served from the same origin when it exists. */
   readonly webDistDir: string;
+  /** Which mobile app build this server serves; its URL scheme is a trusted origin. */
+  readonly appVariant: AppVariant;
+  readonly auth: AuthConfig;
+  readonly email: EmailConfig;
+}
+
+export interface AuthConfig {
+  /** Signs and encrypts Better Auth's cookies and tokens. At least 32 characters. */
+  readonly secret: Redacted.Redacted<string>;
+}
+
+export interface SesConfig {
+  readonly region: string;
+  /** A loopback URL that replaces the regional endpoint; never set in production. */
+  readonly endpoint: string | undefined;
+  readonly credentials: {
+    readonly accessKeyId: string;
+    readonly secretAccessKey: Redacted.Redacted<string>;
+    readonly sessionToken: Redacted.Redacted<string> | undefined;
+  };
+}
+
+export interface EmailConfig {
+  /** The sender address of every email. */
+  readonly from: string;
+  /** Shown in email footers as the address to write to. */
+  readonly supportEmail: string;
+  readonly ses: SesConfig;
 }
 
 /** What the `migrate` entry point needs: no HTTP settings. */
@@ -116,9 +158,29 @@ function isPostgresUrl(value: string): boolean {
   );
 }
 
+/** A plain address such as `no-reply@example.com`: no display name, no spaces. */
+export function isEmailAddress(value: string): boolean {
+  return /^[^\s@<>()",;:]+@[^\s@<>()",;:.]+(\.[^\s@<>()",;:.]+)+$/.test(value);
+}
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
+/** A bare http or https origin on a loopback host, such as `http://127.0.0.1:8005`. */
+export function isLoopbackOrigin(value: string): boolean {
+  return isBareOrigin(value) && LOOPBACK_HOSTS.has(new URL(value).hostname);
+}
+
 const BareOrigin = Schema.String.check(Schema.makeFilter(isBareOrigin));
 const PostgresUrl = Schema.String.check(Schema.makeFilter(isPostgresUrl));
 const BindAddress = Schema.String.check(Schema.makeFilter((value) => /^\S+$/.test(value)));
+const NoSpaces = Schema.String.check(Schema.makeFilter((value) => /^\S+$/.test(value)));
+const NonEmpty = Schema.String.check(Schema.makeFilter((value) => value.length > 0));
+const AuthSecret = Schema.String.check(Schema.makeFilter((value) => value.length >= 32));
+const EmailAddress = Schema.String.check(Schema.makeFilter(isEmailAddress));
+const AwsRegion = Schema.String.check(
+  Schema.makeFilter((value) => /^[a-z]{2}(-[a-z]+)+-\d+$/.test(value)),
+);
+const LoopbackOrigin = Schema.String.check(Schema.makeFilter(isLoopbackOrigin));
 
 function variable<A>(name: string, rule: string, config: Config.Config<A>): Variable<A> {
   return { name, rule, config };
@@ -179,6 +241,58 @@ const logLevel = variable(
   Config.Literals(LOG_LEVELS, "LOG_LEVEL").pipe(Config.withDefault("info" as const)),
 );
 
+const authSecret = variable(
+  "BETTER_AUTH_SECRET",
+  "be at least 32 characters; generate one with `openssl rand -base64 32`",
+  Config.schema(AuthSecret, "BETTER_AUTH_SECRET").pipe(Config.map((value) => Redacted.make(value))),
+);
+const appVariant = variable(
+  "APP_VARIANT",
+  "be development, preview or production",
+  Config.option(Config.Literals(APP_VARIANTS, "APP_VARIANT")),
+);
+const emailFrom = variable(
+  "EMAIL_FROM",
+  "be a plain email address such as no-reply@example.com",
+  Config.schema(EmailAddress, "EMAIL_FROM"),
+);
+const supportEmail = variable(
+  "SUPPORT_EMAIL",
+  "be a plain email address such as support@example.com",
+  Config.schema(EmailAddress, "SUPPORT_EMAIL"),
+);
+const sesRegion = variable(
+  "SES_REGION",
+  "be an AWS region name such as us-east-1",
+  Config.schema(AwsRegion, "SES_REGION"),
+);
+const sesEndpoint = variable(
+  "SES_ENDPOINT",
+  "be a loopback origin such as http://127.0.0.1:8005 (the local capture server), or unset",
+  Config.option(Config.schema(LoopbackOrigin, "SES_ENDPOINT")).pipe(
+    Config.map((value) => Option.map(value, (origin) => new URL(origin).origin)),
+  ),
+);
+const awsAccessKeyId = variable(
+  "AWS_ACCESS_KEY_ID",
+  "be an AWS access key id with no spaces",
+  Config.schema(NoSpaces, "AWS_ACCESS_KEY_ID"),
+);
+const awsSecretAccessKey = variable(
+  "AWS_SECRET_ACCESS_KEY",
+  "be an AWS secret access key",
+  Config.schema(NonEmpty, "AWS_SECRET_ACCESS_KEY").pipe(
+    Config.map((value) => Redacted.make(value)),
+  ),
+);
+const awsSessionToken = variable(
+  "AWS_SESSION_TOKEN",
+  "be an AWS session token, or unset",
+  Config.option(Config.schema(NonEmpty, "AWS_SESSION_TOKEN")).pipe(
+    Config.map((value) => Option.map(value, (token) => Redacted.make(token))),
+  ),
+);
+
 /** The server's variables, in the order problems are reported. */
 export const serverVariables = [
   nodeEnv,
@@ -191,6 +305,15 @@ export const serverVariables = [
   requestBodyLimitBytes,
   shutdownTimeoutMs,
   logLevel,
+  authSecret,
+  appVariant,
+  emailFrom,
+  supportEmail,
+  sesRegion,
+  sesEndpoint,
+  awsAccessKeyId,
+  awsSecretAccessKey,
+  awsSessionToken,
 ] as const;
 
 type Values<T extends ReadonlyArray<Variable<unknown>>> = {
@@ -227,25 +350,83 @@ function parseAll<const T extends ReadonlyArray<Variable<unknown>>>(
   });
 }
 
+/** The value of `entry` when it is valid, or none. */
+function valueOf<A>(
+  entry: Variable<A>,
+  provider: ConfigProvider.ConfigProvider,
+): Effect.Effect<Option.Option<A>> {
+  return Effect.result(entry.config.parse(provider)).pipe(
+    Effect.map((result) =>
+      result._tag === "Success" ? Option.some(result.success) : Option.none(),
+    ),
+  );
+}
+
+/** The raw string of a variable, or none when it is unset or empty. */
+function rawOf(
+  name: string,
+  provider: ConfigProvider.ConfigProvider,
+): Effect.Effect<Option.Option<string>> {
+  return Effect.orElseSucceed(Config.option(Config.String(name)).parse(provider), () =>
+    Option.none<string>(),
+  );
+}
+
 /**
- * Rules that involve more than one variable. Checked whenever the variables they read are valid,
- * even if others are not, so every problem is still reported at once.
+ * Rules that involve more than one variable, which all depend on `NODE_ENV` being production.
+ * Each is checked whenever the variables it reads are valid, even if others are not, so every
+ * problem is still reported at once. None of them ever quotes a value.
  */
 function crossVariableProblems(
   provider: ConfigProvider.ConfigProvider,
 ): Effect.Effect<Array<ConfigProblem>> {
   return Effect.gen(function* () {
-    const env = yield* Effect.result(nodeEnv.config.parse(provider));
-    const origin = yield* Effect.result(appUrl.config.parse(provider));
-    if (
-      env._tag === "Success" &&
-      origin._tag === "Success" &&
-      env.success === "production" &&
-      !origin.success.startsWith("https://")
-    ) {
-      return [{ variable: "APP_URL", problem: "must use https when NODE_ENV is production" }];
+    const env = yield* valueOf(nodeEnv, provider);
+    if (Option.getOrUndefined(env) !== "production") return [];
+    const problems: Array<ConfigProblem> = [];
+    const origin = yield* valueOf(appUrl, provider);
+    if (Option.isSome(origin) && !origin.value.startsWith("https://")) {
+      problems.push({ variable: "APP_URL", problem: "must use https when NODE_ENV is production" });
     }
-    return [];
+    const variant = yield* valueOf(appVariant, provider);
+    if (Option.isSome(variant) && Option.isNone(variant.value)) {
+      problems.push({
+        variable: "APP_VARIANT",
+        problem: `is required when NODE_ENV is production: it must ${appVariant.rule}`,
+      });
+    }
+    const secret = yield* valueOf(authSecret, provider);
+    if (Option.isSome(secret) && Redacted.value(secret.value) === EXAMPLE_AUTH_SECRET) {
+      problems.push({
+        variable: "BETTER_AUTH_SECRET",
+        problem: "must not be the example value from .env.example when NODE_ENV is production",
+      });
+    }
+    // Any value at all: production always uses the regional AWS endpoint.
+    if (Option.isSome(yield* rawOf("SES_ENDPOINT", provider))) {
+      problems.push({
+        variable: "SES_ENDPOINT",
+        problem: "must not be set when NODE_ENV is production",
+      });
+    }
+    const keyId = yield* valueOf(awsAccessKeyId, provider);
+    if (Option.isSome(keyId) && keyId.value === LOCAL_SES_CREDENTIALS.accessKeyId) {
+      problems.push({
+        variable: "AWS_ACCESS_KEY_ID",
+        problem: "must not be the local placeholder when NODE_ENV is production",
+      });
+    }
+    const secretKey = yield* valueOf(awsSecretAccessKey, provider);
+    if (
+      Option.isSome(secretKey) &&
+      Redacted.value(secretKey.value) === LOCAL_SES_CREDENTIALS.secretAccessKey
+    ) {
+      problems.push({
+        variable: "AWS_SECRET_ACCESS_KEY",
+        problem: "must not be the local placeholder when NODE_ENV is production",
+      });
+    }
+    return problems;
   });
 }
 
@@ -265,9 +446,15 @@ export const loadServerConfig: Effect.Effect<ServerConfig, ServerConfigError> = 
   function* () {
     const provider = yield* ConfigProvider.ConfigProvider;
     const parsed = yield* parseAll(serverVariables, provider);
+    const crossProblems = yield* crossVariableProblems(provider);
+    // A production rule about a variable replaces that variable's own problem: in production
+    // any SES_ENDPOINT is wrong, whether or not it is a loopback URL.
+    const ruled = new Set(crossProblems.map((problem) => problem.variable));
     const problems = [
-      ...("problems" in parsed ? parsed.problems : []),
-      ...(yield* crossVariableProblems(provider)),
+      ...("problems" in parsed ? parsed.problems : []).filter(
+        (problem) => !ruled.has(problem.variable),
+      ),
+      ...crossProblems,
     ];
     if (problems.length > 0 || "problems" in parsed) {
       return yield* new ServerConfigError({ problems: inVariableOrder(problems) });
@@ -283,6 +470,15 @@ export const loadServerConfig: Effect.Effect<ServerConfig, ServerConfigError> = 
       bodyLimit,
       shutdownMs,
       level,
+      secret,
+      variant,
+      from,
+      support,
+      region,
+      endpoint,
+      accessKeyId,
+      secretAccessKey,
+      sessionToken,
     ] = parsed.values;
     return {
       appName: "S10N Base",
@@ -298,6 +494,21 @@ export const loadServerConfig: Effect.Effect<ServerConfig, ServerConfigError> = 
       shutdownTimeoutMs: shutdownMs,
       logLevel: level,
       webDistDir: WEB_DIST_DIR,
+      appVariant: Option.getOrElse(variant, () => "development" as const),
+      auth: { secret },
+      email: {
+        from,
+        supportEmail: support,
+        ses: {
+          region,
+          endpoint: Option.getOrUndefined(endpoint),
+          credentials: {
+            accessKeyId,
+            secretAccessKey,
+            sessionToken: Option.getOrUndefined(sessionToken),
+          },
+        },
+      },
     };
   },
 );

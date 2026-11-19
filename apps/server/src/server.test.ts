@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { Redacted, Schedule, Schema } from "effect";
+import { Schedule, Schema } from "effect";
 import type { PostgresPool, PostgresPoolClient } from "kysely";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -11,6 +11,7 @@ import { defineRpc } from "@s10n-base/contracts";
 import type { ServerConfig } from "./config";
 import { defineHandler } from "./rpc/dispatcher";
 import { startServer, type StartedServer } from "./server";
+import { testServerConfig } from "./test/config";
 
 /** A stand-in for pg.Pool that records what happens to it and can hold queries back. */
 function createFakePool(events: string[]) {
@@ -49,22 +50,7 @@ function createFakePool(events: string[]) {
 }
 
 function testConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
-  return {
-    appName: "S10N Base",
-    version: "0.0.0",
-    nodeEnv: "test",
-    appOrigin: "http://localhost:5173",
-    host: "127.0.0.1",
-    port: 0,
-    databaseUrl: Redacted.make("postgres://u:p@127.0.0.1:9/db"),
-    databasePoolMax: 1,
-    trustedProxyHops: 0,
-    requestBodyLimitBytes: 1024,
-    shutdownTimeoutMs: 2000,
-    logLevel: "debug",
-    webDistDir: path.join(os.tmpdir(), "s10n-no-web-build"),
-    ...overrides,
-  };
+  return testServerConfig({ shutdownTimeoutMs: 2000, ...overrides });
 }
 
 const Empty = Schema.Struct({});

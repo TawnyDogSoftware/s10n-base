@@ -12,6 +12,7 @@ import { defineRpc, ERROR_CODES } from "@s10n-base/contracts";
 
 import type { ServerConfig } from "../config";
 import { createLogger } from "../observability/logger";
+import { testServerConfig } from "../test/config";
 import {
   anonymousActorResolver,
   createRpcDispatcher,
@@ -82,21 +83,14 @@ interface StartOptions {
 
 async function start(options: StartOptions = {}) {
   logLines = [];
-  const config: ServerConfig = {
-    appName: "S10N Base",
+  const config: ServerConfig = testServerConfig({
     version: "1.2.3",
-    nodeEnv: "test",
     appOrigin: options.appOrigin ?? APP_ORIGIN,
-    host: "127.0.0.1",
-    port: 0,
     databaseUrl: Redacted.make("postgres://u:p@localhost/db"),
-    databasePoolMax: 1,
     trustedProxyHops: options.trustedProxyHops ?? 0,
-    requestBodyLimitBytes: 1024,
     shutdownTimeoutMs: 1000,
-    logLevel: "debug",
     webDistDir: options.webDistDir ?? webDistDir,
-  };
+  });
   const context: HttpContext = {
     config,
     logger: createLogger({

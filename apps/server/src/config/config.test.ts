@@ -1,7 +1,12 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { Config, ConfigProvider, Effect, Exit, Redacted } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
+  EXAMPLE_AUTH_SECRET,
+  LOCAL_SES_CREDENTIALS,
   ServerConfigError,
   databaseConfigFromEnv,
   loadServerConfig,
@@ -11,10 +16,38 @@ import {
 
 const DATABASE_URL = "postgres://app:s3cret-password@db.internal:5432/app";
 
+const AUTH_SECRET = "a-test-secret-that-is-at-least-32-characters";
+const AWS_SECRET = "aws-secret-access-key-for-tests";
+
 const valid = {
   APP_URL: "http://localhost:5173",
   DATABASE_URL,
+  BETTER_AUTH_SECRET: AUTH_SECRET,
+  EMAIL_FROM: "no-reply@example.com",
+  SUPPORT_EMAIL: "support@example.com",
+  SES_REGION: "us-east-1",
+  AWS_ACCESS_KEY_ID: "AKIDEXAMPLE",
+  AWS_SECRET_ACCESS_KEY: AWS_SECRET,
 };
+
+/** Production with every production rule satisfied. */
+const production = {
+  ...valid,
+  NODE_ENV: "production",
+  APP_URL: "https://app.example.com",
+  APP_VARIANT: "production",
+};
+
+const REQUIRED = [
+  "APP_URL",
+  "DATABASE_URL",
+  "BETTER_AUTH_SECRET",
+  "EMAIL_FROM",
+  "SUPPORT_EMAIL",
+  "SES_REGION",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+];
 
 function load(env: Record<string, string | undefined>) {
   return Effect.runSync(serverConfigFromEnv(env));
@@ -53,8 +86,7 @@ describe("server config", () => {
 
   it("reads every variable", () => {
     const config = load({
-      NODE_ENV: "production",
-      APP_URL: "https://app.example.com",
+      ...production,
       HOST: "127.0.0.1",
       PORT: "8080",
       DATABASE_URL: "postgresql://app@db/app",
@@ -85,12 +117,11 @@ describe("server config", () => {
     });
   });
 
-  it("requires APP_URL and DATABASE_URL", () => {
+  it("requires the variables with no default", () => {
     const error = problems({});
 
-    expect(error.problems.map((problem) => problem.variable)).toEqual(["APP_URL", "DATABASE_URL"]);
-    expect(problemFor({}, "APP_URL")).toMatch(/^is required/);
-    expect(problemFor({}, "DATABASE_URL")).toMatch(/^is required/);
+    expect(error.problems.map((problem) => problem.variable)).toEqual(REQUIRED);
+    for (const variable of REQUIRED) expect(problemFor({}, variable)).toMatch(/^is required/);
   });
 
   it.each([
@@ -116,6 +147,18 @@ describe("server config", () => {
     ["SHUTDOWN_TIMEOUT_MS", "999"],
     ["SHUTDOWN_TIMEOUT_MS", "60001"],
     ["LOG_LEVEL", "trace"],
+    ["BETTER_AUTH_SECRET", "too-short-31-characters-xxxxxxx"],
+    ["APP_VARIANT", "staging"],
+    ["EMAIL_FROM", "no-reply"],
+    ["EMAIL_FROM", "No Reply <no-reply@example.com>"],
+    ["SUPPORT_EMAIL", "support@"],
+    ["SES_REGION", "us east 1"],
+    ["SES_REGION", "US-EAST-1"],
+    ["SES_ENDPOINT", "http://ses.example.com:8005"],
+    ["SES_ENDPOINT", "http://10.0.0.5:8005"],
+    ["SES_ENDPOINT", "http://127.0.0.1:8005/v2"],
+    ["SES_ENDPOINT", "ftp://127.0.0.1:8005"],
+    ["AWS_ACCESS_KEY_ID", "has space"],
   ])("rejects %s=%j", (variable, value) => {
     const problem = problemFor({ ...valid, [variable]: value }, variable);
 
@@ -132,12 +175,27 @@ describe("server config", () => {
     ["SHUTDOWN_TIMEOUT_MS", "60000"],
     ["APP_URL", "http://localhost:5173/"],
     ["APP_URL", "http://[::1]:5173"],
+    ["BETTER_AUTH_SECRET", "x".repeat(32)],
+    ["APP_VARIANT", "preview"],
+    ["SES_REGION", "ap-southeast-2"],
+    ["SES_REGION", "us-gov-west-1"],
+    ["SES_ENDPOINT", "http://127.0.0.1:8005"],
+    ["SES_ENDPOINT", "http://localhost:8005"],
+    ["SES_ENDPOINT", "http://[::1]:8005"],
+    ["AWS_SESSION_TOKEN", "token"],
   ])("accepts %s=%j", (variable, value) => {
     expect(() => load({ ...valid, [variable]: value })).not.toThrow();
   });
 
   it("reports every problem at once, in variable order, in one message", () => {
-    const error = problems({ NODE_ENV: "staging", PORT: "x", LOG_LEVEL: "loud" });
+    const error = problems({
+      ...valid,
+      APP_URL: undefined,
+      DATABASE_URL: undefined,
+      NODE_ENV: "staging",
+      PORT: "x",
+      LOG_LEVEL: "loud",
+    });
 
     expect(error.problems.map((problem) => problem.variable)).toEqual([
       "NODE_ENV",
@@ -154,14 +212,18 @@ describe("server config", () => {
   });
 
   it("requires https for APP_URL in production only", () => {
-    expect(problemFor({ ...valid, NODE_ENV: "production" }, "APP_URL")).toBe(
+    expect(problemFor({ ...production, APP_URL: "http://app.example.com" }, "APP_URL")).toBe(
       "must use https when NODE_ENV is production",
     );
     expect(() => load({ ...valid, NODE_ENV: "test" })).not.toThrow();
   });
 
   it("reports the production https rule together with other problems", () => {
-    const error = problems({ ...valid, NODE_ENV: "production", PORT: "x" });
+    const error = problems({
+      ...production,
+      APP_URL: "http://app.example.com",
+      PORT: "x",
+    });
 
     expect(error.problems).toEqual([
       { variable: "APP_URL", problem: "must use https when NODE_ENV is production" },
@@ -206,10 +268,138 @@ describe("server config", () => {
       "REQUEST_BODY_LIMIT_BYTES",
       "SHUTDOWN_TIMEOUT_MS",
       "LOG_LEVEL",
+      "BETTER_AUTH_SECRET",
+      "APP_VARIANT",
+      "EMAIL_FROM",
+      "SUPPORT_EMAIL",
+      "SES_REGION",
+      "SES_ENDPOINT",
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SESSION_TOKEN",
     ]);
     for (const variable of serverVariables) {
       expect(Config.isConfig(variable.config)).toBe(true);
     }
+  });
+});
+
+describe("auth and email config", () => {
+  it("reads the auth and email variables", () => {
+    const config = load({
+      ...valid,
+      APP_VARIANT: "preview",
+      SES_ENDPOINT: "http://127.0.0.1:8005",
+      AWS_SESSION_TOKEN: "session-token",
+    });
+
+    expect(config.appVariant).toBe("preview");
+    expect(Redacted.value(config.auth.secret)).toBe(AUTH_SECRET);
+    expect(config.email.from).toBe("no-reply@example.com");
+    expect(config.email.supportEmail).toBe("support@example.com");
+    expect(config.email.ses.region).toBe("us-east-1");
+    expect(config.email.ses.endpoint).toBe("http://127.0.0.1:8005");
+    expect(config.email.ses.credentials.accessKeyId).toBe("AKIDEXAMPLE");
+    expect(Redacted.value(config.email.ses.credentials.secretAccessKey)).toBe(AWS_SECRET);
+    expect(
+      config.email.ses.credentials.sessionToken &&
+        Redacted.value(config.email.ses.credentials.sessionToken),
+    ).toBe("session-token");
+  });
+
+  it("defaults APP_VARIANT to development and leaves SES_ENDPOINT and the token unset", () => {
+    const config = load(valid);
+
+    expect(config.appVariant).toBe("development");
+    expect(config.email.ses.endpoint).toBeUndefined();
+    expect(config.email.ses.credentials.sessionToken).toBeUndefined();
+  });
+
+  it("accepts a production config that meets every production rule", () => {
+    expect(load(production).appVariant).toBe("production");
+  });
+
+  it("requires APP_VARIANT to be set explicitly in production", () => {
+    expect(problemFor({ ...production, APP_VARIANT: undefined }, "APP_VARIANT")).toBe(
+      "is required when NODE_ENV is production: it must be development, preview or production",
+    );
+  });
+
+  it("refuses the example secret, a local SES endpoint and the placeholder keys in production, naming each", () => {
+    const error = problems({
+      ...production,
+      BETTER_AUTH_SECRET: EXAMPLE_AUTH_SECRET,
+      SES_ENDPOINT: "http://127.0.0.1:8005",
+      AWS_ACCESS_KEY_ID: LOCAL_SES_CREDENTIALS.accessKeyId,
+      AWS_SECRET_ACCESS_KEY: LOCAL_SES_CREDENTIALS.secretAccessKey,
+    });
+
+    expect(error.problems).toEqual([
+      {
+        variable: "BETTER_AUTH_SECRET",
+        problem: "must not be the example value from .env.example when NODE_ENV is production",
+      },
+      { variable: "SES_ENDPOINT", problem: "must not be set when NODE_ENV is production" },
+      {
+        variable: "AWS_ACCESS_KEY_ID",
+        problem: "must not be the local placeholder when NODE_ENV is production",
+      },
+      {
+        variable: "AWS_SECRET_ACCESS_KEY",
+        problem: "must not be the local placeholder when NODE_ENV is production",
+      },
+    ]);
+  });
+
+  it("refuses a non-loopback SES_ENDPOINT in production too, with the production rule", () => {
+    expect(
+      problemFor({ ...production, SES_ENDPOINT: "https://ses.example.com" }, "SES_ENDPOINT"),
+    ).toBe("must not be set when NODE_ENV is production");
+  });
+
+  it("allows the example secret and the placeholders outside production", () => {
+    expect(() =>
+      load({
+        ...valid,
+        BETTER_AUTH_SECRET: EXAMPLE_AUTH_SECRET,
+        AWS_ACCESS_KEY_ID: "local",
+        AWS_SECRET_ACCESS_KEY: "local",
+        SES_ENDPOINT: "http://127.0.0.1:8005",
+      }),
+    ).not.toThrow();
+  });
+
+  it("never prints the auth secret, the AWS secret key or the session token", () => {
+    const secrets = {
+      BETTER_AUTH_SECRET: "short-secret-value",
+      AWS_SECRET_ACCESS_KEY: "aws-secret-value-9",
+      AWS_SESSION_TOKEN: "session-token-value",
+    };
+    const error = problems({ ...valid, ...secrets, PORT: "x" });
+    const loaded = load({ ...valid, AWS_SESSION_TOKEN: "session-token-value" });
+
+    for (const text of [
+      error.message,
+      JSON.stringify(error),
+      String(error),
+      JSON.stringify(loaded),
+    ]) {
+      for (const value of [...Object.values(secrets), AUTH_SECRET, AWS_SECRET]) {
+        expect(text).not.toContain(value);
+      }
+    }
+  });
+
+  it("matches the example secret in .env.example, which is long enough to pass outside production", () => {
+    const example = readFileSync(
+      path.join(import.meta.dirname, "../../../../.env.example"),
+      "utf8",
+    );
+
+    expect(example).toContain(`\nBETTER_AUTH_SECRET=${EXAMPLE_AUTH_SECRET}\n`);
+    expect(example).toContain(`\nAWS_ACCESS_KEY_ID=${LOCAL_SES_CREDENTIALS.accessKeyId}\n`);
+    expect(example).toContain(`\nAWS_SECRET_ACCESS_KEY=${LOCAL_SES_CREDENTIALS.secretAccessKey}\n`);
+    expect(EXAMPLE_AUTH_SECRET.length).toBeGreaterThanOrEqual(32);
   });
 });
 

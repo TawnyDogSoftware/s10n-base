@@ -63,11 +63,23 @@ describe(".env.example", () => {
     "REQUEST_BODY_LIMIT_BYTES",
     "SHUTDOWN_TIMEOUT_MS",
     "LOG_LEVEL",
+    "BETTER_AUTH_SECRET",
+    "APP_VARIANT",
+    "EMAIL_FROM",
+    "SUPPORT_EMAIL",
+    "SES_REGION",
+    "SES_ENDPOINT",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
     "TEST_DATABASE_URL",
   ];
+  // Optional variables with no development value: listed, commented out.
+  const optional = ["AWS_SESSION_TOKEN"];
 
   it("lists every variable", () => {
     expect(Object.keys(example).sort()).toEqual([...variables].sort());
+    const text = readFileSync(path.join(root, ".env.example"), "utf8");
+    for (const name of optional) expect(text).toContain(`\n# ${name}=\n`);
   });
 
   it("is passed through by turbo, which hides unlisted variables from tasks", () => {
@@ -75,6 +87,6 @@ describe(".env.example", () => {
       globalEnv: string[];
     };
 
-    expect(turbo.globalEnv).toEqual(expect.arrayContaining(variables));
+    expect(turbo.globalEnv).toEqual(expect.arrayContaining([...variables, ...optional]));
   });
 });
