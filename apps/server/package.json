@@ -2,9 +2,6 @@
   "name": "@s10n-base/server",
   "version": "0.0.0",
   "private": true,
-  "bin": {
-    "s10n-base-server": "./dist/bin.mjs"
-  },
   "type": "module",
   "scripts": {
     "dev": "bun run src/bin.ts",
@@ -16,14 +13,10 @@
   "dependencies": {
     "@s10n-base/contracts": "workspace:*",
     "@s10n-base/shared": "workspace:*",
-    "better-sqlite3": "catalog:",
-    "effect": "catalog:",
-    "ws": "catalog:"
+    "effect": "catalog:"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "catalog:",
     "@types/node": "catalog:",
-    "@types/ws": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

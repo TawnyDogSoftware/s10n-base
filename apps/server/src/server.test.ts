@@ -2,83 +2,134 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { Schema } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
-import { WebSocket } from "ws";
 
-import { startServer } from "./server";
+import { AppError, BootstrapConfig } from "@s10n-base/contracts";
 
-let cleanup: (() => Promise<void>) | null = null;
-let s10nBaseHome: string | null = null;
-const originalS10nBaseHome = process.env.S10N_BASE_HOME;
+import { startServer, type StartedServer } from "./server";
+
+let started: StartedServer | null = null;
 
 afterEach(async () => {
-  await cleanup?.();
-  cleanup = null;
-  process.env.S10N_BASE_HOME = originalS10nBaseHome;
-  if (s10nBaseHome) {
-    fs.rmSync(s10nBaseHome, { recursive: true, force: true });
-    s10nBaseHome = null;
-  }
+  await started?.stop();
+  started = null;
 });
 
-describe("server smoke", () => {
-  it("serves health, config, rpc, and websocket activity", async () => {
-    s10nBaseHome = fs.mkdtempSync(path.join(os.tmpdir(), "s10n-base-server-test-"));
-    process.env.S10N_BASE_HOME = s10nBaseHome;
+async function start() {
+  started = await startServer({ port: 0 });
+  return `http://${started.config.host}:${started.port}`;
+}
 
-    const started = await startServer({ port: 0 });
-    cleanup = started.stop;
-    const baseUrl = `http://${started.config.host}:${started.port}`;
+function postRpc(baseUrl: string, body: string) {
+  return fetch(`${baseUrl}/rpc`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+  });
+}
 
-    const health = await fetch(`${baseUrl}/health`).then((response) => response.json());
-    expect(health.ok).toBe(true);
+async function readError(response: Response) {
+  const body = (await response.json()) as { ok: unknown; error: unknown };
+  expect(body.ok).toBe(false);
+  return Schema.decodeUnknownSync(AppError)(body.error);
+}
 
-    const config = await fetch(`${baseUrl}/config`).then((response) => response.json());
-    expect(config.appName).toBe("S10N Base");
+describe("server", () => {
+  it("answers /health", async () => {
+    const baseUrl = await start();
 
-    const events: unknown[] = [];
-    const socket = new WebSocket(config.websocketUrl as string);
-    await new Promise<void>((resolve) => {
-      socket.once("message", (message) => {
-        events.push(JSON.parse(message.toString("utf8")));
-        resolve();
-      });
+    const response = await fetch(`${baseUrl}/health`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true });
+  });
+
+  it("serves a three-field bootstrap config", async () => {
+    const baseUrl = await start();
+
+    const response = await fetch(`${baseUrl}/config`);
+    const body = (await response.json()) as Record<string, unknown>;
+
+    expect(response.status).toBe(200);
+    expect(Schema.decodeUnknownSync(BootstrapConfig)(body)).toMatchObject({
+      appName: "S10N Base",
     });
+    expect(body).not.toHaveProperty("websocketUrl");
+    expect(body).not.toHaveProperty("desktopHost");
+  });
 
-    const createProject = await fetch(`${baseUrl}/rpc`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        method: "projects.create",
-        payload: {
-          name: "S10N Base Project",
-          description: "Initial project",
-        },
-      }),
-    }).then((response) => response.json());
+  it("returns 404 rpc.method_not_found for an unknown method", async () => {
+    const baseUrl = await start();
 
-    expect(createProject.ok).toBe(true);
+    const response = await postRpc(
+      baseUrl,
+      JSON.stringify({ method: "projects.list", payload: {} }),
+    );
 
-    const projects = await fetch(`${baseUrl}/rpc`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        method: "projects.list",
-        payload: {},
-      }),
-    }).then((response) => response.json());
+    expect(response.status).toBe(404);
+    expect((await readError(response)).code).toBe("rpc.method_not_found");
+  });
 
-    expect(events[0]).toMatchObject({ type: "activity.snapshot" });
-    expect(projects).toMatchObject({
-      ok: true,
-      data: {
-        projects: [
-          expect.objectContaining({
-            name: "S10N Base Project",
-          }),
-        ],
-      },
+  it("returns 400 rpc.invalid_request for a body that is not JSON", async () => {
+    const baseUrl = await start();
+
+    const response = await postRpc(baseUrl, "{not json");
+
+    expect(response.status).toBe(400);
+    expect(await readError(response)).toEqual({
+      code: "rpc.invalid_request",
+      message: "The request body is not a valid RPC request.",
     });
-    socket.close();
+  });
+
+  it("returns 400 rpc.invalid_request for a non-string method", async () => {
+    const baseUrl = await start();
+
+    const response = await postRpc(baseUrl, JSON.stringify({ method: 42, payload: {} }));
+
+    expect(response.status).toBe(400);
+    expect((await readError(response)).code).toBe("rpc.invalid_request");
+  });
+
+  it("returns 400 rpc.invalid_request for an empty body", async () => {
+    const baseUrl = await start();
+
+    const response = await postRpc(baseUrl, "");
+
+    expect(response.status).toBe(400);
+    expect((await readError(response)).code).toBe("rpc.invalid_request");
+  });
+
+  it("stops accepting connections once stop() resolves", async () => {
+    const baseUrl = await start();
+    const server = started;
+    started = null;
+
+    await expect(server?.stop()).resolves.toBeUndefined();
+
+    await expect(fetch(`${baseUrl}/health`)).rejects.toThrow();
+  });
+
+  it("creates no file when it starts and stops", async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "s10n-base-server-home-"));
+    const originalHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      expect(os.homedir()).toBe(home);
+
+      const server = await startServer({ port: 0 });
+      await fetch(`http://${server.config.host}:${server.port}/health`);
+      await server.stop();
+
+      expect(fs.readdirSync(home)).toEqual([]);
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+      fs.rmSync(home, { recursive: true, force: true });
+    }
   });
 });

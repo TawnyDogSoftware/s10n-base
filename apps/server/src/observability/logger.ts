@@ -1,14 +1,16 @@
-import fs from "node:fs";
-import path from "node:path";
-
 export interface Logger {
   readonly info: (message: string, meta?: Record<string, unknown>) => void;
   readonly error: (message: string, meta?: Record<string, unknown>) => void;
 }
 
-export function createLogger(logDir: string): Logger {
-  const logFilePath = path.join(logDir, "server.log");
+/** Receives one newline-terminated JSON line per log entry. */
+export type LogWriter = (line: string) => void;
 
+function writeToStdout(line: string) {
+  process.stdout.write(line);
+}
+
+export function createLogger(writer: LogWriter = writeToStdout): Logger {
   function write(level: "info" | "error", message: string, meta?: Record<string, unknown>) {
     const entry = JSON.stringify({
       at: new Date().toISOString(),
@@ -16,14 +18,7 @@ export function createLogger(logDir: string): Logger {
       message,
       ...(meta ? { meta } : {}),
     });
-
-    fs.appendFileSync(logFilePath, `${entry}\n`);
-    const line = `[server:${level}] ${message}`;
-    if (level === "error") {
-      console.error(line, meta ?? {});
-      return;
-    }
-    console.info(line, meta ?? {});
+    writer(`${entry}\n`);
   }
 
   return {
