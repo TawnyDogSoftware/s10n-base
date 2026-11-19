@@ -1,7 +1,8 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createFakeBackend } from "../test/fake-backend";
+import { createFakeBackend } from "@s10n-base/client/testing/fake-backend";
+
 import { click, renderApp, type, waitForLocation } from "../test/render";
 import { ADMIN_USERS_PAGE_SIZE } from "./admin-users";
 

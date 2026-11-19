@@ -1,11 +1,31 @@
 /**
- * An in-memory stand-in for the server, behind a `fetch` the app's clients use in tests: the
+ * An in-memory stand-in for the server, behind a `fetch` the apps' clients use in tests: the
  * session route, the RPC methods and the Better Auth routes the screens call, with the same
  * envelopes and error codes. Tests make any request fail with `failNext`.
+ *
+ * Two ways to know who is signed in. The default, for the web app's tests, is one signed-in user
+ * per backend, as if the browser's cookie jar were part of the server. With `cookies: true`, for
+ * the mobile app, sign-in answers with a `Set-Cookie` session token and every request is
+ * authenticated by the `cookie` header it carries, so a client that does not send the cookie is
+ * signed out, as it would be against the real server.
+ *
+ * Test code only: no app imports this file.
  */
 import type { AdminUser, AppSession, Profile } from "@s10n-base/contracts";
+import { AUTH_COOKIE_PREFIX } from "@s10n-base/shared/auth";
 
+/** The web app's origin in tests. */
 export const ORIGIN = "http://localhost:5173";
+
+/** The session cookie's name, as Better Auth names it with our prefix. */
+export const SESSION_COOKIE = `${AUTH_COOKIE_PREFIX}.session_token`;
+
+export interface FakeBackendOptions {
+  /** The origin requests must go to. Defaults to {@link ORIGIN}. */
+  readonly origin?: string;
+  /** Authenticate by the `cookie` header instead of one shared signed-in user. */
+  readonly cookies?: boolean;
+}
 
 export interface FakeUser {
   readonly id: string;
@@ -37,8 +57,20 @@ const authError = (status: number, code: string) => json({ code, message: code }
 const rpcError = (status: number, code: string) =>
   json({ ok: false, error: { code, message: code } }, status);
 
-export function createFakeBackend() {
+function sessionToken(cookieHeader: string | null): string | undefined {
+  for (const part of (cookieHeader ?? "").split(";")) {
+    const [name, ...value] = part.trim().split("=");
+    if (name === SESSION_COOKIE) return value.join("=");
+  }
+  return undefined;
+}
+
+export function createFakeBackend(options: FakeBackendOptions = {}) {
+  const origin = options.origin ?? ORIGIN;
+  const cookieMode = options.cookies === true;
   const users = new Map<string, FakeUser>();
+  /** Cookie mode: the user id of each live session token. */
+  const sessions = new Map<string, string>();
   /** Tokens from emails, by token: who it is for and what it does. */
   const tokens = new Map<string, { email: string; kind: "verify" | "reset" }>();
   const requests: SeenRequest[] = [];
@@ -59,8 +91,18 @@ export function createFakeBackend() {
           role: user.role,
           emailVerified: user.verified,
         };
-  const current = () =>
-    signedIn === null ? undefined : [...users.values()].find((user) => user.id === signedIn);
+  /** The user the request is from: by its cookie in cookie mode, otherwise the shared one. */
+  let requestCookie: string | null = null;
+  const current = () => {
+    const id = cookieMode ? sessions.get(sessionToken(requestCookie) ?? "") : signedIn;
+    return id === null || id === undefined
+      ? undefined
+      : [...users.values()].find((user) => user.id === id);
+  };
+  const withCookie = (response: Response, cookie: string) => {
+    if (cookieMode) response.headers.append("set-cookie", cookie);
+    return response;
+  };
   const profileOf = (user: FakeUser): Profile => ({
     ...(sessionOf(user) as AppSession),
     createdAt: user.createdAt,
@@ -156,11 +198,20 @@ export function createFakeBackend() {
           return authError(403, "EMAIL_NOT_VERIFIED");
         }
         signedIn = user.id;
-        return json({ redirect: false, token: "t", user: { id: user.id } });
+        const token = `session-${nextId++}`;
+        sessions.set(token, user.id);
+        return withCookie(
+          json({ redirect: false, token: "t", user: { id: user.id } }),
+          `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`,
+        );
       }
       case "POST /sign-out":
         signedIn = null;
-        return json({ success: true });
+        sessions.delete(sessionToken(requestCookie) ?? "");
+        return withCookie(
+          json({ success: true }),
+          `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
+        );
       case "GET /verify-email": {
         const entry = tokens.get(query.get("token") ?? "");
         if (entry?.kind !== "verify") return authError(401, "INVALID_TOKEN");
@@ -181,6 +232,7 @@ export function createFakeBackend() {
         if (user !== undefined) user.password = body.newPassword ?? "";
         tokens.delete(body.token ?? "");
         signedIn = null;
+        sessions.clear();
         return json({ status: true });
       }
       case "GET /passkey/list-user-passkeys": {
@@ -208,22 +260,24 @@ export function createFakeBackend() {
     const body = text === "" ? undefined : (JSON.parse(text) as unknown);
     const seen = { method: request.method, path: url.pathname, search: url.search, body };
     requests.push(seen);
+    const cookie = request.headers.get("cookie");
     const hold = holds.get(url.pathname);
     if (hold !== undefined) await hold;
     const failure = failures.get(url.pathname);
     if (failure !== undefined) {
       failures.delete(url.pathname);
       if (failure.kind === "network") {
-        if (failure.afterHandling === true) answer(request.method, url, body);
+        if (failure.afterHandling === true) answer(request.method, url, body, cookie);
         throw new TypeError("Failed to fetch");
       }
       return json(failure.body, failure.status);
     }
-    return answer(request.method, url, body);
+    return answer(request.method, url, body, cookie);
   };
 
-  function answer(method: string, url: URL, body: unknown): Response {
-    if (url.origin !== ORIGIN) throw new TypeError(`Unexpected origin ${url.origin}`);
+  function answer(method: string, url: URL, body: unknown, cookie: string | null): Response {
+    if (url.origin !== origin) throw new TypeError(`Unexpected origin ${url.origin}`);
+    requestCookie = cookie;
     if (url.pathname === "/api/app-auth/session" && method === "GET") {
       return json({ ok: true, data: { session: sessionOf(current()) } });
     }
@@ -253,8 +307,13 @@ export function createFakeBackend() {
     },
     signOutEverywhere() {
       signedIn = null;
+      sessions.clear();
     },
-    signedInUser: () => current(),
+    /** The shared signed-in user (not used in cookie mode). */
+    signedInUser: () =>
+      signedIn === null ? undefined : [...users.values()].find((user) => user.id === signedIn),
+    /** Cookie mode: how many sessions are live. */
+    liveSessions: () => sessions.size,
     /** The latest unused token of a kind for an address, as the email would carry it. */
     tokenFor(email: string, kind: "verify" | "reset") {
       return [...tokens]

@@ -1,7 +1,8 @@
 import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { createFakeBackend } from "../test/fake-backend";
+import { createFakeBackend } from "@s10n-base/client/testing/fake-backend";
+
 import { click, renderApp, type, waitForLocation } from "../test/render";
 
 function backendWith(...emails: string[]) {

@@ -28,6 +28,10 @@
       "types": "./src/session.ts",
       "import": "./src/session.ts"
     },
+    "./testing/fake-backend": {
+      "types": "./src/testing/fake-backend.ts",
+      "import": "./src/testing/fake-backend.ts"
+    },
     "./use-pending": {
       "types": "./src/use-pending.ts",
       "import": "./src/use-pending.ts"
@@ -44,6 +48,7 @@
   "dependencies": {
     "@s10n-base/contracts": "workspace:*",
     "@s10n-base/i18n": "workspace:*",
+    "@s10n-base/shared": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

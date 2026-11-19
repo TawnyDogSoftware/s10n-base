@@ -2,11 +2,15 @@ import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect } from "vitest";
 
+import {
+  createFakeBackend,
+  type FakeBackend,
+  ORIGIN,
+} from "@s10n-base/client/testing/fake-backend";
 import { createReactI18n } from "@s10n-base/i18n/react";
 
 import { type AppRouter, getRouter } from "../router";
 import { createServices, type WebServices } from "../services";
-import { createFakeBackend, type FakeBackend, ORIGIN } from "./fake-backend";
 
 export interface RenderedApp {
   readonly router: AppRouter;
