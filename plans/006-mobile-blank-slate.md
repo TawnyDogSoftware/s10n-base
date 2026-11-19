@@ -190,7 +190,7 @@ Not shippable without a real https domain. Better Auth's passkey client needs th
 - **`eas.json` uses `appVersionSource: "local"`**, so nothing reads versions from EAS's servers.
 - **Admin list on mobile** shows each user as a card with role, verification, status and join date, since a phone has no room for the web's table.
 - **Sign-out on mobile cannot be left "unknown"**: the Expo client clears the stored cookie before sending, so the session read afterwards is always signed out. The screen still runs it through `gate.settle` like the web.
-- **New i18n keys:** `auth.checkEmail.inBrowser`, `auth.checkEmail.toSignIn`, `auth.forgotPassword.inBrowser`, `profile.session.introApp`, `common.startError.*`.
+- **New i18n keys:** `auth.checkEmail.inBrowser`, `auth.checkEmail.toSignIn`, `auth.forgotPassword.inBrowser`, `profile.session.introApp`, `common.startError.*`, and `admin.detail` (a label and its value, so the separator is translatable).
 
 ### Claims in plans 000 to 006 that did not hold
 

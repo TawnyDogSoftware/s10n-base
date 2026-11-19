@@ -182,6 +182,7 @@ export const en = {
     },
     yes: "Yes",
     no: "No",
+    detail: "{{label}}: {{value}}",
     active: "Active",
     banned: "Banned",
     empty: "No users yet.",

@@ -46,14 +46,16 @@ function UserList() {
         <View key={user.id} role="listitem" className="border-border gap-1 rounded-md border p-3">
           <Text className="text-foreground font-semibold">{user.name}</Text>
           <Body>{user.email}</Body>
-          <Body muted>
-            {[
-              `${t("columns.role")}: ${t(`roles.${user.role}`)}`,
-              `${t("columns.verified")}: ${user.emailVerified ? t("yes") : t("no")}`,
-              `${t("columns.status")}: ${user.banned ? t("banned") : t("active")}`,
-              `${t("columns.created")}: ${date.format(new Date(user.createdAt))}`,
-            ].join("\n")}
-          </Body>
+          {[
+            { label: t("columns.role"), value: t(`roles.${user.role}`) },
+            { label: t("columns.verified"), value: user.emailVerified ? t("yes") : t("no") },
+            { label: t("columns.status"), value: user.banned ? t("banned") : t("active") },
+            { label: t("columns.created"), value: date.format(new Date(user.createdAt)) },
+          ].map(({ label, value }) => (
+            <Body key={label} muted>
+              {t("detail", { label, value })}
+            </Body>
+          ))}
         </View>
       ))}
       {query.isFetchNextPageError ? (

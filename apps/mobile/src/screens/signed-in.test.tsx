@@ -139,5 +139,7 @@ describe("UsersScreen", () => {
 
     expect(await screen.findByText("sam@example.com")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+    expect(screen.getAllByText("Role: Admin")).toHaveLength(1);
+    expect(screen.getAllByText("Email confirmed: Yes").length).toBeGreaterThan(1);
   });
 });
