@@ -73,6 +73,7 @@
     "lint:oxlint": "oxlint . --deny-warnings --report-unused-disable-directives",
     "lint:eslint": "eslint . --max-warnings=0",
     "deadcode": "knip && knip --production --exclude exports,types",
+    "boundaries": "depcruise apps packages scripts --output-type err",
     "fmt": "oxfmt .",
     "fmt:check": "oxfmt --check .",
     "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules apps/*/dist packages/*/dist .turbo apps/mobile/.expo apps/mobile/ios apps/mobile/android",
