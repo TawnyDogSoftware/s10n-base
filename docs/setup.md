@@ -24,16 +24,16 @@ bun dev
 
 1. starts Postgres from `docker-compose.local.yml` and waits until it is healthy,
 2. applies migrations (`db:migrate`),
-3. runs the API server in watch mode and the Vite dev server,
-4. stops both when you press Ctrl-C, or when either of them exits.
+3. runs the local SES capture server (when `SES_ENDPOINT` is set, as in `.env.example`), the API server in watch mode and the Vite dev server,
+4. stops them all when you press Ctrl-C, or when any of them exits.
 
-Open `APP_URL` (`http://localhost:5173` by default). The browser talks only to Vite, which proxies `/rpc`, `/api`, `/config`, `/health` and `/ready` to the API server on `PORT`. The database keeps running after `bun dev` stops; `bun run db:down` stops it.
+Open `APP_URL` (`http://localhost:5173` by default). Emails the server sends (verification, password reset) are captured, not delivered: read them in the local inbox at `http://127.0.0.1:8005/`, which `bun dev` prints when it starts. [docs/auth.md](auth.md) explains how auth works. The browser talks only to Vite, which proxies `/rpc`, `/api`, `/config`, `/health` and `/ready` to the API server on `PORT`. The database keeps running after `bun dev` stops; `bun run db:down` stops it.
 
-To run the two halves on their own: `bun run dev:server` and `bun run dev:web` (start the database first with `bun run db:up`).
+To run the parts on their own: `bun run dev:server`, `bun run dev:web` and `bun run ses:local` (start the database first with `bun run db:up`).
 
 ## Environment variables
 
-The server reads these once at startup and refuses to start if any is invalid, listing every problem in one log line. A value of `DATABASE_URL` is never printed.
+The server reads these once at startup and refuses to start if any is invalid, listing every problem in one log line. The value of a secret (`DATABASE_URL`, `BETTER_AUTH_SECRET`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`) is never printed.
 
 | Variable                   | Rule                                                                                                                                       | Default       |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------- |
@@ -47,6 +47,15 @@ The server reads these once at startup and refuses to start if any is invalid, l
 | `REQUEST_BODY_LIMIT_BYTES` | Integer, at least 1024                                                                                                                     | `1048576`     |
 | `SHUTDOWN_TIMEOUT_MS`      | Integer 1000 to 60000: how long a shutdown waits for requests in flight                                                                    | `10000`       |
 | `LOG_LEVEL`                | `debug`, `info`, `warn` or `error`                                                                                                         | `info`        |
+| `BETTER_AUTH_SECRET`       | At least 32 characters. A secret. Production refuses the value in `.env.example`.                                                          | required      |
+| `APP_VARIANT`              | `development`, `preview` or `production`: the mobile app build this server serves. Must be set in production.                              | `development` |
+| `EMAIL_FROM`               | A plain email address, the sender of every email                                                                                           | required      |
+| `SUPPORT_EMAIL`            | A plain email address, shown in email footers and used as the reply-to                                                                     | required      |
+| `SES_REGION`               | An AWS region name such as `us-east-1`                                                                                                     | required      |
+| `SES_ENDPOINT`             | A loopback origin that replaces the AWS endpoint (the local capture server). Refused in production.                                        | unset         |
+| `AWS_ACCESS_KEY_ID`        | The SES sender's access key. Production refuses the placeholder `local`.                                                                   | required      |
+| `AWS_SECRET_ACCESS_KEY`    | Its secret. A secret. Production refuses the placeholder `local`.                                                                          | required      |
+| `AWS_SESSION_TOKEN`        | For temporary credentials. A secret.                                                                                                       | unset         |
 
 The live tests also read `TEST_DATABASE_URL` (below).
 
@@ -57,7 +66,16 @@ Notes:
 - **`APP_URL`** is also what `GET /config` returns as `apiBaseUrl`, and the only origin allowed by CORS. In development it is the Vite dev server's origin, and Vite listens on its host and port.
 - **`TRUSTED_PROXY_HOPS`** decides which `X-Forwarded-For` entry is the client's address: with one proxy, the last entry; with two, the one before it. With `0` the header is ignored and the socket's address is used. Set it to exactly the number of proxies you run, or clients can choose their own address.
 - **`SHUTDOWN_TIMEOUT_MS`:** on SIGTERM or SIGINT the server stops accepting connections, answers `/ready` with 503, waits up to this long for requests in flight, then closes what is left and the database pool. It exits 0 after a clean stop and 1 when it had to force anything.
+- **`SES_ENDPOINT`, `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`:** `.env.example` points the server at the local capture server with the placeholder keys `local`/`local`, so email works on a fresh clone with no AWS account. In production, leave `SES_ENDPOINT` unset and give real keys for an IAM user allowed to call `ses:SendEmail`; `EMAIL_FROM` must be a verified SES identity.
 - `S10N_BASE_PORT` no longer exists; use `PORT`.
+
+## The local inbox
+
+`bun run ses:local` (started by `bun dev`) captures the emails the server sends. Open `http://127.0.0.1:8005/` to read them, newest first, with their links clickable. `GET /store` returns them as JSON and `POST /clear-store` empties the store. It keeps the last 200 emails in memory and listens on loopback only. Details are in [docs/auth.md](auth.md#the-local-inbox).
+
+## The first admin
+
+Sign up, follow the link in the inbox, then run `bun run auth:set-role you@example.com admin`.
 
 ## Health checks
 
@@ -116,6 +134,7 @@ bun run test:live   # tests against Postgres
 
 The live tests are files named `*.live.test.ts` under `apps/server/src`, run by `apps/server/vitest.live.config.ts`. They are not part of `bun run test`.
 
+- The auth tests start the server on a free port with the capture server in the same process, and read emails from it. Nothing else needs to be running except Postgres.
 - They need `TEST_DATABASE_URL`, which never falls back to `DATABASE_URL`. Before any change to the database, the fixture checks that the URL names a database ending in `_test` and that the open connection reports that same database.
 - Each suite works in its own throwaway schema (`fixture_<time>_<random>`), passed to the pool as its `searchPath`, and drops it afterwards.
 - A run that is killed can leave a schema behind. `bun run db:test:sweep` drops fixture schemas more than ten minutes old.

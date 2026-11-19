@@ -4,6 +4,23 @@ Scaffold-level changes to S10N Base, newest first. Projects created from an earl
 
 ## Unreleased
 
+### Added: auth (Better Auth, our own SES sender, a local inbox)
+
+Users can sign up, verify their email, sign in, reset their password and add passkeys, over HTTP; there is no UI yet. Details and reasons are in `plans/004-auth.md`; how it works is in `docs/auth.md`.
+
+- **Better Auth 1.7.25** with `@better-auth/expo` and `@better-auth/passkey` at the same exact version, and `better-call` 1.4.5 declared directly (a test checks it equals the version `better-auth` depends on). Email and password with verification required, the `expo` plugin, the `admin` plugin (roles `user` and `admin`, the stock `/admin/remove-user` off) and passkeys. Telemetry off.
+- **Options** are built by one tested function (`apps/server/src/auth/options.ts`): `ba_*` tables with snake_case columns and UUID ids, both kinds of email link valid for one hour, sessions revoked on password reset, rate limits on in every environment and kept in the database, cookies prefixed `s10n-base.` and `Secure` under https, trusted origins `APP_URL`, the app variant's URL scheme and (development only) `exp://`. Better Auth's origin and CSRF checks are set on explicitly, since Better Auth turns them off when `NODE_ENV` is `test`.
+- **Migration `001_auth`:** the six tables, with foreign keys that cascade from the user. A live test compares them with Better Auth's schema for our options, both ways.
+- **`/api/auth/*`** goes through a route guard matched with Better Auth's own router, admitting only the routes `apps/server/src/auth/allowed-routes.ts` exposes (404 JSON otherwise, before the body is read), then a Node-to-Fetch bridge that builds the URL from `APP_URL`, applies the body limit, passes the resolved client address in an internal header and keeps every `Set-Cookie`. A test fails when Better Auth serves a route nobody decided about.
+- **`GET /api/app-auth/session`** returns the app-owned `AppSession` (new in `packages/contracts`), or `null`.
+- **RPC:** the caller comes from the session, looked up only for methods that need it; handlers call `context.getActor()` (this replaces `context.actor`). `/rpc` and `/api/app-auth/*` refuse a request whose `Origin` is not trusted (403).
+- **Email:** our own Amazon SES v2 client (a SigV4 signer verified against the AWS test suite, one `fetch` per email, retries only when SES certainly did not accept it, typed errors without secrets) behind `AuthEmailSender`. No AWS SDK.
+- **Local inbox:** `bun run ses:local`, our own capture server, which `bun dev` also starts. It checks each request's signature, keeps the last 200 emails, and serves an inbox at `http://127.0.0.1:8005/` and the emails as JSON at `/store`. It replaces the SES emulator package.
+- **New variables:** `BETTER_AUTH_SECRET`, `APP_VARIANT`, `EMAIL_FROM`, `SUPPORT_EMAIL`, `SES_REGION`, `SES_ENDPOINT`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`. Production refuses the example secret, `SES_ENDPOINT` and the placeholder keys, and requires `APP_VARIANT`.
+- **`bun run auth:set-role <email> <role>`** (and `dist/set-role.mjs`) makes the first admin.
+- **`packages/shared/app-variants`:** the mobile app variants' URL schemes and display names, with placeholder values.
+- **Formatter:** the generated database types and the SigV4 test-suite fixtures are excluded from oxfmt, so they stay exactly as generated or published.
+
 ### Added: hosted server core (Postgres, config, hardened HTTP, graceful shutdown, RPC auth levels)
 
 The server can now run as a multi-instance hosted service, with no auth yet. Details and reasons are in `plans/003-hosted-server-core.md`; setup is in `docs/setup.md`.

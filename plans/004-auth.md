@@ -1,6 +1,6 @@
 # 004: Auth
 
-> Status: not started.
+> Status: implemented on 2026-11-19, on branch `feature/001-strip-desktop-and-local-first` (PR #1, which carries the whole rework).
 
 Phase 4 of [000](000-hosted-starter-rework.md). Builds on [003](003-hosted-server-core.md). Source labels such as `[S4]` are resolved in the private companion's README; nothing from that directory is copied into this repo.
 
@@ -156,4 +156,60 @@ Done when sections 3 to 8 are in, the above passes, nothing in section 2 was tou
 
 ## 10. How it was built
 
-Filled in by the implementor.
+Implemented on 2026-11-19 on Node 26.13.1 and bun 1.4.4, with Docker for the local Postgres. Registry data was read the same day.
+
+### Dependency versions
+
+| Package | Version | Published | Where |
+| --- | --- | --- | --- |
+| `better-auth` | `1.7.25` exact | 2026-11-14 | server dependency |
+| `@better-auth/expo` | `1.7.25` exact | 2026-11-14 | server dependency |
+| `@better-auth/passkey` | `1.7.25` exact | 2026-11-14 | server dependency |
+| `better-call` | `1.4.5` exact | 2026-11-03 | server dependency; the exact version `better-auth` 1.7.25 depends on |
+
+1.7.26 (published 2026-11-18) and better-call 1.4.6 were too young for the 3-day rule. `@better-auth/expo` installs without any Expo package: its Expo peers are all optional. The lockfile gained 43 packages (326 to 369 entries), most of them the passkey plugin's WebAuthn libraries (`@simplewebauthn/*`, `@peculiar/*`, `asn1js`, `tsyringe`) and Better Auth's adapter packages, which `better-auth` depends on even when unused. Kysely resolves to the one 0.29.9 the server already uses. `bun audit`: no vulnerabilities (330 packages). Nothing else was added: no AWS SDK, no emulator, no mail library.
+
+### What Better Auth 1.7.25 required that the plan did not predict
+
+- **It turns its origin and CSRF checks off when `NODE_ENV` is `test`** (`skipOriginCheck` defaults to `isTest()`; the CSRF check follows it). Under Vitest, which sets `NODE_ENV=test`, the first live run accepted a sign-in from `Origin: https://evil.example.com`. The options now set `advanced.disableOriginCheck: false` and `advanced.disableCSRFCheck: false`, and live tests show foreign-origin sign-ins and cookie-carrying requests refused with 403. Its own checks apply to a sign-in or sign-up that carries an `Origin` (or Fetch Metadata headers) and to any request carrying a cookie; a request with neither, as a native app or curl sends, is accepted.
+- **The `casing` option is accepted by the type but not used.** No code in 1.7.25 reads it. Every column is mapped explicitly (`AUTH_TABLES` in `options.ts`), and `casing` is not passed.
+- **With `generateId: "uuid"` on Postgres, Better Auth does not generate ids**: the Kysely adapter reports UUID support, so inserts omit the id and rely on the column default. The migration defaults every id to `gen_random_uuid()`.
+- **`getSchema` keys fields by column name** once fields are mapped, and Better Auth's own migration planner (`getMigrations`) does not report an extra column or a text column of the wrong type (checked by mutating the migration). So the live schema test has its own comparison (`auth/schema-check.ts`) and also requires the planner to have nothing to do.
+- **The passkey plugin's `userId` reference declares no delete rule**, and the admin plugin's `impersonatedBy` is a plain string with no reference. The migration cascades both from the user; the schema comparison records the second as our own choice (`OWN_CHOICES`).
+- **The `expo` plugin adds `exp://` to the trusted origins by itself** when `process.env.NODE_ENV` is `development`, reading the process environment rather than our config. Our list has the same rule, so they agree.
+- **Rate limits** are on only in production unless `enabled` is set (it is). The defaults are 3 per 10 seconds for sign-in, sign-up and change-password, 3 per 60 seconds for the email-sending routes, and 100 per 10 seconds elsewhere, per address and path. Postgres returns `last_request` (a `bigint`) as a string; Better Auth's arithmetic copes, and the live test shows limits working.
+- **The Better Auth web client** sends only `GET` and `POST` with `content-type: application/json` and `credentials: "include"`, so CORS needed no change (section 5.3).
+- `auth.api` exposes the whole inventory with `path` and `options.method`/`options.metadata.SERVER_ONLY`, so the guard needs no private API. Better Auth builds a new router per request in `auth.handler`; the guard builds one router at startup.
+
+### SigV4 and the line estimates
+
+- **Test vectors:** AWS's documentation no longer offers the suite (`aws-sig-v4-test-suite.zip` answers 404, and the test-suite page redirects to the IAM guide's introduction). The IAM guide's Signature Version 4 pages link to `awslabs/aws-c-auth`, which keeps the suite. Its 38 `v4` cases were fetched at commit `f556deacd6e6d9dbf540ff00a9bf383688076874` and committed unchanged, with `LICENSE` and `NOTICE` (Apache-2.0), in `apps/server/src/infra/email/sigv4-test-suite/`. Only the header-signing files were copied. **The signer matches all 38**: canonical request, string to sign, signature and `Authorization` header, including the path normalisation, query ordering and encoding, header folding and duplicates, the session token signed and added after signing, and the signed payload hash.
+- **Details plan 000 left out:** outside S3 the canonical path is the encoding of the path as sent (so `/a%20b` is signed as `/a%2520b`); query parameters are decoded and encoded once; header values are trimmed with inner whitespace collapsed and repeats joined by commas.
+- **Size:** the signer is about 150 lines of code plus a 70-line verifier for the capture server, and the SES client about 210, against plan 000's "about 150" for both. The capture server is about 250 lines of code against "about 120", most of it request validation and the inbox page.
+
+### Departures from this plan, with reasons
+
+- **Formatter exclusions.** `kysely-codegen --verify` compares the generated file byte for byte and oxfmt reformats it, so `generated/**` is excluded from oxfmt; the SigV4 fixtures are excluded so they stay as published. `plans/` stays excluded.
+- **The capture server imports the signer from `apps/server`**, and the server's `tsconfig.json` includes `scripts/ses-local/server.ts`, so the live tests can start it in-process. One signer serves both; the AWS vectors keep it honest, so a bug cannot hide in a matching verifier.
+- **`context.actor` became `context.getActor()`**, to make the lookup lazy (section 5.4): a public method costs no session query, and any handler looks the caller up at most once.
+- **The cross-site check uses Better Auth's own origin matcher** (`(await auth.$context).isTrustedOrigin`), so `/rpc` and Better Auth agree on what is trusted.
+- **Email links are Better Auth's own routes**: `/api/auth/verify-email?token=…` and `/api/auth/reset-password/<token>`, which redirects to the client's `redirectTo` with the token. With no web screens yet, these are what a user can follow. Phase 5 can point them at its own pages.
+- **Replies go to `SUPPORT_EMAIL`** (`ReplyToAddresses`), since `EMAIL_FROM` is a no-reply address.
+- **Retries:** besides a refused connection, a failed DNS lookup (`ENOTFOUND`, `EAI_AGAIN`) is retried, since nothing reached SES. `LimitExceededException` (a used-up quota) is "throttled" but not retried. A reset connection after sending is not retried. The default schedule is at most two retries, backing off from 250 ms with jitter.
+- **Admin routes exposed:** list and get users, set role, ban and unban, list and end a user's sessions, and has-permission. Not exposed: create-user, update-user, set-user-password, impersonate and stop-impersonating. Each has its reason in `allowed-routes.ts`.
+- **`auth:set-role`** is also built as `dist/set-role.mjs`, since a deployment needs its first admin too. It exits 2 for bad arguments and 1 for an unknown user.
+- **CI** needed no change: the live and smoke steps read the new variables from `.env.example` through `scripts/with-env.ts`, like the phase 3 ones, and the capture server runs inside the test process.
+- **Extra indexes** are allowed by the schema comparison (an index Better Auth expects must exist; one it does not expect, such as `ba_session.impersonated_by`'s, is fine). Everything else must match both ways.
+- The capture server also checks the signature date (15 minutes either way, as AWS does) and keeps the last 200 emails with a 1 MB body limit.
+
+### For later phases
+
+- **Phase 5 (web, `packages/client`, `packages/i18n`):** the session route answers `{ok: true, data: {session}}` with `AppSession` from `contracts`. Sign-up should pass `callbackURL` (where the verification link lands) and password reset `redirectTo` (the page that receives `?token=`); both must be under `APP_URL`. The email text in `auth/email/text.ts` moves to `packages/i18n`. RPC handlers get the caller with `await context.getActor()`. The Better Auth client works with the current CORS and the Vite proxy. The profile's passkey management uses the exposed `/passkey/*` routes; the admin user list can use the exposed `/admin/list-users` or an RPC method, but a role check in RPC gives one place to audit.
+- **Phase 6 (Expo):** the server trusts `<urlScheme>://` for its `APP_VARIANT` from `packages/shared/src/app-variants.ts`; extend that table with bundle ids rather than adding a second one. The Expo client sends `expo-origin`, which the `expo` plugin turns into `Origin` for Better Auth's checks; requests to `/rpc` without an `Origin` pass our check and need the session cookie the client stores. `exp://` is trusted only with `NODE_ENV=development`. The passkey relying-party id is `APP_URL`'s host, which matters for native passkeys.
+- **Phase 7 (Playwright):** read emails from the capture server's `/store` and call `/clear-store` between tests. Rate limits are on in every environment and keyed by client address: a journey that signs in more than three times in ten seconds from one address gets 429, unless the server runs with `TRUSTED_PROXY_HOPS=1` and the test sends its own `X-Forwarded-For` (as the live tests do). For a virtual authenticator, the relying party is `localhost` with the default `APP_URL`. Better Auth's origin checks stay on under `NODE_ENV=test`, so the browser's `Origin` must be `APP_URL`.
+- **Phase 8 (deployment):** production needs real SES keys, a verified `EMAIL_FROM` identity, `APP_VARIANT` and a generated `BETTER_AUTH_SECRET`; `dist/set-role.mjs` creates the first admin. The bundle keeps `better-auth` and its plugins external, so the image needs them in `node_modules`.
+
+### Verification on the final commit (section 9)
+
+Filled in on the final commit; see below and the PR description.
+

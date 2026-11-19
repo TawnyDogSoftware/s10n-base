@@ -10,7 +10,7 @@ It was derived from [`t3code`](https://github.com/pingdotgg/t3code), keeping the
 
 - Bun workspaces + Turbo
 - Strict TypeScript across apps and packages
-- `apps/server`: Node HTTP server with a typed RPC endpoint, Postgres through Kysely, and Effect layers for startup and shutdown
+- `apps/server`: Node HTTP server with a typed RPC endpoint, Better Auth (email and password, passkeys, admin roles), Postgres through Kysely, and Effect layers for startup and shutdown
 - `apps/web`: React 19 + Vite + Tailwind CSS v4 + TanStack Router + TanStack Query
 - `packages/contracts`: shared Effect schemas and RPC contracts
 - `packages/shared`: small cross-runtime helpers
@@ -45,17 +45,26 @@ Install dependencies:
 bun install
 ```
 
-Start Postgres, apply migrations, and run the server and web app in development (Ctrl-C stops them):
+Start Postgres, apply migrations, and run the server, the web app and the local email inbox in development (Ctrl-C stops them):
 
 ```bash
 bun dev
 ```
+
+Emails are captured, not sent: read them at [http://127.0.0.1:8005/](http://127.0.0.1:8005/), the local inbox.
 
 Run individual apps (start the database first with `bun run db:up`):
 
 ```bash
 bun run dev:server
 bun run dev:web
+bun run ses:local   # the local SES capture server and inbox
+```
+
+Make a user an admin:
+
+```bash
+bun run auth:set-role you@example.com admin
 ```
 
 Database:
@@ -118,12 +127,13 @@ bun run clean
 - Web dev server, the app's origin in development (`APP_URL`): `http://localhost:5173`
 - Server: `http://127.0.0.1:4210`
 - Postgres: `127.0.0.1:54320`
+- Local email inbox (SES capture server): `http://127.0.0.1:8005`
 
 In development, the Vite app proxies `/rpc`, `/api`, `/config`, `/health` and `/ready` to the server.
 
 ## Environment Variables
 
-The server needs `APP_URL` and `DATABASE_URL` and validates every variable at startup. `.env.example` lists them all with development values; `bun dev` and the `db:*` scripts use it unless you create a `.env`. The full table is in [docs/setup.md](docs/setup.md#environment-variables).
+The server needs `APP_URL`, `DATABASE_URL`, `BETTER_AUTH_SECRET`, the email addresses and the SES settings, and validates every variable at startup. `.env.example` lists them all with development values; `bun dev` and the `db:*` scripts use it unless you create a `.env`. The full table is in [docs/setup.md](docs/setup.md#environment-variables).
 
 ## Server Surface
 
@@ -133,6 +143,10 @@ The server currently exposes:
 - `GET /ready` (readiness: checks the database)
 - `GET /config`
 - `POST /rpc`
+- `/api/auth/*` (Better Auth, behind a route allow-list)
+- `GET /api/app-auth/session`
+
+How auth works is in [docs/auth.md](docs/auth.md).
 
 When `apps/web/dist` exists, the server also serves the built web app.
 

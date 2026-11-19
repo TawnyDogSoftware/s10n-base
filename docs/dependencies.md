@@ -63,7 +63,7 @@ The current entries:
 - `@types/react`, `@types/react-dom`: inside `~19.3.0`, with React.
 - `typescript`: below 6.1, because typescript-eslint supports nothing newer.
 - `better-auth`, `@better-auth/expo`, `@better-auth/passkey`: one group, always on one version.
-- `better-call`: must equal the exact version `better-auth` depends on, which is a different number from better-auth's own version, so it cannot be in the group. Change it by hand whenever the group moves.
+- `better-call`: must equal the exact version `better-auth` depends on, which is a different number from better-auth's own version, so it cannot be in the group. Change it by hand whenever the group moves; `holds.test.ts` fails when it differs from the version in `better-auth`'s own manifest (as recorded in `bun.lock`), and when the group is not pinned exactly. The route guard uses it directly (see `docs/auth.md`).
 - `kysely`: `0.29.x`, the range Better Auth supports.
 
 To change a hold, edit the file and run `bun run test`.
