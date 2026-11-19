@@ -45,9 +45,7 @@ import { createRpcHandlers } from "./rpc/handlers";
 /** How long `/ready` waits for `select 1`. */
 const READINESS_TIMEOUT = Duration.seconds(2);
 
-export class AppConfig extends Context.Service<AppConfig, ServerConfig>()(
-  "s10n-base/server/AppConfig",
-) {
+class AppConfig extends Context.Service<AppConfig, ServerConfig>()("s10n-base/server/AppConfig") {
   /** Reads the config from the current `ConfigProvider` (the environment by default). */
   static readonly fromEnvironment = Layer.effect(AppConfig, loadServerConfig);
   static readonly layer = (config: ServerConfig) => Layer.succeed(AppConfig, config);
@@ -333,7 +331,7 @@ export interface StartedServer {
  * @throws the config, database or listen error when startup fails, after releasing whatever
  * was acquired.
  */
-export async function startWithConfigLayer(
+async function startWithConfigLayer(
   config: Layer.Layer<AppConfig, unknown>,
   options: ServerLayerOptions = {},
 ): Promise<StartedServer> {

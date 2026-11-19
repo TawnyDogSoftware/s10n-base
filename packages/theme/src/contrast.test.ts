@@ -50,3 +50,25 @@ describe("parseThemeModes", () => {
     );
   });
 });
+
+describe("parseThemeModes", () => {
+  it("reads blocks with nested braces", () => {
+    const css =
+      "@theme { --a: #000; } @variant light { :root { --b: #fff; } } @variant dark { --b: #111; }";
+
+    expect(parseThemeModes(css)).toEqual({
+      defaults: { "--a": "#000" },
+      light: { "--b": "#fff" },
+      dark: { "--b": "#111" },
+    });
+  });
+
+  it("refuses a theme with a missing or unclosed block", () => {
+    expect(() => parseThemeModes("@variant light { } @variant dark { }")).toThrow(
+      "The theme has no @theme { block.",
+    );
+    expect(() => parseThemeModes("@theme { --a: #000;")).toThrow(
+      "The theme has an unclosed block.",
+    );
+  });
+});

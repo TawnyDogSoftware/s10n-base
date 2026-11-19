@@ -26,7 +26,7 @@ function exitOf(child: ChildProcess): Promise<number> {
 }
 
 /** Sends SIGTERM to every child still running, then SIGKILL to any left after the grace period. */
-export async function stopAll(children: ReadonlyArray<Supervised>, graceMs = STOP_GRACE_MS) {
+async function stopAll(children: ReadonlyArray<Supervised>, graceMs = STOP_GRACE_MS) {
   const running = children.filter(
     ({ child }) => child.exitCode === null && child.signalCode === null,
   );

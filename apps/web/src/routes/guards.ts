@@ -39,6 +39,6 @@ export async function requireSession(
 export async function redirectSignedIn(context: RouterContext, target: unknown): Promise<void> {
   const session = await context.services.gate.ensure();
   if (session !== null) {
-    throw redirect({ href: safeRedirect(target, context.services.origin) ?? "/", replace: true });
+    throw redirect({ href: safeRedirect(target) ?? "/", replace: true });
   }
 }

@@ -2,6 +2,7 @@ import { createRoute, Outlet, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { useSession } from "@s10n-base/client/session";
+import type { AppSession } from "@s10n-base/contracts";
 
 import { Loading } from "../components/RouteStates";
 import { requireSession } from "./guards";
@@ -25,6 +26,14 @@ function SignedInLayout() {
   }, [session, router]);
   if (!session) return <Loading />;
   return <Outlet />;
+}
+
+/**
+ * The signed-in user's session, for a page under this layout: the layout renders its pages only
+ * while there is one, so it is never null here.
+ */
+export function useSignedInSession(): AppSession {
+  return useSession() as AppSession;
 }
 
 export const authedRoute = createRoute({

@@ -2,13 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { safeRedirect } from "./redirect";
 
-const ORIGIN = "https://app.example.com";
-
 describe("safeRedirect", () => {
   it.each(["/", "/profile", "/admin/users?x=1#top", "/a/b/../c", "/path%2F"])(
     "accepts the same-origin path %j",
     (target) => {
-      expect(safeRedirect(target, ORIGIN)).toBe(target);
+      expect(safeRedirect(target)).toBe(target);
     },
   );
 
@@ -26,10 +24,10 @@ describe("safeRedirect", () => {
     "",
     " /profile",
   ])("refuses %j", (target) => {
-    expect(safeRedirect(target, ORIGIN)).toBeUndefined();
+    expect(safeRedirect(target)).toBeUndefined();
   });
 
   it.each([undefined, null, 42, ["/profile"], {}])("refuses a non-string %j", (target) => {
-    expect(safeRedirect(target, ORIGIN)).toBeUndefined();
+    expect(safeRedirect(target)).toBeUndefined();
   });
 });

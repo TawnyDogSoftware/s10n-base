@@ -12,7 +12,7 @@ import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 
 /** Packages that must have exactly one copy in a bundle. */
-export const SINGLETONS = [
+const SINGLETONS = [
   "react",
   "react-native",
   "scheduler",
@@ -28,7 +28,7 @@ export const SINGLETONS = [
 ] as const;
 
 /** The workspace packages the app imports, which must be bundled from their source. */
-export const WORKSPACE_PACKAGES = ["client", "contracts", "i18n", "shared"] as const;
+const WORKSPACE_PACKAGES = ["client", "contracts", "i18n", "shared"] as const;
 
 /** A file's package directory and name: the innermost `node_modules` entry, scoped or not. */
 const PACKAGE = /^(.*\/node_modules\/((?:@[^/]+\/)?[^/]+))\//;

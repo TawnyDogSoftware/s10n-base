@@ -1,15 +1,12 @@
 import { createRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
-import { useSession } from "@s10n-base/client/session";
-
 import { linkClass, PageShell } from "../components/ui";
-import { authedRoute } from "./authed";
+import { authedRoute, useSignedInSession } from "./authed";
 
 function HomePage() {
   const { t } = useTranslation("common");
-  const session = useSession();
-  if (!session) return null;
+  const session = useSignedInSession();
   return (
     <PageShell title={t("home.title", { name: session.name })} intro={t("home.intro")} width="wide">
       <ul className="flex flex-col gap-2">

@@ -22,7 +22,7 @@ export interface RenderedApp {
 
 /** Renders the whole app at `path`, talking to a fake backend. */
 export function renderApp(path: string, backend: FakeBackend = createFakeBackend()): RenderedApp {
-  const services = createServices({ origin: ORIGIN, apiBaseUrl: ORIGIN, fetch: backend.fetch });
+  const services = createServices({ apiBaseUrl: ORIGIN, fetch: backend.fetch });
   const router = getRouter(createMemoryHistory({ initialEntries: [path] }), {
     services,
     i18n: createReactI18n(["en-US"]),

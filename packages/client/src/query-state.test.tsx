@@ -1,5 +1,5 @@
 import { onlineManager, QueryClient } from "@tanstack/react-query";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AppSession } from "@s10n-base/contracts";
@@ -9,6 +9,7 @@ import {
   SessionGateProvider,
   StaleSessionError,
   useProtectedQuery,
+  useSessionGate,
   type SessionGate,
 } from "./query-state";
 import { NetworkError, RpcError } from "./rpc";
@@ -227,6 +228,18 @@ describe("a response that started under one user and finished under another", ()
     await expect(result).rejects.toBeInstanceOf(StaleSessionError);
   });
 
+  it("is discarded from a guarded call that failed after the user changed", async () => {
+    const { gate } = setup();
+    accept(gate, alice);
+    const slow = deferred<string>();
+
+    const result = gate.guard(() => slow.promise);
+    accept(gate, bob);
+    slow.reject(new Error("failed for alice"));
+
+    await expect(result).rejects.toBeInstanceOf(StaleSessionError);
+  });
+
   it("is kept when the user did not change", async () => {
     const { gate } = setup();
     accept(gate, alice);
@@ -384,6 +397,30 @@ describe("ensure", () => {
     await expect(gate.ensure()).resolves.toEqual(alice);
     await expect(gate.ensure()).resolves.toEqual(alice);
     expect(server.fetchSession).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a gate made over a cache that already holds the session", () => {
+  it("does not purge for that session when it is read again", () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(SESSION_QUERY_KEY, alice);
+    queryClient.setQueryData(["user", "alice", "profile"], "alice's profile");
+    const gate = createSessionGate({
+      queryClient,
+      sessionClient: controllableSession(alice).client,
+    });
+
+    accept(gate, alice);
+
+    expect(queryClient.getQueryData(["user", "alice", "profile"])).toBe("alice's profile");
+  });
+});
+
+describe("useSessionGate", () => {
+  it("needs a SessionGateProvider above it", () => {
+    expect(() => renderHook(() => useSessionGate())).toThrow(
+      "useSessionGate needs a SessionGateProvider above it.",
+    );
   });
 });
 

@@ -12,7 +12,7 @@ import ts from "typescript";
 import { listSourceFiles } from "./lint-directives";
 import { parseSource } from "./source-comments";
 
-export type ExclusionKind = "test" | "types" | "generated" | "entry";
+type ExclusionKind = "test" | "types" | "generated" | "entry";
 
 export interface Exclusion {
   readonly pattern: string;
@@ -98,7 +98,7 @@ export const REVIEWED_EXCLUSIONS: readonly Exclusion[] = [
 ];
 
 /** The most statements an entry point may hold besides its imports. */
-export const ENTRY_STATEMENT_LIMIT = 3;
+const ENTRY_STATEMENT_LIMIT = 3;
 
 const LOGIC = new Set([
   ts.SyntaxKind.IfStatement,

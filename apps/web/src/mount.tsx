@@ -16,7 +16,7 @@ import { createServices } from "./services";
  */
 export function mountApp(page: Window, env: WebEnv): void {
   const origin = page.location.origin;
-  const services = createServices({ origin, apiBaseUrl: readApiBaseUrl(env, origin) });
+  const services = createServices({ apiBaseUrl: readApiBaseUrl(env, origin) });
   const i18n = createReactI18n(page.navigator.languages);
   page.document.documentElement.lang = i18n.language;
   const router = getRouter(createBrowserHistory({ window: page }), { services, i18n });

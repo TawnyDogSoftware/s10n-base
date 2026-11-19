@@ -36,8 +36,8 @@ function NameForm(props: { readonly profile: Profile }) {
     },
   });
 
+  // Only the Save button submits, and it is disabled while a save is pending.
   const submit = () => {
-    if (save.isPending) return;
     const checked = validateName(name);
     if (!checked.ok) {
       setFieldError(fieldErrorText(tAuth, checked.error));

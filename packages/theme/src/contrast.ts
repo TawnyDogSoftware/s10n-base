@@ -51,7 +51,9 @@ export interface ThemeModes {
 function blockBody(css: string, opener: RegExp): string {
   const match = opener.exec(css);
   if (match === null)
-    throw new Error(`The theme has no ${opener.source.replaceAll("\\s*", " ")} block.`);
+    throw new Error(
+      `The theme has no ${opener.source.replaceAll("\\s*", " ").replaceAll("\\", "")} block.`,
+    );
   const start = match.index + match[0].length;
   let depth = 1;
   for (let index = start; index < css.length; index += 1) {

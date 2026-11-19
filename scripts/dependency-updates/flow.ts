@@ -180,7 +180,7 @@ export function bunVersionOf(manifest: Manifest | undefined): string {
   return typeof value === "string" ? value.replace(/^bun@/, "") : "";
 }
 
-export async function readAtCommit(io: Io, sha: string, path: string): Promise<string | undefined> {
+async function readAtCommit(io: Io, sha: string, path: string): Promise<string | undefined> {
   const result = await io.run("git", ["show", `${sha}:${path}`]);
   return result.code === 0 ? result.stdout : undefined;
 }

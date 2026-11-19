@@ -15,7 +15,7 @@ import {
   type QueryResult,
 } from "kysely";
 
-export interface ScriptedQuery {
+interface ScriptedQuery {
   readonly sql: string;
   readonly parameters: readonly unknown[];
 }

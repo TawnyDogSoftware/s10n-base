@@ -7,6 +7,8 @@
   // project with a `!` after a negated pattern. See docs/quality.md.
   "workspaces": {
     ".": {
+      // Script entry points: package.json and CI run them, some through with-env.main.ts.
+      "entry": ["scripts/**/*.main.ts"],
       "project": ["scripts/**/*.ts", "e2e/**/*.ts", "*.{ts,mjs}"],
     },
     "apps/server": {

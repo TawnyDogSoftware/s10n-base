@@ -12,15 +12,12 @@ import { createSessionClient } from "@s10n-base/client/session";
 import { createWebAuth, type WebAuth } from "./lib/auth";
 
 export interface WebServices {
-  /** The page's origin, against which redirect targets are checked. */
-  readonly origin: string;
   readonly rpc: RpcClient;
   readonly auth: WebAuth;
   readonly gate: SessionGate;
 }
 
 export function createServices(options: {
-  readonly origin: string;
   readonly apiBaseUrl: string;
   readonly fetch?: typeof fetch;
 }): WebServices {
@@ -32,7 +29,6 @@ export function createServices(options: {
   // the caller's decision (see NetworkError).
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return {
-    origin: options.origin,
     rpc: createRpcClient(transport),
     auth: createWebAuth(transport),
     gate: createSessionGate({ queryClient, sessionClient: createSessionClient(transport) }),

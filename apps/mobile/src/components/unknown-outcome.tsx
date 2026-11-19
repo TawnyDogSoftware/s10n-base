@@ -22,7 +22,7 @@ function sessionText(
  * Shown when a security action got no answer: it may or may not have happened, so the screen
  * says so and reports what the server said when the session was read again.
  */
-function UnknownOutcome(props: {
+export function UnknownOutcome(props: {
   /** The session read after the action; `undefined` when that read failed too. */
   readonly session: AppSession | null | undefined;
   /** What a session means for this action, e.g. "you are still signed in" after sign-out. */

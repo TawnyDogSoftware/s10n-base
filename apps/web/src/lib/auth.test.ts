@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { NetworkError } from "@s10n-base/client/rpc";
 
@@ -134,5 +134,20 @@ describe("createWebAuth", () => {
       method: "GET",
       url: `${BASE}/api/auth/passkey/list-user-passkeys`,
     });
+  });
+});
+
+describe("createWebAuth without a fetch", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("uses the browser's fetch", async () => {
+    const { fetch, requests } = fake(() => ok());
+    vi.stubGlobal("fetch", fetch);
+
+    await createWebAuth({ baseUrl: BASE }).sendVerificationEmail("sam@example.com");
+
+    expect(requests[0]?.url).toBe(`${BASE}/api/auth/send-verification-email`);
   });
 });

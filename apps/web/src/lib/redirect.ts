@@ -1,10 +1,10 @@
 /**
  * Returns `target` when it is a path on this site, so a `redirect` search parameter cannot send
- * someone elsewhere after they sign in. It must start with a single `/`, contain no backslash or
- * control character (browsers read `/\host` and `/\t/host` as another host), and parse back to
- * the same origin. Anything else gives `undefined`.
+ * someone elsewhere after they sign in. It must start with a single `/` and contain no backslash
+ * or control character (browsers read `/\host` and `/\t/host` as another host). Anything else
+ * gives `undefined`. What is left is a path-absolute URL, which always resolves on this origin.
  */
-export function safeRedirect(target: unknown, origin: string): string | undefined {
+export function safeRedirect(target: unknown): string | undefined {
   if (typeof target !== "string" || !target.startsWith("/") || target.startsWith("//")) {
     return undefined;
   }
@@ -13,11 +13,5 @@ export function safeRedirect(target: unknown, origin: string): string | undefine
     const code = character.charCodeAt(0);
     if (character === "\\" || code < 0x20 || code === 0x7f) return undefined;
   }
-  let url: URL;
-  try {
-    url = new URL(target, origin);
-  } catch {
-    return undefined;
-  }
-  return url.origin === new URL(origin).origin ? target : undefined;
+  return target;
 }

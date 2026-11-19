@@ -23,7 +23,7 @@ function SignInPage() {
   const { t } = useTranslation("auth");
   const { t: tCommon } = useTranslation("common");
   const { t: tError } = useTranslation("errors");
-  const { auth, gate, origin } = useServices();
+  const { auth, gate } = useServices();
   const navigate = useNavigate();
   const { redirect } = signInRoute.useSearch();
   const [email, setEmail] = useState("");
@@ -39,7 +39,7 @@ function SignInPage() {
   /** Whatever the action reported, the session read afterwards decides. */
   const finish = async (result: SettledAction<AuthResult>) => {
     if (result.session) {
-      await navigate({ href: safeRedirect(redirect, origin) ?? "/", replace: true });
+      await navigate({ href: safeRedirect(redirect) ?? "/", replace: true });
       return;
     }
     setOutcome(result);

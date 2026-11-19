@@ -47,7 +47,7 @@ function isLocale(code: string): code is Locale {
  */
 export function resolveLocale(codes: readonly string[]): Locale {
   for (const code of codes) {
-    const language = code.split("-")[0]?.toLowerCase() ?? "";
+    const [language = ""] = code.toLowerCase().split("-");
     if (isLocale(language)) return language;
   }
   return DEFAULT_LOCALE;
