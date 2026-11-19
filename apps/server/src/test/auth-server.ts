@@ -103,6 +103,21 @@ export function linkIn(email: StoredEmail | undefined): string {
   return link;
 }
 
+/** The `token` of the link in an email, as the web page that the link opens reads it. */
+export function tokenIn(email: StoredEmail | undefined): string {
+  const token = new URL(linkIn(email)).searchParams.get("token");
+  if (token === null) throw new Error("The email's link has no token.");
+  return token;
+}
+
+/**
+ * Does what the web app's `/verify-email` page does with the link in a verification email: sends
+ * its token to Better Auth.
+ */
+export function verifyPath(email: StoredEmail | undefined): string {
+  return `/api/auth/verify-email?token=${encodeURIComponent(tokenIn(email))}`;
+}
+
 /**
  * A browser-like client: it keeps cookies, sends `Origin` like a browser on the app's page, and
  * comes from its own address (through `X-Forwarded-For`), so rate limits stay per client.

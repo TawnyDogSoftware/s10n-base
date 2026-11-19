@@ -1,4 +1,6 @@
-import { authEmailText } from "./text";
+import { createTranslator } from "@s10n-base/i18n";
+
+const t = createTranslator("email");
 
 /**
  * How long a verification or password reset link works, in seconds. Better Auth is given this
@@ -42,21 +44,26 @@ export function renderAuthEmail(
   if (parsed === null || (parsed.protocol !== "https:" && parsed.protocol !== "http:")) {
     throw new Error("An auth email link must be an absolute http or https URL.");
   }
-  const { subject, heading, body, action } = authEmailText[kind];
+  const subject = t(`${kind}.subject`);
+  const heading = t(`${kind}.heading`);
+  const body = t(`${kind}.body`);
+  const action = t(`${kind}.action`);
+  const ignoreNotice = t("ignoreNotice");
+  const linkFallback = t("linkFallback");
   const link = parsed.href;
-  const footer = authEmailText.footer(options.supportEmail);
+  const footer = t("footer", { supportEmail: options.supportEmail });
   const href = escapeHtml(link);
   return {
     subject,
-    text: [heading, body, `${action}: ${link}`, authEmailText.ignoreNotice, footer].join("\n\n"),
+    text: [heading, body, `${action}: ${link}`, ignoreNotice, footer].join("\n\n"),
     html: [
       "<!doctype html>",
       '<html><body style="font-family: sans-serif; line-height: 1.5">',
       `<h1>${escapeHtml(heading)}</h1>`,
       `<p>${escapeHtml(body)}</p>`,
       `<p><a href="${href}">${escapeHtml(action)}</a></p>`,
-      `<p>${escapeHtml(authEmailText.linkFallback)}<br>${href}</p>`,
-      `<p>${escapeHtml(authEmailText.ignoreNotice)}</p>`,
+      `<p>${escapeHtml(linkFallback)}<br>${href}</p>`,
+      `<p>${escapeHtml(ignoreNotice)}</p>`,
       `<p>${escapeHtml(footer)}</p>`,
       "</body></html>",
     ].join("\n"),

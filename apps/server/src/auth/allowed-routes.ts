@@ -23,11 +23,10 @@ export const EXPOSED_AUTH_ROUTES: readonly AuthRouteDecision[] = [
   route("POST", "/sign-in/email", "Sign in with email and password."),
   route("POST", "/sign-out", "Sign out."),
   route("GET", "/get-session", "The Better Auth client reads the session here."),
-  route("GET", "/verify-email", "The link in the verification email."),
+  route("GET", "/verify-email", "The web app's /verify-email page sends the email's token here."),
   route("POST", "/send-verification-email", "Send the verification email again."),
   route("POST", "/request-password-reset", "Ask for a password reset email."),
-  route("GET", "/reset-password/:token", "The link in the reset email; redirects with the token."),
-  route("POST", "/reset-password", "Set a new password with the token."),
+  route("POST", "/reset-password", "The web app's /reset-password page sets the new password."),
   route("POST", "/change-password", "Change the password while signed in."),
   route("POST", "/update-user", "Change the name and image while signed in."),
   route("GET", "/list-sessions", "List the signed-in user's sessions."),
@@ -54,6 +53,11 @@ export const EXPOSED_AUTH_ROUTES: readonly AuthRouteDecision[] = [
 
 export const UNEXPOSED_AUTH_ROUTES: readonly AuthRouteDecision[] = [
   route("POST", "/get-session", "The client uses GET; one method is enough."),
+  route(
+    "GET",
+    "/reset-password/:token",
+    "Reset emails link to the web app's /reset-password page, which posts the token itself.",
+  ),
   route("POST", "/sign-in/social", "No social sign-in in the base (a documented recipe)."),
   route("GET", "/callback/:id", "OAuth callback; no social sign-in in the base."),
   route("POST", "/callback/:id", "OAuth callback; no social sign-in in the base."),

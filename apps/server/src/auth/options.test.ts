@@ -5,6 +5,7 @@ import type { DB } from "../infra/postgres/generated/db";
 import { createLogger } from "../observability/logger";
 import { AUTH_EMAIL_LINK_SECONDS } from "./email/render";
 import {
+  authEmailLink,
   AUTH_COOKIE_PREFIX,
   CLIENT_IP_HEADER,
   buildAuthOptions,
@@ -105,28 +106,34 @@ describe("buildAuthOptions", () => {
     });
   });
 
-  it("sends the verification and reset emails through the sender with Better Auth's link", async () => {
+  it("sends the verification and reset emails with links to the web app's own pages", async () => {
     const { options, emailSender } = setup();
 
     await options.emailVerification.sendVerificationEmail({
       user,
-      url: "https://app.example.com/api/auth/verify-email?token=t",
-      token: "t",
+      url: "https://ignored.example/api/auth/verify-email?token=t",
+      token: "a.b-c_d",
     });
     await options.emailAndPassword.sendResetPassword({
       user,
-      url: "https://app.example.com/api/auth/reset-password/r",
-      token: "r",
+      url: "https://ignored.example/api/auth/reset-password/r",
+      token: "r+s=/t",
     });
 
     expect(emailSender.sendVerificationEmail).toHaveBeenCalledWith({
       to: "user@example.com",
-      url: "https://app.example.com/api/auth/verify-email?token=t",
+      url: "https://app.example.com/verify-email?token=a.b-c_d",
     });
     expect(emailSender.sendPasswordResetEmail).toHaveBeenCalledWith({
       to: "user@example.com",
-      url: "https://app.example.com/api/auth/reset-password/r",
+      url: "https://app.example.com/reset-password?token=r%2Bs%3D%2Ft",
     });
+  });
+
+  it("builds the email links from APP_URL", () => {
+    expect(authEmailLink("https://app.example.com", "/verify-email", "x y")).toBe(
+      "https://app.example.com/verify-email?token=x%20y",
+    );
   });
 
   it("keeps rate limits in the database", () => {

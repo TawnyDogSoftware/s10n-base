@@ -39,6 +39,19 @@ export const CLIENT_IP_HEADER = "x-s10n-base-client-ip";
  */
 export const DISABLED_AUTH_PATHS: readonly string[] = ["/admin/remove-user"];
 
+/** The web app's pages that email links open. They read `token` and call Better Auth. */
+export const VERIFY_EMAIL_PAGE = "/verify-email";
+export const RESET_PASSWORD_PAGE = "/reset-password";
+
+/**
+ * A link to one of the web app's pages under `APP_URL`, carrying the token. The page calls Better
+ * Auth itself, so the link never points at `/api/auth` and works the same for a project whose
+ * API is on another origin.
+ */
+export function authEmailLink(appOrigin: string, page: string, token: string): string {
+  return `${new URL(page, appOrigin).href}?token=${encodeURIComponent(token)}`;
+}
+
 /** What the options depend on from the server config. */
 export interface AuthOptionsConfig {
   readonly appName: string;
@@ -228,8 +241,12 @@ export function buildAuthOptions(
       requireEmailVerification: true,
       revokeSessionsOnPasswordReset: true,
       resetPasswordTokenExpiresIn: AUTH_EMAIL_LINK_SECONDS,
-      sendResetPassword: async ({ user, url }) => {
-        await emailSender.sendPasswordResetEmail({ to: user.email, url });
+      // Better Auth's own `url` is replaced by a link to the web app's page.
+      sendResetPassword: async ({ user, token }) => {
+        await emailSender.sendPasswordResetEmail({
+          to: user.email,
+          url: authEmailLink(config.appOrigin, RESET_PASSWORD_PAGE, token),
+        });
       },
     },
     emailVerification: {
@@ -237,8 +254,11 @@ export function buildAuthOptions(
       // Signing in before verifying sends a fresh link, since the first may have expired.
       sendOnSignIn: true,
       expiresIn: AUTH_EMAIL_LINK_SECONDS,
-      sendVerificationEmail: async ({ user, url }) => {
-        await emailSender.sendVerificationEmail({ to: user.email, url });
+      sendVerificationEmail: async ({ user, token }) => {
+        await emailSender.sendVerificationEmail({
+          to: user.email,
+          url: authEmailLink(config.appOrigin, VERIFY_EMAIL_PAGE, token),
+        });
       },
     },
     // Stored in the database: with more than one server instance, a memory store would give

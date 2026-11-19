@@ -18,10 +18,12 @@
     "@better-auth/expo": "catalog:",
     "@better-auth/passkey": "catalog:",
     "@s10n-base/contracts": "workspace:*",
+    "@s10n-base/i18n": "workspace:*",
     "@s10n-base/shared": "workspace:*",
     "better-auth": "catalog:",
     "better-call": "catalog:",
     "effect": "catalog:",
+    "i18next": "catalog:",
     "kysely": "catalog:",
     "pg": "catalog:"
   },

@@ -5,7 +5,14 @@ import { defineRpc, ERROR_CODES } from "@s10n-base/contracts";
 
 import { defineHandler } from "../rpc/dispatcher";
 import { setUserRole } from "../set-role-cli";
-import { linkIn, startAuthServer, TestClient, type AuthServer } from "../test/auth-server";
+import {
+  linkIn,
+  startAuthServer,
+  TestClient,
+  tokenIn,
+  verifyPath,
+  type AuthServer,
+} from "../test/auth-server";
 
 const Empty = Schema.Struct({});
 const WhoAmI = Schema.Struct({ userId: Schema.String, role: Schema.String });
@@ -50,7 +57,7 @@ async function signUp(browser: TestClient, address: string, password = PASSWORD)
 
 async function verify(browser: TestClient, address: string) {
   const [message] = (await app.emailsTo(address)).slice(-1);
-  return browser.get(linkIn(message));
+  return browser.get(verifyPath(message));
 }
 
 /** Signs up, verifies and signs in; returns the signed-in client. */
@@ -89,12 +96,14 @@ describe("sign-up, verification, sign-in and sign-out", () => {
     expect(emails).toHaveLength(1);
     expect(emails[0]?.subject).toBe("Confirm your email address");
     expect(emails[0]?.from).toBe("no-reply@example.com");
-    const link = linkIn(emails[0]);
-    expect(new URL(link).origin).toBe(app.base);
-    expect(new URL(link).pathname).toBe("/api/auth/verify-email");
+    // The link opens the web app's page, which sends the token to Better Auth.
+    const link = new URL(linkIn(emails[0]));
+    expect(link.origin).toBe(app.base);
+    expect(link.pathname).toBe("/verify-email");
+    expect([...link.searchParams.keys()]).toEqual(["token"]);
 
-    const verified = await browser.get(link);
-    expect([200, 302]).toContain(verified.status);
+    const verified = await browser.get(verifyPath(emails[0]));
+    expect(verified.status).toBe(200);
 
     const signedIn = await browser.post("/api/auth/sign-in/email", {
       email: address,
@@ -194,19 +203,15 @@ describe("password reset", () => {
     const requester = client();
     const requested = await requester.post("/api/auth/request-password-reset", {
       email: address,
-      redirectTo: `${app.base}/reset-password`,
     });
     expect(requested.status).toBe(200);
     const [resetEmail] = (await app.emailsTo(address)).slice(-1);
     expect(resetEmail?.subject).toBe("Reset your password");
+    // The link opens the web app's page, which sends the token with the new password.
     const link = new URL(linkIn(resetEmail));
-    const token = /^\/api\/auth\/reset-password\/([^/]+)$/.exec(link.pathname)?.[1];
-    expect(token).toBeDefined();
-
-    // Following the link redirects to the app's reset page with the token.
-    const followed = await requester.get(link.toString());
-    expect(followed.status).toBe(302);
-    expect(followed.headers.get("location")).toContain(`token=${token}`);
+    expect(link.origin).toBe(app.base);
+    expect(link.pathname).toBe("/reset-password");
+    const token = tokenIn(resetEmail);
 
     const reset = await requester.post("/api/auth/reset-password", {
       token,
@@ -250,6 +255,9 @@ describe("the route guard and rate limits", () => {
         error: { code: ERROR_CODES.notFound, message: "Not found." },
       });
     }
+
+    // Reset emails link to the web app's page, so Better Auth's own reset link is not exposed.
+    expect((await browser.get("/api/auth/reset-password/some-token")).status).toBe(404);
 
     expect(await rateLimitRows()).toEqual(before);
   });

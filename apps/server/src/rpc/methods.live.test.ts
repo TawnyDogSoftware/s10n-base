@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ERROR_CODES } from "@s10n-base/contracts";
 
 import { setUserRole } from "../set-role-cli";
-import { linkIn, startAuthServer, TestClient, type AuthServer } from "../test/auth-server";
+import { startAuthServer, TestClient, verifyPath, type AuthServer } from "../test/auth-server";
 
 const PASSWORD = "correct horse battery staple";
 let app: AuthServer;
@@ -24,7 +24,7 @@ async function signedInUser(email: string, name = "Test User") {
     (await browser.post("/api/auth/sign-up/email", { name, email, password: PASSWORD })).status,
   ).toBe(200);
   const [message] = (await app.emailsTo(email)).slice(-1);
-  await browser.get(linkIn(message));
+  expect((await browser.get(verifyPath(message))).status).toBe(200);
   expect(
     (await browser.post("/api/auth/sign-in/email", { email, password: PASSWORD })).status,
   ).toBe(200);
