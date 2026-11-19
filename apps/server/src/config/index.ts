@@ -12,6 +12,7 @@ import { Config, ConfigProvider, Data, Effect, Option, Redacted, Schema } from "
 import { APP_VARIANTS, type AppVariant } from "@s10n-base/shared/app-variants";
 
 import serverPackage from "../../package.json" with { type: "json" };
+import { LOCAL_SES_CREDENTIALS } from "../infra/email/local";
 import { WEB_DIST_DIR } from "../paths";
 
 /**
@@ -20,11 +21,7 @@ import { WEB_DIST_DIR } from "../paths";
  */
 export const EXAMPLE_AUTH_SECRET = "development-only-secret-replace-me-in-production";
 
-/**
- * The AWS keys `.env.example` gives the server, which the local capture server
- * (`bun run ses:local`) checks every signature against. Refused in production.
- */
-export const LOCAL_SES_CREDENTIALS = { accessKeyId: "local", secretAccessKey: "local" } as const;
+export { LOCAL_SES_CREDENTIALS };
 
 export const NODE_ENVS = ["development", "test", "production"] as const;
 export type NodeEnv = (typeof NODE_ENVS)[number];
