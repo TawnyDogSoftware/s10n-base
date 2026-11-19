@@ -1,0 +1,4 @@
+{
+  "$comment": "Advisories `bun audit` reports that were looked at and accepted for now: id (GHSA), package, reason and expiry date (YYYY-MM-DD). `bun run deps:audit` fails on an advisory not listed here, on an acceptance past its date, and on an entry that no longer matches an advisory. See docs/quality.md.",
+  "accepted": []
+}

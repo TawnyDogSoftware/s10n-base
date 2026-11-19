@@ -82,6 +82,7 @@
     "smoke": "bun scripts/with-env.main.ts bun scripts/smoke-built-server.main.ts",
     "ses:local": "bun scripts/with-env.main.ts bun scripts/ses-local/run.main.ts",
     "deps:update": "bun scripts/dependency-updates/run.main.ts",
+    "deps:audit": "bun scripts/quality/dependency-audit.main.ts",
     "db:up": "docker compose -f docker-compose.local.yml up -d --wait",
     "db:down": "docker compose -f docker-compose.local.yml down",
     "db:migrate": "bun scripts/with-env.main.ts bun apps/server/src/migrate.ts up",
