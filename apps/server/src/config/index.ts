@@ -420,7 +420,7 @@ function crossVariableProblems(
     const env = yield* valueOf(nodeEnv, provider);
     if (Option.getOrUndefined(env) !== "production") return [];
     const broken = yield* Effect.filter(PRODUCTION_RULES, (rule) => rule.broken(provider));
-    return broken.map(({ variable, problem }) => ({ variable, problem }));
+    return broken.map((rule) => ({ variable: rule.variable, problem: rule.problem }));
   });
 }
 
