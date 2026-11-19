@@ -64,7 +64,7 @@ The online `bunx expo install --check`, which the daily update runs, compares wi
 `overrides` in the root `package.json` forces one version of a package everywhere in the tree. Each entry needs a reason, kept here:
 
 - `effect`: one copy of Effect for every workspace and dependency, so its schemas and errors are the same classes everywhere.
-- `minimatch` `^11.0.8`: Expo's `@expo/fingerprint` 0.21.10 asks for `^10.2.6`, and 10.x has a moderate advisory (GHSA-g3hv-75wg-m249, denial of service through glob pattern amplification, fixed in 11.0.1). The fingerprint of `apps/mobile` is the same with 11.0.8 as with 10.2.6. Remove the override when Expo's tooling moves to 11.
+- `minimatch` `^11.0.8`: Expo's `@expo/fingerprint` 0.21.10 and `eslint-plugin-sonarjs` 4.2.2 ask for `^10.2.6`, and 10.x has a moderate advisory (GHSA-g3hv-75wg-m249, denial of service through glob pattern amplification, fixed in 11.0.1). The fingerprint of `apps/mobile` is the same with 11.0.8 as with 10.2.6. Remove the override when both move to 11.
 
 ## The hold list
 

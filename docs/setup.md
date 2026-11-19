@@ -140,9 +140,14 @@ Migrations are append-only: once merged, a migration file is never edited or rem
 ## Tests
 
 ```bash
-bun run test        # unit tests; no database needed
-bun run test:live   # tests against Postgres
+bun run agent:check     # every gate that needs no database: lint, format, types, boundaries, dead code, coverage, audit
+bun run test            # unit tests; no database needed
+bun run test:coverage   # the same, with the 100% coverage thresholds
+bun run test:live       # tests against Postgres
+bun run test:e2e        # builds, then the browser journeys in Chromium
 ```
+
+[quality.md](quality.md) explains each gate and what to do when one fails.
 
 The live tests are files named `*.live.test.ts` under `apps/server/src`, run by `apps/server/vitest.live.config.ts`. They are not part of `bun run test`.
 
@@ -152,6 +157,10 @@ The live tests are files named `*.live.test.ts` under `apps/server/src`, run by 
 - A run that is killed can leave a schema behind. `bun run db:test:sweep` drops fixture schemas more than ten minutes old.
 
 To write a live suite, call `createFixtureSchema()` from `apps/server/src/test/live-database.ts` in `beforeEach`, create the pool with `searchPath: fixture.schema`, and call `fixture.drop()` in `afterEach`.
+
+### The browser journeys
+
+Run `bunx playwright install chromium` once (and again after Playwright updates), with Docker running. `bun run test:e2e` builds, then Playwright starts the compose database, migrates its `s10n_base_test` database, and starts the email capture server on port 8025 and the built server on port 4310, so a running `bun dev` is left alone. Details are in [quality.md](quality.md#browser-journeys).
 
 ## Checking a build
 

@@ -38,7 +38,6 @@ export default tseslint.config(
       "apps/mobile/src/uniwind-types.d.ts",
       "apps/server/src/infra/postgres/generated/**",
       "e2e/test-results/**",
-      "e2e/report/**",
     ],
   },
   {

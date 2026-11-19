@@ -18,7 +18,7 @@ It was derived from [`t3code`](https://github.com/pingdotgg/t3code), keeping the
 - `packages/theme`: the Tailwind 4 design tokens shared by web and mobile
 - `packages/i18n`: i18next catalogs with typed keys, for the apps and the server's emails ([docs/i18n.md](docs/i18n.md))
 - `packages/shared`: small cross-runtime helpers
-- Oxlint + Oxfmt + Vitest
+- Oxlint, type-checked ESLint, Oxfmt, knip, dependency-cruiser, Vitest with 100% coverage, and Playwright browser journeys ([docs/quality.md](docs/quality.md))
 
 ## Monorepo Layout
 
@@ -108,15 +108,19 @@ bun run start:server
 bun run start:web
 ```
 
-Run checks:
+Run checks. `agent:check` runs every gate that needs no database and no browser, stopping at the first failure; [docs/quality.md](docs/quality.md) explains each gate, how to fix a failure and the no-suppression rule:
 
 ```bash
-bun run fmt
-bun run fmt:check
-bun run lint
+bun run agent:check       # all of the gates below, in order
+bun run lint              # the directive check, oxlint and ESLint
+bun run fmt               # format (fmt:check checks)
 bun run typecheck
-bun run test
-bun run test:live   # needs the database
+bun run boundaries        # which code may import which
+bun run deadcode          # unused files, exports and dependencies
+bun run test              # unit tests (test:coverage: with the 100% thresholds)
+bun run deps:audit        # bun audit against dependency-audit-triage.json
+bun run test:live         # needs the database
+bun run test:e2e          # builds, then the browser journeys in Chromium; needs Docker
 ```
 
 Start the built server, check `/health`, `/ready` and the web app, and stop it with SIGTERM (run `bun run build` first; needs the database):
