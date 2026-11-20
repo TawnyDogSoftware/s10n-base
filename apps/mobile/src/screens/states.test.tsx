@@ -64,13 +64,18 @@ describe("the signed-out screens' links", () => {
     renderScreen(<ForgotPasswordScreen />, { backend });
     router.replace.mockClear();
 
-    screen.getByRole("link", { name: "Back to sign in" }).click();
+    const before = screen.getByRole("link", { name: "Back to sign in" });
+    before.click();
     type("Email address", "sam@example.com");
     press("Send the link");
     await screen.findByRole("heading", { name: "Check your email" });
-    screen.getByRole("link", { name: "Back to sign in" }).click();
+    const after = screen.getByRole("link", { name: "Back to sign in" });
+    after.click();
 
     expect(router.replace.mock.calls).toEqual([["/sign-in"], ["/sign-in"]]);
+    // A new button, not the form's reused: react-native-web gives a reused button its new
+    // handler only in an effect, so a press before that ran the form's handler.
+    expect(before.isConnected).toBe(false);
   });
 
   it("checks the reset request's address before sending, and focuses it", async () => {

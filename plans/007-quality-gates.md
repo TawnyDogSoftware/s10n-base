@@ -158,6 +158,7 @@ Checked against this lockfile and `bun audit` on 2026-11-19:
 - Unreachable branches, deleted rather than covered: fallbacks for regex groups that always match, Node's always-set request method and target, the config's error-provider fallbacks, a second stop in the process runner, a check for a session the layout guarantees, a same-origin re-parse of an already checked path, and the mobile profile's pending check.
 - The dependency update script crashed with an uncaught EPIPE when a command exited without reading its input (found on a fresh clone while verifying item 1).
 - Template literals that could print `undefined` now say what is missing.
+- Found by the coverage gate in CI, where it failed once at 99.96%: the mobile forgot-password, sign-in and sign-up screens switch layout inside one `Screen`, so React reused the form's button for the next layout, and react-native-web gives a reused button its new press handler only in an effect. A press before that effect ran the old handler: the test passed but the new handler never ran. Each layout now has its own key; a test checks the form's button is gone, not reused.
 - Found in review, not by a gate (phase 2's dependency update): putting a held package's range spec back after `bun update --latest` left the newer version it had locked inside that range, so the PR said "held" while committing the update. The package is now pinned to its earlier locked version, installed, and given its spec back.
 
 ### Verification (section 10)

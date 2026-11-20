@@ -59,9 +59,11 @@ export function SignInScreen() {
       if (!result.session) setOutcome(result);
     });
 
+  // Each layout has its own key, so its buttons mount with their own press handlers:
+  // react-native-web gives a reused button a new handler only in an effect.
   if (unverified !== null) {
     return (
-      <Screen title={t("checkEmail.title")}>
+      <Screen key="check-email" title={t("checkEmail.title")}>
         <CheckEmail
           email={unverified}
           lead={t("signIn.unverified")}
@@ -79,7 +81,7 @@ export function SignInScreen() {
   };
 
   return (
-    <Screen title={t("signIn.title")}>
+    <Screen key="form" title={t("signIn.title")}>
       <Card>
         {Object.keys(errors).length > 0 ? (
           <Notice tone="danger">{t("validation.summary")}</Notice>

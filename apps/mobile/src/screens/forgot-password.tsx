@@ -48,9 +48,11 @@ export function ForgotPasswordScreen() {
       setOutcome(result);
     });
 
+  // Each layout has its own key, so its buttons mount with their own press handlers:
+  // react-native-web gives a reused button a new handler only in an effect.
   if (sentTo !== null) {
     return (
-      <Screen title={t("forgotPassword.sentTitle")}>
+      <Screen key="sent" title={t("forgotPassword.sentTitle")}>
         <Notice tone="info">
           <Body>{t("forgotPassword.sentBody", { email: sentTo })}</Body>
           <Body>{t("forgotPassword.inBrowser")}</Body>
@@ -67,7 +69,7 @@ export function ForgotPasswordScreen() {
   }
 
   return (
-    <Screen title={t("forgotPassword.title")} intro={t("forgotPassword.intro")}>
+    <Screen key="form" title={t("forgotPassword.title")} intro={t("forgotPassword.intro")}>
       <Card>
         <ActionOutcome outcome={outcome} signedInText={tCommon("unknownOutcome.nowSignedIn")} />
         <Field
