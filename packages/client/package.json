@@ -16,6 +16,10 @@
       "types": "./src/messages.ts",
       "import": "./src/messages.ts"
     },
+    "./profile-name": {
+      "types": "./src/profile-name.ts",
+      "import": "./src/profile-name.ts"
+    },
     "./query-state": {
       "types": "./src/query-state.ts",
       "import": "./src/query-state.ts"

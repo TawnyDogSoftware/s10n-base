@@ -1,17 +1,13 @@
-import { useMutation } from "@tanstack/react-query";
 import { createRoute } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { errorMessageKey } from "@s10n-base/client/messages";
-import {
-  protectedQueryKey,
-  type SettledAction,
-  useProtectedQuery,
-} from "@s10n-base/client/query-state";
+import { useProfileNameForm } from "@s10n-base/client/profile-name";
+import { type SettledAction, useProtectedQuery } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
-import { validateName, fieldErrorText } from "@s10n-base/client/validation";
-import { profileGet, profileUpdate, type Profile } from "@s10n-base/contracts";
+import { fieldErrorText } from "@s10n-base/client/validation";
+import { profileGet, type Profile } from "@s10n-base/contracts";
 
 import { Loading } from "../components/RouteStates";
 import { SignOutButton } from "../components/SignOutButton";
@@ -29,22 +25,9 @@ function NameForm(props: { readonly profile: Profile }) {
   const { t } = useTranslation("profile");
   const { t: tAuth } = useTranslation("auth");
   const { t: tError } = useTranslation("errors");
-  const { rpc, gate } = useServices();
-  const [name, setName] = useState(props.profile.name);
-  const [fieldError, setFieldError] = useState<string | undefined>(undefined);
+  const { rpc } = useServices();
+  const form = useProfileNameForm(rpc, props.profile);
   const ref = useRef<HTMLInputElement>(null);
-  const session = gate.current();
-  const save = useMutation({
-    mutationKey: protectedQueryKey(session, ["profile", "update"]),
-    mutationFn: (value: string) =>
-      gate.guard(() => rpc.call(profileUpdate, { userId: props.profile.userId, name: value })),
-    onSuccess: async (profile) => {
-      gate.queryClient.setQueryData(protectedQueryKey(session, ["profile"]), profile);
-      setName(profile.name);
-      // The header and greeting read the name from the session.
-      await gate.refresh();
-    },
-  });
 
   return (
     <form
@@ -52,15 +35,7 @@ function NameForm(props: { readonly profile: Profile }) {
       className="flex flex-col gap-4"
       onSubmit={(event) => {
         event.preventDefault();
-        if (save.isPending) return;
-        const checked = validateName(name);
-        if (!checked.ok) {
-          setFieldError(fieldErrorText(tAuth, checked.error));
-          ref.current?.focus();
-          return;
-        }
-        setFieldError(undefined);
-        save.mutate(checked.value);
+        if (!form.submit()) ref.current?.focus();
       }}
     >
       <Field
@@ -68,17 +43,19 @@ function NameForm(props: { readonly profile: Profile }) {
         name="name"
         autoComplete="name"
         inputRef={ref}
-        value={name}
-        onValueChange={setName}
-        error={fieldError}
+        value={form.value}
+        onValueChange={form.setValue}
+        error={form.fieldError === undefined ? undefined : fieldErrorText(tAuth, form.fieldError)}
       />
       <div>
-        <Button type="submit" pending={save.isPending} pendingLabel={t("saving")}>
+        <Button type="submit" pending={form.pending} pendingLabel={t("saving")}>
           {t("save")}
         </Button>
       </div>
-      {save.isSuccess ? <Notice tone="success">{t("saved")}</Notice> : null}
-      {save.isError ? <Notice tone="danger">{tError(errorMessageKey(save.error))}</Notice> : null}
+      {form.saved ? <Notice tone="success">{t("saved")}</Notice> : null}
+      {form.error === null ? null : (
+        <Notice tone="danger">{tError(errorMessageKey(form.error))}</Notice>
+      )}
     </form>
   );
 }

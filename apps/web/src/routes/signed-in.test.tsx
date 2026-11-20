@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createFakeBackend } from "@s10n-base/client/testing/fake-backend";
@@ -76,6 +76,89 @@ describe("/profile", () => {
     expect(
       await screen.findByRole("heading", { level: 1, name: "Hello, Sam Renamed" }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps what the user typed while a save was pending", async () => {
+    const app = renderApp("/profile", signedIn());
+    await screen.findByLabelText("Name");
+    const release = app.backend.hold("/rpc");
+
+    type("Name", "Robin");
+    click("Save");
+    await waitFor(() => {
+      expect(app.backend.calls("/rpc").at(-1)?.body).toMatchObject({ method: "profile.update" });
+    });
+    type("Name", "River");
+    release();
+
+    await waitFor(() => {
+      expect(app.backend.users.get("sam@example.com")?.name).toBe("Robin");
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    });
+    expect(screen.getByLabelText("Name")).toHaveValue("River");
+    expect(screen.queryByText("Your name is saved.")).not.toBeInTheDocument();
+  });
+
+  it("shows a name changed elsewhere while the field is untouched, and keeps a draft", async () => {
+    const app = renderApp("/profile", signedIn());
+    await screen.findByLabelText("Name");
+    const sam = app.backend.users.get("sam@example.com");
+    if (sam === undefined) throw new Error("no user");
+    const reread = () =>
+      act(() => app.services.gate.queryClient.invalidateQueries({ queryKey: ["user"] }));
+
+    sam.name = "Changed Elsewhere";
+    await reread();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Name")).toHaveValue("Changed Elsewhere");
+    });
+
+    type("Name", "My draft");
+    sam.name = "Changed Again";
+    await reread();
+    await waitFor(() => {
+      expect(
+        app.backend
+          .calls("/rpc")
+          .filter((call) => JSON.stringify(call.body).includes("profile.get")),
+      ).toHaveLength(3);
+    });
+    expect(screen.getByLabelText("Name")).toHaveValue("My draft");
+  });
+
+  it("reads the profile again when a save's answer is lost", async () => {
+    const app = renderApp("/profile", signedIn());
+    await screen.findByLabelText("Name");
+    const reads = () =>
+      app.backend.calls("/rpc").filter((call) => JSON.stringify(call.body).includes("profile.get"));
+    expect(reads()).toHaveLength(1);
+    app.backend.failNext("/rpc", { kind: "network", afterHandling: true });
+
+    type("Name", "Lost Answer");
+    click("Save");
+
+    expect(await screen.findByText(/could not reach the server/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(reads()).toHaveLength(2);
+    });
+  });
+
+  it("sends one save for two submits before the page re-renders", async () => {
+    const app = renderApp("/profile", signedIn());
+    await screen.findByLabelText("Name");
+    type("Name", "Once");
+
+    const form = screen.getByRole("button", { name: "Save" }).closest("form");
+    if (form === null) throw new Error("no form");
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+
+    await screen.findByText("Your name is saved.");
+    expect(
+      app.backend.calls("/rpc").filter((call) => JSON.stringify(call.body).includes("update")),
+    ).toHaveLength(1);
   });
 
   it("checks the name before sending it", async () => {
@@ -301,6 +384,21 @@ describe("/admin/users", () => {
       { limit: ADMIN_USERS_PAGE_SIZE },
       { limit: ADMIN_USERS_PAGE_SIZE, cursor: String(ADMIN_USERS_PAGE_SIZE) },
     ]);
+  });
+
+  it("never shows the old name after the admin saved their own", async () => {
+    const app = renderApp("/admin/users", signedIn("admin@example.com", "admin"));
+    expect(await screen.findByRole("cell", { name: "Sam" })).toBeInTheDocument();
+    await act(() => app.router.navigate({ to: "/profile" }));
+    await screen.findByLabelText("Name");
+
+    type("Name", "Sam Renamed");
+    click("Save");
+    await screen.findByText("Your name is saved.");
+    await act(() => app.router.navigate({ to: "/admin/users" }));
+
+    expect(screen.queryByRole("cell", { name: "Sam" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("cell", { name: "Sam Renamed" })).toBeInTheDocument();
   });
 
   it("shows a signed-in non-admin a not-allowed page, not a redirect, and asks for nothing", async () => {

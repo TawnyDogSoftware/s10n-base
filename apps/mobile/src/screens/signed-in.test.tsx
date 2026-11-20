@@ -61,6 +61,48 @@ describe("ProfileScreen", () => {
     });
   });
 
+  it("keeps what the user typed while a save was pending", async () => {
+    const { backend, services } = await signedIn();
+    renderScreen(<ProfileScreen />, { backend, services });
+    await screen.findByText("sam@example.com");
+    const release = backend.hold("/rpc");
+
+    type("Name", "Robin");
+    press("Save");
+    await waitFor(() => {
+      expect(backend.calls("/rpc").at(-1)?.body).toMatchObject({ method: "profile.update" });
+    });
+    type("Name", "River");
+    release();
+
+    await waitFor(() => {
+      expect(backend.users.get("sam@example.com")?.name).toBe("Robin");
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Save" })).not.toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+    });
+    expect(screen.getByLabelText("Name")).toHaveValue("River");
+    expect(screen.queryByText("Your name is saved.")).toBeNull();
+  });
+
+  it("shows a name changed elsewhere while the field is untouched", async () => {
+    const { backend, services } = await signedIn();
+    renderScreen(<ProfileScreen />, { backend, services });
+    await screen.findByText("sam@example.com");
+    const sam = backend.users.get("sam@example.com");
+    if (sam === undefined) throw new Error("no user");
+
+    sam.name = "Changed Elsewhere";
+    await act(() => services.gate.queryClient.invalidateQueries({ queryKey: ["user"] }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Name")).toHaveValue("Changed Elsewhere");
+    });
+  });
+
   it("refuses an empty name without sending it", async () => {
     const { backend, services } = await signedIn();
     renderScreen(<ProfileScreen />, { backend, services });
