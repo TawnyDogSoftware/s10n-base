@@ -7,7 +7,7 @@ import {
   moveRuntime,
   RUNTIME_IMAGES,
   type Runtime,
-  tagFor,
+  tagsFor,
 } from "../dockerfile-versions";
 import { enforceHolds, parseHolds, type Hold, type Restoration } from "./holds";
 import { resolveImageDigest, type RegistryIo } from "./image-digests";
@@ -351,10 +351,31 @@ interface RuntimeMove {
 
 const RUNTIME_NAMES: Readonly<Record<Runtime, string>> = { node: "Node", bun: "bun" };
 
+/** Each tag's digest, or the first tag the registry could not resolve and why. */
+async function resolveTags(
+  io: Io,
+  image: string,
+  tags: readonly string[],
+): Promise<{ digests: Record<string, string> } | { failed: string; reason: string }> {
+  const digests: Record<string, string> = {};
+  for (const tag of tags) {
+    let digest: string;
+    try {
+      digest = await resolveImageDigest(io, image, tag);
+    } catch (error) {
+      return { failed: tag, reason: (error as Error).message };
+    }
+    digests[tag] = digest;
+    io.log(`Resolved ${image}:${tag} to ${digest}.`);
+  }
+  return { digests };
+}
+
 /**
- * Moves the Dockerfile's base images with the runtimes, each to its new tag's digest. A runtime
- * whose new image cannot be resolved does not move at all, so the Dockerfile and the version
- * sources still agree; the note says why. Returns the moves that were made.
+ * Moves the Dockerfile's base images with the runtimes, each stage to its own variant's new tag
+ * and that tag's digest. A runtime with any new tag that cannot be resolved does not move at
+ * all, so the Dockerfile and the version sources still agree; the note says why. Returns the
+ * moves that were made.
  */
 async function moveDockerfile(
   io: Io,
@@ -366,17 +387,19 @@ async function moveDockerfile(
   const notes: string[] = [];
   for (const move of moves) {
     const image = RUNTIME_IMAGES[move.runtime];
-    const tag = tagFor(text, move.runtime, move.to);
-    try {
-      const digest = await resolveImageDigest(io, image, tag);
-      io.log(`Resolved ${image}:${tag} to ${digest}.`);
-      text = moveRuntime(text, move.runtime, { from: move.from, to: move.to, digest });
-      moved.push(move);
-    } catch (error) {
+    const resolved = await resolveTags(io, image, tagsFor(text, move.runtime, move));
+    if ("failed" in resolved) {
       notes.push(
-        `${RUNTIME_NAMES[move.runtime]} ${move.to} is not applied: the image ${image}:${tag} could not be resolved (${(error as Error).message}).`,
+        `${RUNTIME_NAMES[move.runtime]} ${move.to} is not applied: the image ${image}:${resolved.failed} could not be resolved (${resolved.reason}).`,
       );
+      continue;
     }
+    text = moveRuntime(text, move.runtime, {
+      from: move.from,
+      to: move.to,
+      digests: resolved.digests,
+    });
+    moved.push(move);
   }
   await io.writeFile(DOCKERFILE, text);
   return { moved, notes };

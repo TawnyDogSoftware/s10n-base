@@ -104,31 +104,56 @@ export function dockerfileProblems(
   ];
 }
 
-/** The tag a runtime's image would have at `version`: the same variant, such as `-slim`. */
-export function tagFor(text: string, runtime: Runtime, version: string): string {
-  const current = baseImages(text).find((entry) => entry.image === RUNTIME_IMAGES[runtime]);
-  const variant = VERSION_TAG.exec(current?.tag ?? "")?.[2] ?? "";
-  return `${version}${variant}`;
+/** The tag an image on a version tag would have at `version`, keeping its variant (`-slim`). */
+function movedTag(tag: string, version: string): string {
+  return tag.replace(/^\d+\.\d+\.\d+/, version);
+}
+
+/** The tags of a runtime's images that are on `version`, as `FROM` lines write them. */
+function tagsAt(text: string, runtime: Runtime, version: string): string[] {
+  return baseImages(text).flatMap(({ image, tag }) =>
+    image === RUNTIME_IMAGES[runtime] && tag !== undefined && VERSION_TAG.exec(tag)?.[1] === version
+      ? [tag]
+      : [],
+  );
+}
+
+/**
+ * The distinct tags a runtime's images would have when moved from one version to another: one
+ * per variant the Dockerfile uses, since stages may build from different variants of one image.
+ */
+export function tagsFor(
+  text: string,
+  runtime: Runtime,
+  change: { readonly from: string; readonly to: string },
+): string[] {
+  return [...new Set(tagsAt(text, runtime, change.from).map((tag) => movedTag(tag, change.to)))];
 }
 
 export interface ImageChange {
   readonly from: string;
   readonly to: string;
-  /** The digest of the new tag. */
-  readonly digest: string;
+  /** The digest of each new tag, as `tagsFor` lists them. */
+  readonly digests: Readonly<Record<string, string>>;
 }
 
-/** The Dockerfile with a runtime moved from one version to another, its digest included. */
+/**
+ * The Dockerfile with a runtime moved from one version to another: each `FROM` line keeps its own
+ * variant and is pinned to that tag's digest, and the build's check names the new version.
+ */
 export function moveRuntime(text: string, runtime: Runtime, change: ImageChange): string {
   const image = RUNTIME_IMAGES[runtime];
-  const moved = `${image}:${tagFor(text, runtime, change.to)}@${change.digest}`;
   return text
     .split("\n")
     .map((line) => {
       const from = parseFromLine(line);
-      const matches =
-        from?.image.image === image && VERSION_TAG.exec(from.image.tag ?? "")?.[1] === change.from;
-      return matches ? line.replace(from.reference, moved) : line;
+      const current = from?.image.image === image ? from.image.tag : undefined;
+      if (from === undefined || current === undefined) return line;
+      if (VERSION_TAG.exec(current)?.[1] !== change.from) return line;
+      const tag = movedTag(current, change.to);
+      const digest = change.digests[tag];
+      if (digest === undefined) throw new Error(`No digest given for ${image}:${tag}`);
+      return line.replace(from.reference, `${image}:${tag}@${digest}`);
     })
     .join("\n")
     .replaceAll(versionCheck(runtime, change.from), versionCheck(runtime, change.to));

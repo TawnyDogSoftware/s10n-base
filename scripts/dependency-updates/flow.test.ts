@@ -869,6 +869,52 @@ describe("runDependencyUpdate", () => {
       );
     });
 
+    it("moves each stage with its own variant and that variant's digest", async () => {
+      const ALPINE = `sha256:${"5".repeat(64)}`;
+      const NEW_ALPINE = `sha256:${"6".repeat(64)}`;
+      const twoVariants = dockerfile.replace(
+        `FROM node:26.13.1-trixie-slim@${OLD_NODE} AS runtime`,
+        `FROM node:26.13.1-alpine@${ALPINE} AS runtime`,
+      );
+      const io = new FakeIo({
+        ...releases,
+        dockerfile: twoVariants,
+        digests: {
+          "library/node:26.13.2-trixie-slim": NEW_NODE,
+          "library/node:26.13.2-alpine": NEW_ALPINE,
+          "oven/bun:1.4.5-slim": NEW_BUN,
+        },
+      });
+
+      await runDependencyUpdate(io, options);
+
+      const moved = io.files.get("docker/Dockerfile") ?? "";
+      expect(moved).toContain(`FROM node:26.13.2-trixie-slim@${NEW_NODE} AS toolchain`);
+      expect(moved).toContain(`FROM node:26.13.2-alpine@${NEW_ALPINE} AS runtime`);
+    });
+
+    it("leaves a runtime alone when the tag of any one of its variants cannot be resolved", async () => {
+      const ALPINE = `sha256:${"5".repeat(64)}`;
+      const twoVariants = dockerfile.replace(
+        `FROM node:26.13.1-trixie-slim@${OLD_NODE} AS runtime`,
+        `FROM node:26.13.1-alpine@${ALPINE} AS runtime`,
+      );
+      const io = new FakeIo({
+        ...releases,
+        dockerfile: twoVariants,
+        digests: { "library/node:26.13.2-trixie-slim": NEW_NODE, "oven/bun:1.4.5-slim": NEW_BUN },
+      });
+
+      const outcome = await runDependencyUpdate(io, options);
+
+      expect(io.files.get(".nvmrc")).toBe("26.13.1\n");
+      expect(io.files.get("docker/Dockerfile")).toContain(`node:26.13.1-trixie-slim@${OLD_NODE}`);
+      expect(io.files.get("docker/Dockerfile")).toContain(`node:26.13.1-alpine@${ALPINE}`);
+      expect(outcome.kind === "unchanged" ? "" : outcome.body).toContain(
+        "Node 26.13.2 is not applied: the image node:26.13.2-alpine could not be resolved",
+      );
+    });
+
     it("looks nothing up when neither runtime moves", async () => {
       const io = new FakeIo({ dockerfile });
 
