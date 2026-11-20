@@ -70,7 +70,7 @@ describe("admin.listUsers", () => {
     expect(queries[0]?.sql).toContain("(created_at, id) <");
   });
 
-  it("refuses a cursor it did not issue, without a query", async () => {
+  it("refuses a malformed cursor, without a query", async () => {
     const { call, queries } = listUsers([]);
 
     const failure = await call({ limit: 2, cursor: "not-a-cursor" }).catch(

@@ -43,7 +43,11 @@ function readCursorObject(cursor: string): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-/** The position in a cursor this server issued, or `null` when it is not one. */
+/**
+ * The position a cursor holds, or `null` when it is not a well-formed position. The shape is all
+ * that is checked: a cursor is not signed, so one the server did not issue is accepted when it
+ * is well formed, and only says where the next page starts.
+ */
 export function decodeUserCursor(cursor: string): UserCursor | null {
   const record = readCursorObject(cursor);
   if (record === null || Object.keys(record).length !== 2) return null;
