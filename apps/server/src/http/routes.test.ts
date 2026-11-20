@@ -49,7 +49,7 @@ let server: http.Server | undefined;
 let logLines: Array<Record<string, unknown>>;
 
 beforeAll(() => {
-  parent = fs.mkdtempSync(path.join(os.tmpdir(), "s10n-routes-"));
+  parent = fs.mkdtempSync(path.join(os.tmpdir(), "routes-test-"));
   webDistDir = path.join(parent, "dist");
   fs.mkdirSync(path.join(webDistDir, "assets"), { recursive: true });
   fs.writeFileSync(path.join(webDistDir, "index.html"), "<!doctype html><title>app</title>");

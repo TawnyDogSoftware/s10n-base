@@ -10,7 +10,7 @@ let parent: string;
 let root: string;
 
 beforeAll(() => {
-  parent = fs.mkdtempSync(path.join(os.tmpdir(), "s10n-static-"));
+  parent = fs.mkdtempSync(path.join(os.tmpdir(), "static-files-test-"));
   root = path.join(parent, "dist");
   fs.mkdirSync(path.join(root, "assets"), { recursive: true });
   fs.writeFileSync(path.join(root, "index.html"), "<!doctype html>");

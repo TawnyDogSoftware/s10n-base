@@ -20,7 +20,7 @@ export function testServerConfig(overrides: Partial<ServerConfig> = {}): ServerC
     requestBodyLimitBytes: 1024,
     shutdownTimeoutMs: 2000,
     logLevel: "debug",
-    webDistDir: path.join(os.tmpdir(), "s10n-no-web-build"),
+    webDistDir: path.join(os.tmpdir(), "no-web-build"),
     appVariant: "development",
     auth: { secret: Redacted.make("a-test-secret-that-is-at-least-32-characters") },
     email: {

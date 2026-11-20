@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "app-scaffold",
+      "name": "s10n-base",
       "devDependencies": {
         "@axe-core/playwright": "catalog:",
         "@eslint/js": "catalog:",

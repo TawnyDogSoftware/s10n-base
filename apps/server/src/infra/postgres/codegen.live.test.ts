@@ -15,7 +15,7 @@ let outDir: string;
 
 beforeEach(async () => {
   fixture = await createFixtureSchema();
-  outDir = fs.mkdtempSync(path.join(os.tmpdir(), "s10n-codegen-"));
+  outDir = fs.mkdtempSync(path.join(os.tmpdir(), "codegen-test-"));
 });
 
 afterEach(async () => {
