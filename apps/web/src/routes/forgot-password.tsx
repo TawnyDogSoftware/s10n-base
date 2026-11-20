@@ -10,10 +10,11 @@ import { ActionOutcome } from "../components/UnknownOutcome";
 import { Card, linkClass, Notice, PageShell } from "../components/ui";
 import type { AuthResult } from "../lib/auth";
 import { useServices } from "../services";
-import { redirectSignedIn } from "./guards";
+import { redirectSignedIn, useLeaveWhenSignedIn } from "./guards";
 import { rootRoute } from "./root";
 
 function ForgotPasswordPage() {
+  useLeaveWhenSignedIn();
   const { t } = useTranslation("auth");
   const { t: tCommon } = useTranslation("common");
   const { auth, gate } = useServices();

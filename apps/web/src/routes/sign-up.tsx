@@ -19,12 +19,13 @@ import { Button, Card, Field, linkClass, Notice, PageShell } from "../components
 import type { AuthResult } from "../lib/auth";
 import { optionalString } from "../lib/search";
 import { useServices } from "../services";
-import { redirectSignedIn } from "./guards";
+import { redirectSignedIn, useLeaveWhenSignedIn } from "./guards";
 import { rootRoute } from "./root";
 
 type Name = "name" | "email" | "password";
 
 function SignUpPage() {
+  useLeaveWhenSignedIn();
   const { t } = useTranslation("auth");
   const { t: tCommon } = useTranslation("common");
   const { auth, gate } = useServices();

@@ -14,12 +14,13 @@ import type { AuthResult } from "../lib/auth";
 import { safeRedirect } from "../lib/redirect";
 import { optionalString } from "../lib/search";
 import { useServices } from "../services";
-import { redirectSignedIn } from "./guards";
+import { redirectSignedIn, useLeaveWhenSignedIn } from "./guards";
 import { rootRoute } from "./root";
 
 type Name = "email" | "password";
 
 function SignInPage() {
+  useLeaveWhenSignedIn();
   const { t } = useTranslation("auth");
   const { t: tCommon } = useTranslation("common");
   const { t: tError } = useTranslation("errors");

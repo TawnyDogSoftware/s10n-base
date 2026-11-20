@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { createFakeBackend } from "@s10n-base/client/testing/fake-backend";
@@ -103,5 +103,22 @@ describe("redirectSignedIn", () => {
     click("Sign in");
 
     await waitForLocation(app, "/");
+  });
+});
+
+describe("visitor-only pages", () => {
+  it.each([
+    ["/sign-in?redirect=%2Fprofile", "/profile"],
+    ["/sign-up", "/"],
+    ["/forgot-password", "/"],
+  ])("leave %s when a session appears while they are open", async (path, target) => {
+    const app = renderApp(path, backendWith("sam@example.com"));
+    await screen.findByRole("textbox", { name: "Email address" });
+
+    // Signed in in another tab; this tab learns of it when it reads the session.
+    app.backend.signInAs("sam@example.com");
+    await act(() => app.services.gate.refresh());
+
+    await waitForLocation(app, target);
   });
 });
