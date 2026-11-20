@@ -14,7 +14,7 @@ import { loadLocalEnv } from "./local-env";
 const STOP_GRACE_MS = 15_000;
 
 /** How a child ended: its exit code (1 when a signal ended it), or the error that kept it from starting. */
-export interface Ending {
+interface Ending {
   readonly code: number;
   readonly error?: Error;
 }
