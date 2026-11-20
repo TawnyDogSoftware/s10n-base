@@ -1,14 +1,16 @@
 /**
- * The `migrate` entry point's logic: `migrate [up|status|down|reset]`. It connects with a pool of
- * one, retrying the first connection so it can start next to a database that is still booting,
- * runs one command, and returns the exit code. Output is JSON lines on stdout.
+ * The `migrate` entry point's logic: `migrate [up|status|down|reset]`. It connects as
+ * `MIGRATION_DATABASE_URL`'s role when that is set, else `DATABASE_URL`'s, with a pool of one,
+ * retrying the first connection so it can start next to a database that is still booting, runs
+ * one command, and returns the exit code. After `up`, it grants `DATABASE_APP_ROLE` what the
+ * server needs, when that is set. Output is JSON lines on stdout.
  */
 import { Effect, type Schedule } from "effect";
 import type { Kysely } from "kysely";
 import type { Migration } from "kysely/migration";
 
-import type { DatabaseConfig } from "./config";
-import { openCliDatabase, readDatabaseConfig } from "./database-cli";
+import type { MigrationConfig } from "./config";
+import { openCliDatabase, readMigrationConfig } from "./database-cli";
 import { pingDatabase, waitForDatabase } from "./infra/postgres/connect";
 import { migrations as committedMigrations } from "./infra/postgres/migrations";
 import {
@@ -35,7 +37,7 @@ export interface MigrateCliOptions {
 /** Connects with a pool of one, waits for the database, and runs `command`. */
 async function runWithDatabase(
   command: MigrationCommand,
-  config: DatabaseConfig,
+  config: MigrationConfig,
   logger: Logger,
   options: MigrateCliOptions,
 ): Promise<number> {
@@ -55,6 +57,7 @@ async function runWithDatabase(
       nodeEnv: config.nodeEnv,
       schema,
       migrations: options.migrations ?? committedMigrations,
+      appRole: config.appRole,
       log: logger.info,
     });
     return 0;
@@ -77,7 +80,7 @@ export async function runMigrateCli(options: MigrateCliOptions): Promise<number>
     return 1;
   }
 
-  const config = readDatabaseConfig(options.env, startupLogger);
+  const config = readMigrationConfig(options.env, startupLogger);
   if (config === undefined) return 1;
   const logger = createLogger({ level: config.logLevel, write: options.write });
 

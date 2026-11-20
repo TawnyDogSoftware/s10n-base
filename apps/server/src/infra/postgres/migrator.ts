@@ -19,12 +19,18 @@ const PRODUCTION_REFUSED: ReadonlySet<MigrationCommand> = new Set(["down", "rese
 const MIGRATION_LOCK_NAMESPACE = 73_001;
 
 const MIGRATION_TABLE = "kysely_migration";
+const MIGRATION_LOCK_TABLE = "kysely_migration_lock";
 
 export interface MigrationTarget {
   readonly db: Kysely<unknown>;
   /** Schema that holds the migrated tables and Kysely's bookkeeping tables. */
   readonly schema: string;
   readonly migrations: Readonly<Record<string, Migration>>;
+  /**
+   * The role the server connects as, when it is not the role that migrates. After applying
+   * migrations, it is granted what the server needs on the schema and nothing more.
+   */
+  readonly appRole?: string | undefined;
 }
 
 export interface MigrationStatus {
@@ -103,11 +109,40 @@ export async function withMigrationLock<T>(
   });
 }
 
-/** Applies every pending migration. Returns the names applied. */
+/**
+ * Grants `role` what the server needs on `schema`: to use the schema, to read and write rows in
+ * its tables and to use its sequences, and the same on tables and sequences that later
+ * migrations create (default privileges belong to the role running this, the one that migrates).
+ * Nothing that changes the schema, and nothing on the migrator's own bookkeeping tables. Every
+ * statement is idempotent, so it runs after every `up`.
+ */
+async function grantAppRole(
+  connection: Kysely<unknown>,
+  schema: string,
+  role: string,
+): Promise<void> {
+  const inSchema = sql.id(schema);
+  const to = sql.id(role);
+  const statements = [
+    sql`grant usage on schema ${inSchema} to ${to}`,
+    sql`grant select, insert, update, delete on all tables in schema ${inSchema} to ${to}`,
+    sql`grant usage on all sequences in schema ${inSchema} to ${to}`,
+    sql`alter default privileges in schema ${inSchema} grant select, insert, update, delete on tables to ${to}`,
+    sql`alter default privileges in schema ${inSchema} grant usage on sequences to ${to}`,
+    sql`revoke all on ${sql.id(schema, MIGRATION_TABLE)}, ${sql.id(schema, MIGRATION_LOCK_TABLE)} from ${to}`,
+  ];
+  for (const statement of statements) await statement.execute(connection);
+}
+
+/** Applies every pending migration, then grants the app role. Returns the names applied. */
 export function migrateUp(target: MigrationTarget): Promise<ReadonlyArray<string>> {
-  return withMigrationLock(target, async (connection) =>
-    checkMigrationResults(await createMigrator(connection, target).migrateToLatest()),
-  );
+  return withMigrationLock(target, async (connection) => {
+    const applied = checkMigrationResults(
+      await createMigrator(connection, target).migrateToLatest(),
+    );
+    if (target.appRole !== undefined) await grantAppRole(connection, target.schema, target.appRole);
+    return applied;
+  });
 }
 
 /** Reverts the latest applied migration. Returns its name, if one was reverted. */
@@ -122,7 +157,11 @@ export function resetSchema(target: MigrationTarget): Promise<ReadonlyArray<stri
   return withMigrationLock(target, async (connection) => {
     await sql`drop schema if exists ${sql.id(target.schema)} cascade`.execute(connection);
     await sql`create schema ${sql.id(target.schema)}`.execute(connection);
-    return checkMigrationResults(await createMigrator(connection, target).migrateToLatest());
+    const applied = checkMigrationResults(
+      await createMigrator(connection, target).migrateToLatest(),
+    );
+    if (target.appRole !== undefined) await grantAppRole(connection, target.schema, target.appRole);
+    return applied;
   });
 }
 
@@ -174,6 +213,10 @@ export interface MigrationCommandOptions extends MigrationTarget {
   readonly log: (message: string, fields?: Readonly<Record<string, unknown>>) => void;
 }
 
+function grantedTo(role: string | undefined): { grantedTo?: string } {
+  return role === undefined ? {} : { grantedTo: role };
+}
+
 /**
  * Runs one command: `up` applies every pending migration, `status` reports without writing,
  * `down` reverts the latest migration, and `reset` drops the schema and migrates it again.
@@ -191,6 +234,7 @@ export async function runMigrationCommand(
       options.log("migrations_applied", {
         schema: options.schema,
         applied: await migrateUp(options),
+        ...grantedTo(options.appRole),
       });
       return;
     case "down":
@@ -200,7 +244,11 @@ export async function runMigrationCommand(
       });
       return;
     case "reset":
-      options.log("schema_reset", { schema: options.schema, applied: await resetSchema(options) });
+      options.log("schema_reset", {
+        schema: options.schema,
+        applied: await resetSchema(options),
+        ...grantedTo(options.appRole),
+      });
       return;
     case "status":
       options.log("migration_status", {

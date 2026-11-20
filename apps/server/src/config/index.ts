@@ -77,7 +77,7 @@ interface EmailConfig {
   readonly ses: SesConfig;
 }
 
-/** What the `migrate` entry point needs: no HTTP settings. */
+/** What the database command-line tools need: no HTTP settings. */
 export interface DatabaseConfig {
   readonly nodeEnv: NodeEnv;
   readonly databaseUrl: Redacted.Redacted;
@@ -90,6 +90,10 @@ interface Variable<A> {
   /** Completes "must ...": what a valid value looks like. Never contains a value. */
   readonly rule: string;
   readonly config: Config.Config<A>;
+  /** For the environment table in docs/deployment.md: the default, as text. */
+  readonly defaultText?: string;
+  /** May be left unset, with no default. */
+  readonly optional?: true;
 }
 
 export interface ConfigProblem {
@@ -168,15 +172,35 @@ const AwsRegion = Schema.String.check(
   Schema.makeFilter((value) => /^[a-z]{2}(-[a-z]+)+-\d+$/.test(value)),
 );
 const LoopbackOrigin = Schema.String.check(Schema.makeFilter(isLoopbackOrigin));
+/** The characters a build version may use, so it is safe in a header, a log and an image label. */
+export const APP_VERSION_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._+-]{0,127}$/;
+const AppVersion = Schema.String.check(
+  Schema.makeFilter((value) => APP_VERSION_PATTERN.test(value)),
+);
+/** A role name that needs no quoting rules beyond double quotes: lowercase, at most 63 bytes. */
+const RoleName = Schema.String.check(
+  Schema.makeFilter((value) => /^[a-z_][a-z0-9_]{0,62}$/.test(value)),
+);
 
-function variable<A>(name: string, rule: string, config: Config.Config<A>): Variable<A> {
-  return { name, rule, config };
+interface VariableExtras {
+  readonly defaultText?: string;
+  readonly optional?: true;
+}
+
+function variable<A>(
+  name: string,
+  rule: string,
+  config: Config.Config<A>,
+  extras: VariableExtras = {},
+): Variable<A> {
+  return { name, rule, config, ...extras };
 }
 
 const nodeEnv = variable(
   "NODE_ENV",
   "be development, test or production",
   Config.Literals(NODE_ENVS, "NODE_ENV").pipe(Config.withDefault("development" as const)),
+  { defaultText: "development" },
 );
 const appUrl = variable(
   "APP_URL",
@@ -187,11 +211,13 @@ const host = variable(
   "HOST",
   "be a bind address such as 0.0.0.0 or 127.0.0.1",
   Config.schema(BindAddress, "HOST").pipe(Config.withDefault("0.0.0.0")),
+  { defaultText: "0.0.0.0" },
 );
 const port = variable(
   "PORT",
   "be an integer from 0 to 65535",
   Config.schema(integerBetween(0, 65_535), "PORT").pipe(Config.withDefault(4210)),
+  { defaultText: "4210" },
 );
 const databaseUrl = variable(
   "DATABASE_URL",
@@ -202,11 +228,13 @@ const databasePoolMax = variable(
   "DATABASE_POOL_MAX",
   "be an integer from 1 to 100",
   Config.schema(integerBetween(1, 100), "DATABASE_POOL_MAX").pipe(Config.withDefault(10)),
+  { defaultText: "10" },
 );
 const trustedProxyHops = variable(
   "TRUSTED_PROXY_HOPS",
   "be an integer from 0 to 10",
   Config.schema(integerBetween(0, 10), "TRUSTED_PROXY_HOPS").pipe(Config.withDefault(0)),
+  { defaultText: "0" },
 );
 const requestBodyLimitBytes = variable(
   "REQUEST_BODY_LIMIT_BYTES",
@@ -214,6 +242,7 @@ const requestBodyLimitBytes = variable(
   Config.schema(integerAtLeast(1024), "REQUEST_BODY_LIMIT_BYTES").pipe(
     Config.withDefault(1_048_576),
   ),
+  { defaultText: "1048576" },
 );
 const shutdownTimeoutMs = variable(
   "SHUTDOWN_TIMEOUT_MS",
@@ -221,11 +250,13 @@ const shutdownTimeoutMs = variable(
   Config.schema(integerBetween(1000, 60_000), "SHUTDOWN_TIMEOUT_MS").pipe(
     Config.withDefault(10_000),
   ),
+  { defaultText: "10000" },
 );
 const logLevel = variable(
   "LOG_LEVEL",
   "be debug, info, warn or error",
   Config.Literals(LOG_LEVELS, "LOG_LEVEL").pipe(Config.withDefault("info" as const)),
+  { defaultText: "info" },
 );
 
 const authSecret = variable(
@@ -237,6 +268,7 @@ const appVariant = variable(
   "APP_VARIANT",
   "be development, preview or production",
   Config.option(Config.Literals(APP_VARIANTS, "APP_VARIANT")),
+  { optional: true },
 );
 const emailFrom = variable(
   "EMAIL_FROM",
@@ -259,6 +291,7 @@ const sesEndpoint = variable(
   Config.option(Config.schema(LoopbackOrigin, "SES_ENDPOINT")).pipe(
     Config.map((value) => Option.map(value, (origin) => new URL(origin).origin)),
   ),
+  { optional: true },
 );
 const awsAccessKeyId = variable(
   "AWS_ACCESS_KEY_ID",
@@ -278,6 +311,14 @@ const awsSessionToken = variable(
   Config.option(Config.schema(NonEmpty, "AWS_SESSION_TOKEN")).pipe(
     Config.map((value) => Option.map(value, (token) => Redacted.make(token))),
   ),
+  { optional: true },
+);
+
+const appVersion = variable(
+  "APP_VERSION",
+  "be 1 to 128 letters, digits, dots, underscores, plus or minus signs, starting with a letter or digit, or unset",
+  Config.option(Config.schema(AppVersion, "APP_VERSION")),
+  { optional: true },
 );
 
 /** The server's variables, in the order problems are reported. */
@@ -301,6 +342,7 @@ export const serverVariables = [
   awsAccessKeyId,
   awsSecretAccessKey,
   awsSessionToken,
+  appVersion,
 ] as const;
 
 type Values<T extends ReadonlyArray<Variable<unknown>>> = {
@@ -421,8 +463,17 @@ function crossVariableProblems(
   });
 }
 
-function inVariableOrder(problems: Array<ConfigProblem>): Array<ConfigProblem> {
-  const order = serverVariables.map((entry) => entry.name);
+/** Each production rule's variable and problem, for the environment table in the docs. */
+export const productionRules: ReadonlyArray<ConfigProblem> = PRODUCTION_RULES.map((rule) => ({
+  variable: rule.variable,
+  problem: rule.problem,
+}));
+
+function inVariableOrder(
+  problems: Array<ConfigProblem>,
+  variables: ReadonlyArray<Variable<unknown>> = serverVariables,
+): Array<ConfigProblem> {
+  const order = variables.map((entry) => entry.name);
   // A stable sort: problems with one variable keep the order they were found in.
   return problems.toSorted((a, b) => order.indexOf(a.variable) - order.indexOf(b.variable));
 }
@@ -465,10 +516,11 @@ export const loadServerConfig: Effect.Effect<ServerConfig, ServerConfigError> = 
       accessKeyId,
       secretAccessKey,
       sessionToken,
+      buildVersion,
     ] = parsed.values;
     return {
       appName: "S10N Base",
-      version: serverPackage.version,
+      version: Option.getOrElse(buildVersion, () => serverPackage.version),
       nodeEnv: nodeEnvValue,
       appOrigin,
       host: hostValue,
@@ -499,16 +551,95 @@ export const loadServerConfig: Effect.Effect<ServerConfig, ServerConfigError> = 
   },
 );
 
-/** Reads the `migrate` entry point's config from the current `ConfigProvider`. */
+/** The variables `set-role` reads. */
+export const databaseVariables = [nodeEnv, databaseUrl, logLevel] as const;
+
+/** Reads the database config, for `set-role`, from the current `ConfigProvider`. */
 const loadDatabaseConfig: Effect.Effect<DatabaseConfig, ServerConfigError> = Effect.gen(
   function* () {
     const provider = yield* ConfigProvider.ConfigProvider;
-    const parsed = yield* parseAll([nodeEnv, databaseUrl, logLevel] as const, provider);
+    const parsed = yield* parseAll(databaseVariables, provider);
     if ("problems" in parsed) {
       return yield* new ServerConfigError({ problems: parsed.problems });
     }
     const [nodeEnvValue, databaseUrlValue, level] = parsed.values;
     return { nodeEnv: nodeEnvValue, databaseUrl: databaseUrlValue, logLevel: level };
+  },
+);
+
+const POSTGRES_URL_RULE = "be a postgres:// or postgresql:// URL";
+
+const migrationDatabaseUrl = variable(
+  "MIGRATION_DATABASE_URL",
+  `${POSTGRES_URL_RULE} for the role that owns the schema, or unset to use DATABASE_URL`,
+  Config.option(Config.schema(PostgresUrl, "MIGRATION_DATABASE_URL")).pipe(
+    Config.map((value) => Option.map(value, (url) => Redacted.make(url))),
+  ),
+  { optional: true },
+);
+const fallbackDatabaseUrl = variable(
+  "DATABASE_URL",
+  `${POSTGRES_URL_RULE}; required when MIGRATION_DATABASE_URL is unset`,
+  Config.option(Config.schema(PostgresUrl, "DATABASE_URL")).pipe(
+    Config.map((value) => Option.map(value, (url) => Redacted.make(url))),
+  ),
+  { optional: true },
+);
+const databaseAppRole = variable(
+  "DATABASE_APP_ROLE",
+  "be a role name of lowercase letters, digits and underscores, not starting with a digit, at most 63 characters, or unset",
+  Config.option(Config.schema(RoleName, "DATABASE_APP_ROLE")),
+  { optional: true },
+);
+
+/** The variables `migrate` reads. The server never reads MIGRATION_DATABASE_URL. */
+export const migrationVariables = [
+  nodeEnv,
+  fallbackDatabaseUrl,
+  migrationDatabaseUrl,
+  logLevel,
+  databaseAppRole,
+] as const;
+
+/** What the `migrate` entry point needs: the database config, and the app's role if separate. */
+export interface MigrationConfig extends DatabaseConfig {
+  /** Granted what the server needs after `up`. Unset when the server uses the same role. */
+  readonly appRole: string | undefined;
+}
+
+/** Reads the `migrate` entry point's config from the current `ConfigProvider`. */
+const loadMigrationConfig: Effect.Effect<MigrationConfig, ServerConfigError> = Effect.gen(
+  function* () {
+    const provider = yield* ConfigProvider.ConfigProvider;
+    const parsed = yield* parseAll(migrationVariables, provider);
+    const unset =
+      Option.isNone(yield* rawOf("DATABASE_URL", provider)) &&
+      Option.isNone(yield* rawOf("MIGRATION_DATABASE_URL", provider));
+    const problems = [
+      ...("problems" in parsed ? parsed.problems : []),
+      ...(unset
+        ? [
+            {
+              variable: "DATABASE_URL",
+              problem: `is required: it must ${fallbackDatabaseUrl.rule}`,
+            },
+          ]
+        : []),
+    ];
+    if (problems.length > 0 || "problems" in parsed) {
+      return yield* new ServerConfigError({
+        problems: inVariableOrder(problems, migrationVariables),
+      });
+    }
+    const [nodeEnvValue, fallbackUrl, migrationUrl, level, appRole] = parsed.values;
+    // Not unset, so one of the two holds a valid URL.
+    const url = Option.getOrThrow(Option.orElse(migrationUrl, () => fallbackUrl));
+    return {
+      nodeEnv: nodeEnvValue,
+      databaseUrl: url,
+      logLevel: level,
+      appRole: Option.getOrUndefined(appRole),
+    };
   },
 );
 
@@ -527,6 +658,13 @@ export function serverConfigFromEnv(env: Record<string, string | undefined>) {
 /** {@link loadDatabaseConfig} over an explicit environment record. */
 export function databaseConfigFromEnv(env: Record<string, string | undefined>) {
   return loadDatabaseConfig.pipe(
+    Effect.provideService(ConfigProvider.ConfigProvider, envProvider(env)),
+  );
+}
+
+/** {@link loadMigrationConfig} over an explicit environment record. */
+export function migrationConfigFromEnv(env: Record<string, string | undefined>) {
+  return loadMigrationConfig.pipe(
     Effect.provideService(ConfigProvider.ConfigProvider, envProvider(env)),
   );
 }

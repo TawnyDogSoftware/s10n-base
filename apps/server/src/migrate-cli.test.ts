@@ -121,4 +121,38 @@ describe("runMigrateCli with a database", () => {
       { message: "migration_status", schema: "fixture_schema", pending: ["001_widget"] },
     ]);
   });
+
+  it("grants DATABASE_APP_ROLE after applying, and says so", async () => {
+    const output = capture();
+    const { db, queries } = scriptedDb<unknown>(() => []);
+
+    const code = await runMigrateCli({
+      args: ["up"],
+      env: { ...env, DATABASE_APP_ROLE: "app_runtime" },
+      write: output.write,
+      db,
+    });
+
+    expect(code).toBe(0);
+    expect(output.entries()).toMatchObject([
+      { message: "migrations_applied", applied: ["001_auth"], grantedTo: "app_runtime" },
+    ]);
+    expect(queries.map((query) => query.sql)).toContain(
+      'grant usage on schema "public" to "app_runtime"',
+    );
+  });
+
+  it("needs no DATABASE_URL when MIGRATION_DATABASE_URL is set", async () => {
+    const output = capture();
+    const { db } = scriptedDb<unknown>(() => []);
+
+    const code = await runMigrateCli({
+      args: ["status"],
+      env: { MIGRATION_DATABASE_URL: "postgres://owner:secret@127.0.0.1:9/app" },
+      write: output.write,
+      db,
+    });
+
+    expect(code).toBe(0);
+  });
 });

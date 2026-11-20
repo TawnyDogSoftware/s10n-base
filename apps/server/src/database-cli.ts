@@ -5,23 +5,42 @@
 import { Effect, Redacted } from "effect";
 import type { Kysely } from "kysely";
 
-import { type DatabaseConfig, databaseConfigFromEnv } from "./config";
+import {
+  type DatabaseConfig,
+  databaseConfigFromEnv,
+  type MigrationConfig,
+  migrationConfigFromEnv,
+  type ServerConfigError,
+} from "./config";
 import type { DB } from "./infra/postgres/generated/db";
 import { createDb, createPool, warnOnIdleError } from "./infra/postgres/pool";
 import type { Logger } from "./observability/logger";
 
-/** The database config from `env`, or undefined after logging why it is invalid. */
-export function readDatabaseConfig(
-  env: Record<string, string | undefined>,
-  logger: Logger,
-): DatabaseConfig | undefined {
-  const result = Effect.runSync(Effect.result(databaseConfigFromEnv(env)));
+/** The config `load` reads, or undefined after logging why it is invalid. */
+function readConfig<C>(load: Effect.Effect<C, ServerConfigError>, logger: Logger): C | undefined {
+  const result = Effect.runSync(Effect.result(load));
   if (result._tag === "Success") return result.success;
   // The message lists every problem and never a value; the stack would only add noise.
   logger.error("config_invalid", {
     error: { name: result.failure._tag, message: result.failure.message },
   });
   return undefined;
+}
+
+/** The database config (`set-role`) from `env`, or undefined after logging why it is invalid. */
+export function readDatabaseConfig(
+  env: Record<string, string | undefined>,
+  logger: Logger,
+): DatabaseConfig | undefined {
+  return readConfig(databaseConfigFromEnv(env), logger);
+}
+
+/** The `migrate` config from `env`, or undefined after logging why it is invalid. */
+export function readMigrationConfig(
+  env: Record<string, string | undefined>,
+  logger: Logger,
+): MigrationConfig | undefined {
+  return readConfig(migrationConfigFromEnv(env), logger);
 }
 
 /**

@@ -2,18 +2,23 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { inspect } from "node:util";
 
-import { Config, ConfigProvider, Effect, Exit, Redacted } from "effect";
+import { Config, ConfigProvider, Effect, Exit, Option, Redacted } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
   EXAMPLE_AUTH_SECRET,
   LOCAL_SES_CREDENTIALS,
   ServerConfigError,
+  APP_VERSION_PATTERN,
   databaseConfigFromEnv,
+  databaseVariables,
   loadServerConfig,
+  migrationConfigFromEnv,
+  migrationVariables,
   serverConfigFromEnv,
   serverVariables,
 } from "./index";
+import serverPackage from "../../package.json" with { type: "json" };
 
 const DATABASE_URL = "postgres://app:s3cret-password@db.internal:5432/app";
 
@@ -281,6 +286,7 @@ describe("server config", () => {
       "AWS_ACCESS_KEY_ID",
       "AWS_SECRET_ACCESS_KEY",
       "AWS_SESSION_TOKEN",
+      "APP_VERSION",
     ]);
     for (const variable of serverVariables) {
       expect(Config.isConfig(variable.config)).toBe(true);
@@ -422,5 +428,140 @@ describe("database config", () => {
     expect(Exit.isFailure(exit)).toBe(true);
     expect(String(exit)).toContain("NODE_ENV");
     expect(String(exit)).toContain("DATABASE_URL");
+  });
+});
+
+describe("APP_VERSION", () => {
+  it("is the version /config reports when set, and the package version otherwise", () => {
+    expect(load({ ...valid, APP_VERSION: "2026.11.19-abc1234" }).version).toBe(
+      "2026.11.19-abc1234",
+    );
+    expect(load(valid).version).toBe(serverPackage.version);
+  });
+
+  it.each(["1.0 beta", "-leading-dash", "../etc", "$(id)", "v1;rm", "a".repeat(129), "naïve"])(
+    "refuses %j",
+    (value) => {
+      expect(problemFor({ ...valid, APP_VERSION: value }, "APP_VERSION")).toMatch(
+        /^must be 1 to 128/,
+      );
+    },
+  );
+
+  it("accepts 128 characters of the allowed set", () => {
+    const value = `A${"a1._+-".repeat(21)}b`;
+
+    expect(value).toHaveLength(128);
+    expect(load({ ...valid, APP_VERSION: value }).version).toBe(value);
+    expect(APP_VERSION_PATTERN.test(value)).toBe(true);
+  });
+});
+
+function migrationProblems(env: Record<string, string | undefined>) {
+  const exit = Effect.runSyncExit(migrationConfigFromEnv(env));
+  if (Exit.isSuccess(exit)) throw new Error("expected the config to be rejected");
+  const error = exit.cause.reasons.find((reason) => reason._tag === "Fail")?.error;
+  if (!(error instanceof ServerConfigError)) throw new Error("expected a ServerConfigError");
+  return error.problems;
+}
+
+describe("migration config", () => {
+  const OWNER_URL = "postgres://owner:owner-password@db.internal:5432/app";
+
+  it("connects with DATABASE_URL when MIGRATION_DATABASE_URL is unset, with no app role", () => {
+    const config = Effect.runSync(migrationConfigFromEnv({ DATABASE_URL }));
+
+    expect(Redacted.value(config.databaseUrl)).toBe(DATABASE_URL);
+    expect(config).toMatchObject({ nodeEnv: "development", logLevel: "info", appRole: undefined });
+  });
+
+  it("connects with MIGRATION_DATABASE_URL when it is set", () => {
+    const config = Effect.runSync(
+      migrationConfigFromEnv({ DATABASE_URL, MIGRATION_DATABASE_URL: OWNER_URL }),
+    );
+
+    expect(Redacted.value(config.databaseUrl)).toBe(OWNER_URL);
+  });
+
+  it("needs no DATABASE_URL when MIGRATION_DATABASE_URL is set", () => {
+    const config = Effect.runSync(migrationConfigFromEnv({ MIGRATION_DATABASE_URL: OWNER_URL }));
+
+    expect(Redacted.value(config.databaseUrl)).toBe(OWNER_URL);
+  });
+
+  it("requires one of the two URLs", () => {
+    expect(migrationProblems({})).toEqual([
+      {
+        variable: "DATABASE_URL",
+        problem:
+          "is required: it must be a postgres:// or postgresql:// URL; required when MIGRATION_DATABASE_URL is unset",
+      },
+    ]);
+  });
+
+  it("reads DATABASE_APP_ROLE", () => {
+    const config = Effect.runSync(
+      migrationConfigFromEnv({ DATABASE_URL, DATABASE_APP_ROLE: "app_runtime_2" }),
+    );
+
+    expect(config.appRole).toBe("app_runtime_2");
+  });
+
+  it.each(["App", "app-role", "1app", 'app"; drop table x; --', "a".repeat(64), "app role"])(
+    "refuses the role name %j",
+    (role) => {
+      expect(migrationProblems({ DATABASE_URL, DATABASE_APP_ROLE: role })).toEqual([
+        expect.objectContaining({
+          variable: "DATABASE_APP_ROLE",
+          problem: expect.stringMatching(/^must be a role name/),
+        }),
+      ]);
+    },
+  );
+
+  it("reports a missing URL together with an invalid role", () => {
+    expect(
+      migrationProblems({ DATABASE_APP_ROLE: "Bad" }).map((problem) => problem.variable),
+    ).toEqual(["DATABASE_URL", "DATABASE_APP_ROLE"]);
+  });
+
+  it("reports every problem together, in variable order, and never a URL", () => {
+    const problems = migrationProblems({
+      NODE_ENV: "staging",
+      MIGRATION_DATABASE_URL: "mysql://owner:owner-password@db/app",
+      DATABASE_APP_ROLE: "Bad",
+    });
+
+    expect(problems.map((problem) => problem.variable)).toEqual([
+      "NODE_ENV",
+      "MIGRATION_DATABASE_URL",
+      "DATABASE_APP_ROLE",
+    ]);
+    expect(JSON.stringify(problems)).not.toContain("owner-password");
+  });
+});
+
+describe("the documented requirement and default of every variable", () => {
+  const empty = ConfigProvider.fromEnvRecord({});
+  const all: ReadonlyArray<{
+    readonly name: string;
+    readonly config: Config.Config<unknown>;
+    readonly defaultText?: string;
+    readonly optional?: true;
+  }> = [...serverVariables, ...migrationVariables, ...databaseVariables];
+
+  it.each(all.map((entry) => [entry.name, entry] as const))("%s", (_name, entry) => {
+    const result = Effect.runSync(Effect.result(entry.config.parse(empty)));
+    if (entry.defaultText !== undefined) {
+      expect(result._tag === "Success" && String(result.success)).toBe(entry.defaultText);
+    } else if (entry.optional === true) {
+      expect(
+        result._tag === "Success" &&
+          Option.isOption(result.success) &&
+          Option.isNone(result.success),
+      ).toBe(true);
+    } else {
+      expect(result._tag).toBe("Failure");
+    }
   });
 });

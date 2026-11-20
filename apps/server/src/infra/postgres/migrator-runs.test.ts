@@ -184,3 +184,83 @@ describe("migrationStatus order", () => {
     expect(status.pending).toEqual(["001_widget", "002_gadget"]);
   });
 });
+
+describe("granting the app role", () => {
+  const grants = (queries: ReadonlyArray<{ sql: string }>) =>
+    queries
+      .map((query) => query.sql.trim())
+      .filter((text) => /^(grant|revoke|alter default) /.test(text));
+
+  const EXPECTED_GRANTS = [
+    'grant usage on schema "app" to "app_runtime"',
+    'grant select, insert, update, delete on all tables in schema "app" to "app_runtime"',
+    'grant usage on all sequences in schema "app" to "app_runtime"',
+    'alter default privileges in schema "app" grant select, insert, update, delete on tables to "app_runtime"',
+    'alter default privileges in schema "app" grant usage on sequences to "app_runtime"',
+    'revoke all on "app"."kysely_migration", "app"."kysely_migration_lock" from "app_runtime"',
+  ];
+
+  it("grants what the server needs after the migrations, inside the lock", async () => {
+    const { db, queries } = database();
+
+    await migrateUp({ db, schema: "app", migrations, appRole: "app_runtime" });
+
+    expect(grants(queries)).toEqual(EXPECTED_GRANTS);
+    const texts = queries.map((query) => query.sql.trim());
+    const firstGrant = texts.indexOf(EXPECTED_GRANTS[0] ?? "");
+    expect(firstGrant).toBeGreaterThan(texts.indexOf('create table "gadget" ()'));
+    expect(texts.at(-1)).toBe(UNLOCK);
+  });
+
+  it("grants on every run, so a role added later is covered without a new migration", async () => {
+    const { db, queries } = database(["001_widget", "002_gadget"]);
+
+    expect(await migrateUp({ db, schema: "app", migrations, appRole: "app_runtime" })).toEqual([]);
+    expect(grants(queries)).toEqual(EXPECTED_GRANTS);
+  });
+
+  it("grants nothing without an app role", async () => {
+    const { db, queries } = database();
+
+    await migrateUp({ db, schema: "app", migrations });
+
+    expect(grants(queries)).toEqual([]);
+  });
+
+  it("grants after a reset too", async () => {
+    const { db, queries } = database();
+
+    await resetSchema({ db, schema: "app", migrations, appRole: "app_runtime" });
+
+    expect(grants(queries)).toEqual(EXPECTED_GRANTS);
+  });
+
+  it("grants nothing when a migration fails", async () => {
+    const failing = { "001_broken": { up: () => Promise.reject(new Error("boom")) } };
+    const { db, queries } = database();
+
+    await expect(
+      migrateUp({ db, schema: "app", migrations: failing, appRole: "app_runtime" }),
+    ).rejects.toThrow(MigrationFailedError);
+    expect(grants(queries)).toEqual([]);
+  });
+
+  it("logs the role it granted to", async () => {
+    const { db } = database();
+    const log = vi.fn<(message: string, fields?: Readonly<Record<string, unknown>>) => void>();
+
+    await runMigrationCommand("up", {
+      db,
+      schema: "app",
+      migrations,
+      nodeEnv: "test",
+      log,
+      appRole: "app_runtime",
+    });
+
+    expect(log).toHaveBeenCalledWith(
+      "migrations_applied",
+      expect.objectContaining({ grantedTo: "app_runtime" }),
+    );
+  });
+});

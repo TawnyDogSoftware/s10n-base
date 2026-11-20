@@ -46,9 +46,14 @@ export async function startAuthServer(
   options: {
     readonly handlers?: ReadonlyArray<RpcHandler>;
     readonly config?: Partial<ServerConfig>;
+    /**
+     * The schema the server works in, and the URL it connects with (`fixture.url`). By default a
+     * new migrated fixture schema, as the test database's own role.
+     */
+    readonly createSchema?: () => Promise<MigratedSchema>;
   } = {},
 ): Promise<AuthServer> {
-  const schema = await createMigratedSchema();
+  const schema = await (options.createSchema ?? createMigratedSchema)();
   const ses = await startSesLocal({ host: "127.0.0.1", port: 0 });
   const port = await freePort();
   const base = `http://127.0.0.1:${String(port)}`;
