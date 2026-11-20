@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { NetworkError } from "@s10n-base/client/rpc";
+import { DecodeError, NetworkError } from "@s10n-base/client/rpc";
 import { createFakeBackend } from "@s10n-base/client/testing/fake-backend";
 
 import { createWebAuth } from "./auth";
@@ -149,6 +149,35 @@ describe("createWebAuth", () => {
       method: "GET",
       url: `${BASE}/api/auth/passkey/list-user-passkeys`,
     });
+  });
+});
+
+describe("the passkey list reply", () => {
+  it("reads the creation time, which the client may hand over as a Date", async () => {
+    const { fetch } = fake(() => ok([{ id: "pk1", createdAt: "2026-11-19T10:00:00.000Z" }]));
+
+    await expect(createWebAuth({ baseUrl: BASE, fetch }).listPasskeys()).resolves.toEqual({
+      ok: true,
+      data: [{ id: "pk1", name: null, createdAt: "2026-11-19T10:00:00.000Z" }],
+    });
+  });
+
+  it.each([
+    ["not an object", ["pk1"]],
+    ["a null item", [null]],
+    ["an id that is not a string", [{ id: 1, createdAt: "2026-11-19T10:00:00.000Z" }]],
+    [
+      "a name that is not a string",
+      [{ id: "pk1", name: 2, createdAt: "2026-11-19T10:00:00.000Z" }],
+    ],
+    ["no creation time", [{ id: "pk1" }]],
+    ["an impossible creation time", [{ id: "pk1", createdAt: "not a date" }]],
+  ])("is refused, not shown as empty, for %s", async (_name, body) => {
+    const { fetch } = fake(() => ok(body));
+
+    await expect(createWebAuth({ baseUrl: BASE, fetch }).listPasskeys()).rejects.toBeInstanceOf(
+      DecodeError,
+    );
   });
 });
 

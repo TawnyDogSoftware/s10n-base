@@ -16,6 +16,8 @@ import {
   runAuthAction,
 } from "@s10n-base/client/auth";
 
+import { DecodeError } from "@s10n-base/client/rpc";
+
 export type { AuthResult } from "@s10n-base/client/auth";
 
 export interface Passkey {
@@ -33,13 +35,34 @@ export interface WebAuth extends PasswordAuth {
   readonly addPasskey: (name: string) => Promise<AuthResult>;
   readonly deletePasskey: (id: string) => Promise<AuthResult>;
 }
+/** A creation time as Better Auth sends it (a string, or a Date), or null when it is not one. */
+function toTime(value: unknown): string | null {
+  if (typeof value !== "string" && !(value instanceof Date)) return null;
+  const time = new Date(value);
+  return Number.isNaN(time.getTime()) ? null : time.toISOString();
+}
+
+/** One passkey of the list reply, or null when the item is not one. */
+function toPasskey(item: unknown): Passkey | null {
+  if (typeof item !== "object" || item === null) return null;
+  const { id, name = null, createdAt } = item as Record<string, unknown>;
+  const created = toTime(createdAt);
+  if (typeof id !== "string" || created === null) return null;
+  if (name !== null && typeof name !== "string") return null;
+  return { id, name, createdAt: created };
+}
+
+/**
+ * The list reply as passkeys.
+ *
+ * @throws {DecodeError} when it is not a list of passkeys: never shown as an empty list.
+ */
 function toPasskeys(data: unknown): Passkey[] {
-  if (!Array.isArray(data)) return [];
-  return data.map((item: { id: string; name?: string | null; createdAt: string | Date }) => ({
-    id: item.id,
-    name: item.name ?? null,
-    createdAt: new Date(item.createdAt).toISOString(),
-  }));
+  const passkeys = Array.isArray(data) ? data.map(toPasskey) : [null];
+  if (passkeys.some((passkey) => passkey === null)) {
+    throw new DecodeError("The passkey list does not have the expected shape.");
+  }
+  return passkeys as Passkey[];
 }
 
 export function createWebAuth(options: {

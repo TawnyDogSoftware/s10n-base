@@ -75,6 +75,21 @@ type PasskeyMessage =
   | { readonly kind: "error"; readonly text: string }
   | { readonly kind: "unknown"; readonly outcome: SettledAction<AuthResult> };
 
+/** A list that is still shown but could not be read again, with a retry. */
+function RefreshFailed(props: { readonly text: string; readonly onRetry: () => void }) {
+  const { t } = useTranslation("common");
+  return (
+    <Notice tone="danger">
+      <p>{props.text}</p>
+      <div>
+        <Button variant="secondary" onClick={props.onRetry}>
+          {t("routeError.retry")}
+        </Button>
+      </div>
+    </Notice>
+  );
+}
+
 /** What the profile shows while a query has no data: loading, or the reason it failed. */
 function QueryFallback(props: { readonly failed: boolean; readonly message: string }) {
   return props.failed ? <Notice tone="danger">{props.message}</Notice> : <Loading />;
@@ -183,7 +198,9 @@ function Passkeys() {
   return (
     <Card title={t("passkeys.title")}>
       <p className="text-muted">{t("passkeys.intro")}</p>
-      {query.isSuccess ? (
+      {query.data === undefined ? (
+        <QueryFallback failed={query.isError} message={tError("generic")} />
+      ) : (
         <PasskeyList
           passkeys={query.data}
           busy={pending ? busy : null}
@@ -195,9 +212,10 @@ function Passkeys() {
             )
           }
         />
-      ) : (
-        <QueryFallback failed={query.isError} message={tError("generic")} />
       )}
+      {query.isError && query.data !== undefined ? (
+        <RefreshFailed text={t("passkeys.refreshFailed")} onRetry={() => void query.refetch()} />
+      ) : null}
       {supported ? (
         <div>
           <Button

@@ -164,6 +164,7 @@ export const en = {
       unnamed: "Passkey",
       addedOn: "Added {{date}}",
       unsupported: "This browser cannot use passkeys.",
+      refreshFailed: "We could not refresh your passkeys.",
     },
     session: {
       title: "Session",
