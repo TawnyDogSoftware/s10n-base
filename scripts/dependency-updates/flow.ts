@@ -2,7 +2,15 @@
  * The daily dependency update, written against an injected `Io` so the whole flow can
  * be tested without git, bun, GitHub or the network. `run.ts` supplies the real `Io`.
  */
+import {
+  DOCKERFILE,
+  moveRuntime,
+  RUNTIME_IMAGES,
+  type Runtime,
+  tagFor,
+} from "../dockerfile-versions";
 import { enforceHolds, parseHolds, type Hold, type Restoration } from "./holds";
+import { resolveImageDigest, type RegistryIo } from "./image-digests";
 import { parseLockedVersions } from "./lockfile";
 import {
   applySpecs,
@@ -34,7 +42,7 @@ export interface CommandResult {
   readonly stderr: string;
 }
 
-export interface Io {
+export interface Io extends RegistryIo {
   run(
     command: string,
     args: readonly string[],
@@ -204,22 +212,34 @@ export async function readBase(io: Io, sha: string): Promise<BaseSnapshot> {
   };
 }
 
+/** "a and b", "a, b and c". */
+function listed(items: readonly string[]): string {
+  return items.join(", ").replace(/, (?=[^,]*$)/, " and ");
+}
+
 /** bun and Node changes the PR makes against the base. */
 async function runtimeChanges(io: Io, base: BaseSnapshot): Promise<RuntimeChange[]> {
   const root = JSON.parse(await io.readFile("package.json")) as Manifest;
   const bun = bunVersionOf(root);
   const node = (await io.readFile(".nvmrc")).trim();
+  const image = (await io.exists(DOCKERFILE)) ? [`the image in \`${DOCKERFILE}\``] : [];
+  const files = (...names: string[]) => listed([...names, ...image]);
   const changes: RuntimeChange[] = [];
   if (base.bun !== "" && bun !== base.bun) {
     changes.push({
       name: "bun",
       from: base.bun,
       to: bun,
-      files: "`packageManager` and `engines.bun`",
+      files: files("`packageManager`", "`engines.bun`"),
     });
   }
   if (base.node !== "" && node !== base.node) {
-    changes.push({ name: "Node", from: base.node, to: node, files: "`.nvmrc` and `engines.node`" });
+    changes.push({
+      name: "Node",
+      from: base.node,
+      to: node,
+      files: files("`.nvmrc`", "`engines.node`"),
+    });
   }
   return changes;
 }
@@ -290,6 +310,45 @@ function newerThan(candidate: string | undefined, current: string): string | und
   return candidate !== undefined && compareVersions(candidate, current) > 0 ? candidate : undefined;
 }
 
+interface RuntimeMove {
+  readonly runtime: Runtime;
+  readonly from: string;
+  readonly to: string;
+}
+
+const RUNTIME_NAMES: Readonly<Record<Runtime, string>> = { node: "Node", bun: "bun" };
+
+/**
+ * Moves the Dockerfile's base images with the runtimes, each to its new tag's digest. A runtime
+ * whose new image cannot be resolved does not move at all, so the Dockerfile and the version
+ * sources still agree; the note says why. Returns the moves that were made.
+ */
+async function moveDockerfile(
+  io: Io,
+  moves: readonly RuntimeMove[],
+): Promise<{ readonly moved: RuntimeMove[]; readonly notes: string[] }> {
+  if (moves.length === 0 || !(await io.exists(DOCKERFILE))) return { moved: [...moves], notes: [] };
+  let text = await io.readFile(DOCKERFILE);
+  const moved: RuntimeMove[] = [];
+  const notes: string[] = [];
+  for (const move of moves) {
+    const image = RUNTIME_IMAGES[move.runtime];
+    const tag = tagFor(text, move.runtime, move.to);
+    try {
+      const digest = await resolveImageDigest(io, image, tag);
+      io.log(`Resolved ${image}:${tag} to ${digest}.`);
+      text = moveRuntime(text, move.runtime, { from: move.from, to: move.to, digest });
+      moved.push(move);
+    } catch (error) {
+      notes.push(
+        `${RUNTIME_NAMES[move.runtime]} ${move.to} is not applied: the image ${image}:${tag} could not be resolved (${(error as Error).message}).`,
+      );
+    }
+  }
+  await io.writeFile(DOCKERFILE, text);
+  return { moved, notes };
+}
+
 async function updateRuntimes(io: Io, now: Date): Promise<string[]> {
   const root = JSON.parse(await io.readFile("package.json")) as Manifest;
   const currentNode = (await io.readFile(".nvmrc")).trim();
@@ -304,8 +363,14 @@ async function updateRuntimes(io: Io, now: Date): Promise<string[]> {
     now,
   );
 
-  const newBun = newerThan(bun, currentBun);
-  const newNode = newerThan(node.version, currentNode);
+  const candidates: RuntimeMove[] = [
+    { runtime: "node" as const, from: currentNode, to: newerThan(node.version, currentNode) },
+    { runtime: "bun" as const, from: currentBun, to: newerThan(bun, currentBun) },
+  ].flatMap((move) => (move.to === undefined ? [] : [{ ...move, to: move.to }]));
+  const { moved, notes } = await moveDockerfile(io, candidates);
+  notApplied.push(...notes);
+  const newNode = moved.find((move) => move.runtime === "node")?.to;
+  const newBun = moved.find((move) => move.runtime === "bun")?.to;
   if (newNode !== undefined) {
     await io.writeFile(".nvmrc", `${newNode}\n`);
   }
@@ -318,7 +383,7 @@ async function updateRuntimes(io: Io, now: Date): Promise<string[]> {
   }
   if (node.newerLtsMajor !== undefined) {
     notApplied.push(
-      `Node ${String(node.newerLtsMajor)} is a newer LTS line. Moving to it is a manual change: it also moves \`@types/node\` to that major and any Docker base image.`,
+      `Node ${String(node.newerLtsMajor)} is a newer LTS line. Moving to it is a manual change: it also moves \`@types/node\` to that major, and the Dockerfile's Node image.`,
     );
   }
   return notApplied;

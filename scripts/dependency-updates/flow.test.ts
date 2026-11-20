@@ -51,6 +51,10 @@ interface Scenario {
   readonly start?: { catalog: Record<string, string>; lock: Record<string, string> };
   /** Catalog and lockfile on the open PR's branch, when it differs from main. */
   readonly prHead?: { catalog: Record<string, string>; lock: Record<string, string> };
+  /** docker/Dockerfile at the start; none when unset. */
+  readonly dockerfile?: string;
+  /** Digests the registry knows, by `<repository>:<tag>`; any other tag answers 404. */
+  readonly digests?: Record<string, string>;
 }
 
 const startCatalog = {
@@ -88,6 +92,7 @@ class FakeIo implements Io {
     this.files.set(".nvmrc", "26.13.1\n");
     this.files.set("dependency-holds.json", holdsFile);
     if (scenario.mobileApp === true) this.files.set("apps/mobile/package.json", "{}");
+    if (scenario.dockerfile !== undefined) this.files.set("docker/Dockerfile", scenario.dockerfile);
   }
 
   /** The files as they were when the starting point was checked out. */
@@ -239,6 +244,9 @@ class FakeIo implements Io {
         this.scenario.nodeIndex ?? [{ version: "v26.13.1", date: "2026-11-10", lts: "Lithium" }],
       );
     }
+    if (url.startsWith("https://auth.docker.io/token?")) {
+      return Promise.resolve({ token: "registry-token" });
+    }
     if (url === "https://registry.npmjs.org/oxlint") {
       return Promise.resolve({
         "dist-tags": { latest: "1.94.0" },
@@ -246,6 +254,15 @@ class FakeIo implements Io {
       });
     }
     return Promise.reject(new Error(`unexpected fetch ${url}`));
+  }
+
+  fetchHeaders(url: string): Promise<Readonly<Record<string, string>>> {
+    this.commands.push(`HEAD ${url}`);
+    const match = /^https:\/\/registry-1\.docker\.io\/v2\/(.+)\/manifests\/(.+)$/.exec(url);
+    const digest = this.scenario.digests?.[`${match?.[1] ?? ""}:${match?.[2] ?? ""}`];
+    return digest === undefined
+      ? Promise.reject(new Error(`HEAD ${url} answered 404`))
+      : Promise.resolve({ "docker-content-digest": digest });
   }
 
   log(line: string): void {
@@ -534,6 +551,94 @@ describe("runDependencyUpdate", () => {
     expect(body).toContain("- bun 1.4.4 → 1.4.5 (`packageManager` and `engines.bun`)");
     expect(body).toContain("- Node 26.13.1 → 26.13.2 (`.nvmrc` and `engines.node`)");
     expect(body).toContain("Node 28 is a newer LTS line. Moving to it is a manual change");
+  });
+
+  describe("with a Dockerfile", () => {
+    const OLD_NODE = `sha256:${"1".repeat(64)}`;
+    const OLD_BUN = `sha256:${"2".repeat(64)}`;
+    const NEW_NODE = `sha256:${"3".repeat(64)}`;
+    const NEW_BUN = `sha256:${"4".repeat(64)}`;
+    const dockerfile = [
+      `FROM oven/bun:1.4.4-slim@${OLD_BUN} AS bun`,
+      `FROM node:26.13.1-trixie-slim@${OLD_NODE} AS toolchain`,
+      'RUN test "$(node --version)" = "v26.13.1" && test "$(bun --version)" = "1.4.4"',
+      `FROM node:26.13.1-trixie-slim@${OLD_NODE} AS runtime`,
+      "",
+    ].join("\n");
+    const releases = {
+      bunReleases: [
+        {
+          tag_name: "bun-v1.4.5",
+          published_at: "2026-11-12T00:00:00Z",
+          prerelease: false,
+          draft: false,
+        },
+      ],
+      nodeIndex: [{ version: "v26.13.2", date: "2026-11-12", lts: "Lithium" }],
+    };
+
+    it("moves both images to the new tags, pinned to the digests the registry gives", async () => {
+      const io = new FakeIo({
+        ...releases,
+        dockerfile,
+        digests: { "library/node:26.13.2-trixie-slim": NEW_NODE, "oven/bun:1.4.5-slim": NEW_BUN },
+      });
+
+      const outcome = await runDependencyUpdate(io, options);
+
+      expect(io.files.get("docker/Dockerfile")).toBe(
+        dockerfile
+          .replaceAll(
+            `node:26.13.1-trixie-slim@${OLD_NODE}`,
+            `node:26.13.2-trixie-slim@${NEW_NODE}`,
+          )
+          .replace(`oven/bun:1.4.4-slim@${OLD_BUN}`, `oven/bun:1.4.5-slim@${NEW_BUN}`)
+          .replace('"v26.13.1"', '"v26.13.2"')
+          .replace('= "1.4.4"', '= "1.4.5"'),
+      );
+      expect(io.commands).toContain(
+        "HEAD https://registry-1.docker.io/v2/library/node/manifests/26.13.2-trixie-slim",
+      );
+      expect(io.logs).toContain(`Resolved node:26.13.2-trixie-slim to ${NEW_NODE}.`);
+      const body = outcome.kind === "unchanged" ? "" : outcome.body;
+      expect(body).toContain(
+        "- Node 26.13.1 → 26.13.2 (`.nvmrc`, `engines.node` and the image in `docker/Dockerfile`)",
+      );
+      expect(body).toContain(
+        "- bun 1.4.4 → 1.4.5 (`packageManager`, `engines.bun` and the image in `docker/Dockerfile`)",
+      );
+    });
+
+    it("leaves a runtime where it is when its image cannot be resolved, and says why", async () => {
+      const io = new FakeIo({
+        ...releases,
+        dockerfile,
+        digests: { "oven/bun:1.4.5-slim": NEW_BUN },
+      });
+
+      const outcome = await runDependencyUpdate(io, options);
+
+      expect(io.files.get(".nvmrc")).toBe("26.13.1\n");
+      expect(JSON.parse(io.files.get("package.json") ?? "")).toMatchObject({
+        packageManager: "bun@1.4.5",
+        engines: { node: ">=26.13.1" },
+      });
+      expect(io.files.get("docker/Dockerfile")).toContain(`node:26.13.1-trixie-slim@${OLD_NODE}`);
+      expect(io.files.get("docker/Dockerfile")).toContain(`oven/bun:1.4.5-slim@${NEW_BUN}`);
+      const body = outcome.kind === "unchanged" ? "" : outcome.body;
+      expect(body).toContain(
+        "Node 26.13.2 is not applied: the image node:26.13.2-trixie-slim could not be resolved (HEAD https://registry-1.docker.io/v2/library/node/manifests/26.13.2-trixie-slim answered 404).",
+      );
+    });
+
+    it("looks nothing up when neither runtime moves", async () => {
+      const io = new FakeIo({ dockerfile });
+
+      await runDependencyUpdate(io, options);
+
+      expect(io.commands.filter((line) => line.startsWith("HEAD "))).toEqual([]);
+      expect(io.files.get("docker/Dockerfile")).toBe(dockerfile);
+    });
   });
 
   it("moves Node alone when bun has no newer release", async () => {

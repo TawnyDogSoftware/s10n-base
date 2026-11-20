@@ -136,6 +136,32 @@ describe("ProcessIo", () => {
   });
 });
 
+describe("ProcessIo.fetchHeaders", () => {
+  it("sends a HEAD request with the given headers, returns the response headers, and fails on an error status", async () => {
+    const seen: Array<{ method?: string; accept?: string }> = [];
+    const server = http.createServer((request, response) => {
+      seen.push({ method: request.method, accept: request.headers.accept });
+      response.statusCode = request.url === "/ok" ? 200 : 401;
+      response.setHeader("Docker-Content-Digest", "sha256:abc");
+      response.end();
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+    const io = new ProcessIo(tempDir(), undefined, () => {});
+    try {
+      const headers = await io.fetchHeaders(`${base}/ok`, { Accept: "application/json" });
+      expect(headers["docker-content-digest"]).toBe("sha256:abc");
+      expect(seen).toEqual([{ method: "HEAD", accept: "application/json" }]);
+      await expect(io.fetchHeaders(`${base}/denied`, {})).rejects.toThrow(
+        `HEAD ${base}/denied answered 401`,
+      );
+    } finally {
+      server.close();
+    }
+  });
+});
+
 /** A git repository with one commit, to make the dry run's worktree from. */
 function repository(): string {
   const root = tempDir();

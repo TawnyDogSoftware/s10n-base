@@ -48,6 +48,7 @@ function io(
       answers.fetchJson === undefined
         ? Promise.reject(new Error(`unexpected ${url}`))
         : Promise.resolve(answers.fetchJson(url)),
+    fetchHeaders: (url) => Promise.reject(new Error(`unexpected HEAD ${url}`)),
     log: (line) => logs.push(line),
   };
 }

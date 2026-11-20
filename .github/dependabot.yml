@@ -1,5 +1,5 @@
-# Dependabot covers GitHub Actions and the local Postgres image. Bun packages, bun and Node
-# are updated by the daily dependency-update workflow
+# Dependabot covers GitHub Actions, the local Postgres image and the digests of the container
+# image's bases. Bun packages, bun and Node are updated by the daily dependency-update workflow
 # (.github/workflows/dependency-updates.yml), because Dependabot cannot update a bun
 # workspace catalog.
 version: 2
@@ -27,3 +27,32 @@ updates:
       # A new Postgres major needs a data migration; move to it by hand.
       - dependency-name: postgres
         update-types: ["version-update:semver-major"]
+
+  # docker/Dockerfile's two bases, the Node and bun images. Their tags must equal .nvmrc and
+  # packageManager (scripts/version-sources.test.ts), so the daily dependency update moves the
+  # tags, with their digests, in the same PR as the versions. Dependabot only refreshes the
+  # digest a pinned tag points to, when the image is rebuilt (for a base-image security fix).
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
+    groups:
+      base-images:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: node
+        update-types:
+          [
+            "version-update:semver-major",
+            "version-update:semver-minor",
+            "version-update:semver-patch",
+          ]
+      - dependency-name: oven/bun
+        update-types:
+          [
+            "version-update:semver-major",
+            "version-update:semver-minor",
+            "version-update:semver-patch",
+          ]

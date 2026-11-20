@@ -130,6 +130,19 @@ export class ProcessIo implements Io {
     return response.json() as Promise<unknown>;
   }
 
+  async fetchHeaders(
+    url: string,
+    headers: Readonly<Record<string, string>>,
+  ): Promise<Readonly<Record<string, string>>> {
+    const response = await fetch(url, {
+      method: "HEAD",
+      headers: { ...requestHeaders(url, this.token), ...headers },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) throw new Error(`HEAD ${url} answered ${String(response.status)}`);
+    return Object.fromEntries(response.headers);
+  }
+
   log(line: string): void {
     this.print(line);
   }

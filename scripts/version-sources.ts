@@ -1,9 +1,12 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+
+import { DOCKERFILE, dockerfileProblems } from "./dockerfile-versions";
 
 /**
  * Each tool version lives in one file: Node in `.nvmrc`, bun in `packageManager`.
- * `engines` and `@types/node` follow them, and CI reads the two files directly.
+ * `engines` and `@types/node` follow them, and CI reads the two files directly. The Dockerfile
+ * cannot read a file in a `FROM` line, so it names both, and must agree.
  */
 export interface VersionSources {
   readonly nvmrc: string;
@@ -11,6 +14,8 @@ export interface VersionSources {
   readonly packageManager: string | undefined;
   readonly enginesBun: string | undefined;
   readonly typesNode: string | undefined;
+  /** docker/Dockerfile's text, when the project has one. */
+  readonly dockerfile: string | undefined;
 }
 
 interface RootManifest {
@@ -31,6 +36,9 @@ export function readVersionSources(rootDir: string): VersionSources {
     packageManager: manifest.packageManager,
     enginesBun: manifest.engines?.bun,
     typesNode: manifest.workspaces?.catalog?.["@types/node"],
+    dockerfile: existsSync(path.join(rootDir, DOCKERFILE))
+      ? readFileSync(path.join(rootDir, DOCKERFILE), "utf8")
+      : undefined,
   };
 }
 
@@ -59,10 +67,14 @@ function nodeProblems(sources: VersionSources): string[] {
   return problems;
 }
 
-function bunProblems(sources: VersionSources): string[] {
-  const bunVersion = sources.packageManager?.startsWith("bun@")
+function bunVersionOf(sources: VersionSources): string | undefined {
+  return sources.packageManager?.startsWith("bun@")
     ? sources.packageManager.slice("bun@".length)
     : undefined;
+}
+
+function bunProblems(sources: VersionSources): string[] {
+  const bunVersion = bunVersionOf(sources);
   if (bunVersion === undefined || !EXACT_VERSION.test(bunVersion)) {
     return [
       `packageManager must be "bun@<exact version>", found ${describeFound(sources.packageManager)}`,
@@ -76,6 +88,14 @@ function bunProblems(sources: VersionSources): string[] {
   return [];
 }
 
+/** The Dockerfile against the two sources, once both sources are themselves valid. */
+function dockerProblems(sources: VersionSources, valid: boolean): string[] {
+  const bun = bunVersionOf(sources);
+  if (sources.dockerfile === undefined || !valid || bun === undefined) return [];
+  return dockerfileProblems(sources.dockerfile, { node: sources.nvmrc, bun });
+}
+
 export function checkVersionSources(sources: VersionSources): string[] {
-  return [...nodeProblems(sources), ...bunProblems(sources)];
+  const problems = [...nodeProblems(sources), ...bunProblems(sources)];
+  return [...problems, ...dockerProblems(sources, problems.length === 0)];
 }

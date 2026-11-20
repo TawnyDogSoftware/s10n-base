@@ -60,8 +60,8 @@ beforeEach(async () => {
       exports: "./index.js",
       dependencies: { gamma: "^1.0.0" },
       optionalDependencies: { "not-on-this-platform": "^1.0.0" },
-      peerDependencies: { delta: "^1.0.0", gamma: "^1.0.0", react: "^19.0.0" },
-      peerDependenciesMeta: { react: { optional: true } },
+      peerDependencies: { delta: "^1.0.0", gamma: "^1.0.0", react: "^19.0.0", vue: "^3.0.0" },
+      peerDependenciesMeta: { react: { optional: true }, vue: { optional: true } },
     },
     esm('import { gamma } from "gamma";\nexport const alpha = `alpha+${gamma}`;\n'),
   );
