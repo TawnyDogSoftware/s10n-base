@@ -74,6 +74,8 @@ The online `bunx expo install --check`, which the daily update runs, compares wi
 - `range`: moves only inside it, for example `<6.1.0` or `0.29.x`.
 - `group`: the members move only when they all land on the same version; otherwise all of them stay.
 
+A package that must stay keeps its locked version too, not just its spec: `bun update --latest` may lock a newer version that the old spec still allows (a `~` spec and a patch release), and bun keeps a locked version that satisfies the spec. So the update pins such a package to its earlier version, installs, then puts its spec back. A package held to a `range` may move to the newest version inside it.
+
 Entries can name packages that are not installed yet; they apply from the day the package arrives. `scripts/dependency-updates/holds.test.ts` fails if an entry has no reason, if a held package in the catalog or lockfile is outside its range, or if members of a group are on different versions.
 
 The current entries:

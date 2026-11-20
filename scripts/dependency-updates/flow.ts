@@ -234,6 +234,7 @@ async function updatePackages(
   nodeMajor: string,
 ): Promise<Restoration[]> {
   const before = collectSpecs(await readManifests(io));
+  const lockedBefore = parseLockedVersions(await io.readFile("bun.lock"));
   await mustRun(io, "bun", ["update", "-r", "--latest", "--ignore-scripts"]);
   const updated = await readManifests(io);
   const typesNodeHold: Hold = {
@@ -242,18 +243,46 @@ async function updatePackages(
     reason: `Kept on Node's major version (${nodeMajor}).`,
   };
   const restorations = enforceHolds([...holds, typesNodeHold], before, collectSpecs(updated));
-  if (restorations.length > 0) {
-    const restored = new Map(
-      restorations.map((restoration) => [restoration.name, restoration.restoredTo]),
-    );
-    await Promise.all(
-      applySpecs(updated, restored).map((file) =>
-        io.writeFile(file.path, formatManifest(file.json)),
-      ),
-    );
+  if (restorations.length > 0) await restore(io, restorations, lockedBefore);
+  return restorations;
+}
+
+/** Writes `specs` into the manifests that declare those packages. */
+async function writeSpecs(io: Io, specs: ReadonlyMap<string, string>): Promise<void> {
+  await Promise.all(
+    applySpecs(await readManifests(io), specs).map((file) =>
+      io.writeFile(file.path, formatManifest(file.json)),
+    ),
+  );
+}
+
+/**
+ * Puts the held packages' specs back. bun keeps a locked version that satisfies its spec, so a
+ * package that must stay where it was is first pinned to its earlier locked version and
+ * installed, then given its spec back: the lockfile keeps that version.
+ */
+async function restore(
+  io: Io,
+  restorations: readonly Restoration[],
+  lockedBefore: ReadonlyMap<string, string>,
+): Promise<void> {
+  const specs = new Map(
+    restorations.map((restoration) => [restoration.name, restoration.restoredTo]),
+  );
+  const pins = new Map(
+    restorations.flatMap((restoration) => {
+      const locked = lockedBefore.get(restoration.name);
+      return restoration.keepLocked && locked !== undefined && locked !== restoration.restoredTo
+        ? [[restoration.name, locked] as const]
+        : [];
+    }),
+  );
+  if (pins.size > 0) {
+    await writeSpecs(io, new Map([...specs, ...pins]));
     await mustRun(io, "bun", ["install", "--ignore-scripts"]);
   }
-  return restorations;
+  await writeSpecs(io, specs);
+  await mustRun(io, "bun", ["install", "--ignore-scripts"]);
 }
 
 /** `candidate` when it is newer than `current`, else undefined. */

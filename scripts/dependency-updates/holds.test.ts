@@ -78,7 +78,13 @@ describe("enforceHolds", () => {
     );
 
     expect(restored).toEqual([
-      { name: "react", attempted: "19.3.1", restoredTo: "19.3.0", reason: "Expo SDK" },
+      {
+        name: "react",
+        attempted: "19.3.1",
+        restoredTo: "19.3.0",
+        reason: "Expo SDK",
+        keepLocked: true,
+      },
     ]);
   });
 
@@ -94,6 +100,7 @@ describe("enforceHolds", () => {
         attempted: "~7.0.2",
         restoredTo: "~6.0.3",
         reason: "typescript-eslint",
+        keepLocked: false,
       },
     ]);
   });
@@ -123,7 +130,15 @@ describe("enforceHolds", () => {
           ["@auth/expo", "1.7.25"],
         ]),
       ),
-    ).toEqual([{ name: "auth", attempted: "1.7.26", restoredTo: "1.7.25", reason: "lockstep" }]);
+    ).toEqual([
+      {
+        name: "auth",
+        attempted: "1.7.26",
+        restoredTo: "1.7.25",
+        reason: "lockstep",
+        keepLocked: true,
+      },
+    ]);
   });
 
   it("restores a ranged group whose members agree on a version outside the range", () => {
@@ -182,7 +197,7 @@ describe("enforceHolds", () => {
     const ranged: readonly Hold[] = [{ packages: ["ts"], range: "<6.1.0", reason: "cap" }];
 
     expect(enforceHolds(ranged, new Map([["ts", "~6.0.3"]]), new Map([["ts", "next"]]))).toEqual([
-      { name: "ts", attempted: "next", restoredTo: "~6.0.3", reason: "cap" },
+      { name: "ts", attempted: "next", restoredTo: "~6.0.3", reason: "cap", keepLocked: false },
     ]);
   });
 
@@ -196,7 +211,13 @@ describe("enforceHolds", () => {
         new Map([["@types/node", "^27.0.0"]]),
       ),
     ).toEqual([
-      { name: "@types/node", attempted: "^27.0.0", restoredTo: "^26.6.6", reason: "Node 26" },
+      {
+        name: "@types/node",
+        attempted: "^27.0.0",
+        restoredTo: "^26.6.6",
+        reason: "Node 26",
+        keepLocked: false,
+      },
     ]);
   });
 });

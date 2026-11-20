@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { runDependencyUpdate, type CommandResult, type FlowOptions, type Io } from "./flow";
+import { parseLockedVersions } from "./lockfile";
+import { satisfies } from "./semver";
 
 const NOW = new Date("2026-11-19T00:10:00Z");
 
@@ -45,6 +47,8 @@ interface Scenario {
   readonly bunReleases?: unknown[];
   readonly nodeIndex?: unknown[];
   readonly mobileApp?: boolean;
+  /** Catalog and lockfile at the starting point, when they differ from the defaults below. */
+  readonly start?: { catalog: Record<string, string>; lock: Record<string, string> };
   /** Catalog and lockfile on the open PR's branch, when it differs from main. */
   readonly prHead?: { catalog: Record<string, string>; lock: Record<string, string> };
 }
@@ -75,12 +79,12 @@ class FakeIo implements Io {
   readonly inputs = new Map<string, string>();
 
   constructor(private readonly scenario: Scenario) {
-    this.files.set("package.json", rootManifest(startCatalog));
+    this.files.set("package.json", rootManifest(scenario.start?.catalog ?? startCatalog));
     this.files.set(
       "apps/web/package.json",
       `${JSON.stringify({ name: "web", dependencies: { react: "catalog:" } }, null, 2)}\n`,
     );
-    this.files.set("bun.lock", lockfile(startLock));
+    this.files.set("bun.lock", lockfile(scenario.start?.lock ?? startLock));
     this.files.set(".nvmrc", "26.13.1\n");
     this.files.set("dependency-holds.json", holdsFile);
     if (scenario.mobileApp === true) this.files.set("apps/mobile/package.json", "{}");
@@ -157,14 +161,20 @@ class FakeIo implements Io {
       return ok();
     }
     if (line === "bun install --ignore-scripts") {
-      // Re-resolve restored specs: the lockfile follows the catalog's base versions.
+      // As bun does: a locked version that still satisfies its spec stays; otherwise the
+      // package resolves again, here to the spec's own version.
       const catalog = (
         JSON.parse(this.files.get("package.json") ?? "{}") as {
           workspaces: { catalog: Record<string, string> };
         }
       ).workspaces.catalog;
+      const locked = parseLockedVersions(this.files.get("bun.lock") ?? "");
       const lock = Object.fromEntries(
-        Object.entries(catalog).map(([name, spec]) => [name, spec.replace(/^[\^~]/, "")]),
+        Object.entries(catalog).map(([name, spec]) => {
+          const current = locked.get(name);
+          const keep = current !== undefined && satisfies(current, spec);
+          return [name, keep ? current : spec.replace(/^[\^~]/, "")];
+        }),
       );
       this.files.set("bun.lock", lockfile(lock));
       return ok();
@@ -269,6 +279,28 @@ function writes(io: FakeIo): string[] {
 }
 
 describe("runDependencyUpdate", () => {
+  it("keeps a held package's locked version when the update moved it inside its range", async () => {
+    // bun update --latest moves react from 19.3.0 to 19.3.1. Putting the spec back to ~19.3.0
+    // alone would leave 19.3.1 locked, since it satisfies the range.
+    const io = new FakeIo({
+      start: { catalog: { ...startCatalog, react: "~19.3.0" }, lock: startLock },
+      latest: {
+        catalog: { ...startCatalog, react: "~19.3.1", effect: "4.1.5" },
+        lock: { ...startLock, react: "19.3.1", effect: "4.1.5" },
+      },
+    });
+
+    const outcome = await runDependencyUpdate(io, options);
+
+    const locked = parseLockedVersions(io.files.get("bun.lock") ?? "");
+    expect(locked.get("react")).toBe("19.3.0");
+    expect(locked.get("effect")).toBe("4.1.5");
+    expect(io.files.get("package.json")).toContain('"react": "~19.3.0"');
+    const body = outcome.kind === "unchanged" ? "" : outcome.body;
+    expect(body).toContain("react stays at ~19.3.0");
+    expect(body).not.toMatch(/react\s*\|\s*19\.3\.0\s*\|\s*19\.3\.1/);
+  });
+
   it("opens a labelled PR from main with the updates, restoring held packages", async () => {
     const io = new FakeIo({ latest: viteMajor });
 

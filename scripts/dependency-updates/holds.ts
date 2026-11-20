@@ -17,6 +17,12 @@ export interface Restoration {
   readonly attempted: string;
   readonly restoredTo: string;
   readonly reason: string;
+  /**
+   * Whether the package must also stay at the version locked before the update. True unless the
+   * hold lets it move inside a range: a range spec put back may still allow what the update
+   * locked, and bun keeps a locked version that satisfies its spec.
+   */
+  readonly keepLocked: boolean;
 }
 
 /** Matches a package name against a pattern where `*` stands for any characters. */
@@ -99,7 +105,13 @@ export function enforceHolds(
     const attempted = after.get(name);
     const original = before.get(name);
     if (attempted !== undefined && original !== undefined && attempted !== original) {
-      restorations.push({ name, attempted, restoredTo: original, reason: hold.reason });
+      restorations.push({
+        name,
+        attempted,
+        restoredTo: original,
+        reason: hold.reason,
+        keepLocked: hold.range === undefined || hold.group !== undefined,
+      });
     }
   };
 
