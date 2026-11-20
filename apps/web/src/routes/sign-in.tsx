@@ -1,5 +1,5 @@
 import { createRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -45,11 +45,23 @@ function SignInPage() {
   const [pending, run, failed] = usePending();
   const [passkeyPending, runPasskey, passkeyFailed] = usePending();
   const emailRef = useRef<HTMLInputElement>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const passwordRef = useRef<HTMLInputElement>(null);
   const focusAfterRender = useFocusAfterRender();
 
-  /** Whatever the action reported, the session read afterwards decides. */
+  /**
+   * Whatever the action reported, the session read afterwards decides. A user who has left the
+   * page meanwhile is not taken anywhere: the session still updates, and the page they are on
+   * follows it.
+   */
   const finish = async (result: SettledAction<AuthResult>) => {
+    if (!mounted.current) return;
     if (result.session) {
       await navigate({ href: safeRedirect(redirect) ?? "/", replace: true });
       return;

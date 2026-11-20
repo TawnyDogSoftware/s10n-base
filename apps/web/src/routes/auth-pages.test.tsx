@@ -299,6 +299,27 @@ describe("/sign-in", () => {
     expect(app.backend.calls("/api/auth/sign-in/email")).toHaveLength(1);
   });
 
+  it("does not navigate for a sign-in the user left before it finished", async () => {
+    const app = renderApp("/sign-in", backendWith("sam@example.com"));
+    await screen.findByRole("heading", { name: "Sign in" });
+    const release = app.backend.hold("/api/auth/sign-in/email");
+    type("Email address", "sam@example.com");
+    type("Password", "correct horse");
+    click("Sign in");
+    await waitFor(() => {
+      expect(app.backend.calls("/api/auth/sign-in/email")).toHaveLength(1);
+    });
+
+    await act(() => app.router.navigate({ to: "/verify-email" }));
+    release();
+
+    await waitFor(() => {
+      expect(app.services.gate.current()?.email).toBe("sam@example.com");
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(app.location()).toBe("/verify-email");
+  });
+
   it("explains, instead of offering, passkey sign-in where the browser has no passkeys", async () => {
     renderApp("/sign-in", backendWith());
     await screen.findByRole("heading", { name: "Sign in" });
