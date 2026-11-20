@@ -36,7 +36,7 @@ const profile = await rpc.call(profileGet, {}, { signal });
 | `DecodeError`  | Something answered, but not in the contract's shape: a client and server out of step, or a page that is not our server.                        | Show a generic error; the request may have been handled.                              |
 | `NetworkError` | **No answer**: the connection failed or dropped, or a proxy answered 502, 503 or 504. **The outcome is unknown**: the server may have done it. | Re-read the state before saying it failed. Never retry a non-idempotent call blindly. |
 
-An aborted call (its `signal` fired) rejects with the abort error itself, not a `NetworkError`.
+An aborted call (its `signal` fired) rejects with the abort error itself, not a `NetworkError`. A call that has not finished, headers and body, within its deadline (`timeoutMs`, 30 seconds by default, for the RPC and the session clients alike) is abandoned as a `NetworkError`: the server may still have done it. The auth adapters have no deadline, since a passkey prompt waits on the person.
 
 ## Session-gated query state
 

@@ -47,7 +47,15 @@ export interface TransportOptions {
   readonly fetch?: typeof fetch;
   /** Defaults to `include`, so the session cookie is sent to an API on another origin too. */
   readonly credentials?: RequestCredentials;
+  /**
+   * How long a request may take, headers and body, before it is abandoned as a `NetworkError`
+   * (its outcome is unknown). Defaults to {@link DEFAULT_TIMEOUT_MS}.
+   */
+  readonly timeoutMs?: number;
 }
+
+/** The default deadline of one request: long enough for a slow network, short of forever. */
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 /** Status codes a proxy answers with when the server's answer, if any, was lost. */
 const LOST_ANSWER = new Set([502, 503, 504]);
@@ -67,6 +75,45 @@ export function parseBaseUrl(baseUrl: string): string {
 
 function isAbort(error: unknown, signal: AbortSignal | undefined): boolean {
   return signal?.aborted === true || (error instanceof Error && error.name === "AbortError");
+}
+
+/**
+ * Runs `work` with a signal that aborts when the caller's does or when `ms` pass, and settles as
+ * soon as either happens, even if `work` ignores the signal (a body that never ends). Rejects
+ * with the abort reason: the caller's, or a {@link DeadlineError}.
+ */
+async function withDeadline<T>(
+  ms: number,
+  callerSignal: AbortSignal | undefined,
+  work: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  const abort = () => {
+    controller.abort(callerSignal?.reason);
+  };
+  const timer = setTimeout(() => {
+    controller.abort(new DeadlineError());
+  }, ms);
+  if (callerSignal?.aborted === true) abort();
+  callerSignal?.addEventListener("abort", abort, { once: true });
+  const aborted = new Promise<never>((_resolve, reject) => {
+    const fail = () => {
+      reject(controller.signal.reason as Error);
+    };
+    if (controller.signal.aborted) fail();
+    controller.signal.addEventListener("abort", fail, { once: true });
+  });
+  try {
+    return await Promise.race([work(controller.signal), aborted]);
+  } finally {
+    clearTimeout(timer);
+    callerSignal?.removeEventListener("abort", abort);
+  }
+}
+
+/** The reason a request's own deadline aborts it with. */
+class DeadlineError extends Error {
+  override readonly name = "DeadlineError";
 }
 
 const Envelope = Schema.Union([
@@ -121,30 +168,34 @@ function unwrap(status: number, text: string): unknown {
 export function createTransport(options: TransportOptions): Transport {
   const origin = parseBaseUrl(options.baseUrl);
   const credentials = options.credentials ?? "include";
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   return {
     origin,
     request: async (path, init) => {
       const doFetch = options.fetch ?? globalThis.fetch;
-      let text: string;
-      let status: number;
+      let answer: { readonly status: number; readonly text: string };
       try {
-        const response = await doFetch(`${origin}${path}`, {
-          method: init.method,
-          credentials,
-          headers:
-            init.body === undefined
-              ? { accept: "application/json" }
-              : { accept: "application/json", "content-type": "application/json" },
-          ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-          ...(init.signal === undefined ? {} : { signal: init.signal }),
+        answer = await withDeadline(timeoutMs, init.signal, async (signal) => {
+          const response = await doFetch(`${origin}${path}`, {
+            method: init.method,
+            credentials,
+            headers:
+              init.body === undefined
+                ? { accept: "application/json" }
+                : { accept: "application/json", "content-type": "application/json" },
+            ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+            signal,
+          });
+          return { status: response.status, text: await response.text() };
         });
-        status = response.status;
-        text = await response.text();
       } catch (error) {
+        if (error instanceof DeadlineError) {
+          throw new NetworkError("No answer from the server in time.", { cause: error });
+        }
         if (isAbort(error, init.signal)) throw error;
         throw new NetworkError("No answer from the server.", { cause: error });
       }
-      return unwrap(status, text);
+      return unwrap(answer.status, answer.text);
     },
   };
 }
