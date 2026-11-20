@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -271,6 +271,9 @@ describe("updateCommand", () => {
     const run = commandIo(tempDir(), opened);
 
     expect(await updateCommand(["--dry-run"], run.io)).toBe(1);
-    expect(run.lines.at(-1)).toMatch(/^! git worktree add --detach .* HEAD failed: /);
+    const failure = /^! git worktree add --detach (.*) HEAD failed: /.exec(run.lines.at(-1) ?? "");
+    expect(failure).not.toBeNull();
+    // The temporary directory made for the worktree is removed too, not left behind empty.
+    expect(existsSync(failure?.[1] ?? "")).toBe(false);
   });
 });

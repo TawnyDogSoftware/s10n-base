@@ -198,7 +198,12 @@ async function update(argv: readonly string[], io: UpdateCommandIo): Promise<voi
 
   const repo = new ProcessIo(io.repoRoot, token, io.log);
   const worktree = await mkdtemp(path.join(tmpdir(), "deps-update-"));
-  await git(repo, ["worktree", "add", "--detach", worktree, "HEAD"]);
+  try {
+    await git(repo, ["worktree", "add", "--detach", worktree, "HEAD"]);
+  } catch (error) {
+    await rm(worktree, { recursive: true, force: true });
+    throw error;
+  }
   try {
     const outcome = await flow(new ProcessIo(worktree, token, io.log), options);
     io.log(
