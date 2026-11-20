@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { readCatalog, type Manifest } from "./manifests";
+import { readCatalog, type Declaration, type Manifest } from "./manifests";
 import { parseLockedDependencies, parseLockedVersions } from "./lockfile";
 import { enforceHolds, findHold, matchesPattern, parseHolds, type Hold } from "./holds";
 import { satisfies, specBaseVersion } from "./semver";
@@ -27,6 +27,14 @@ describe("parseHolds", () => {
     );
   });
 
+  it("rejects a file without a holds array, so a typo does not lift every hold", () => {
+    expect(() => parseHolds({})).toThrow("dependency-holds.json needs a holds array");
+    expect(() => parseHolds({ hold: [] })).toThrow("dependency-holds.json needs a holds array");
+    expect(() => parseHolds([])).toThrow("dependency-holds.json needs a holds array");
+    expect(() => parseHolds(null)).toThrow("dependency-holds.json needs a holds array");
+    expect(parseHolds({ holds: [] })).toEqual([]);
+  });
+
   it("rejects an entry without packages", () => {
     expect(() => parseHolds({ holds: [{ packages: [], reason: "x" }] })).toThrow(
       "dependency-holds.json entry 1 needs at least one package",
@@ -45,17 +53,19 @@ describe("parseHolds", () => {
     );
   });
 
-  it("reads no holds from a file without a list", () => {
-    expect(parseHolds({})).toEqual([]);
-    expect(parseHolds(null)).toEqual([]);
-  });
-
   it("rejects a range it cannot read", () => {
     expect(() =>
       parseHolds({ holds: [{ packages: ["a"], reason: "x", range: "1 || 2" }] }),
     ).toThrow('Unsupported version range "1 || 2"');
   });
 });
+
+/** Specs declared in the root catalog, the place most holds apply to. */
+function catalog(entries: readonly (readonly [string, string])[]): Declaration[] {
+  return entries.map(([name, spec]) => ({ path: "package.json", section: "catalog", name, spec }));
+}
+
+const inCatalog = { path: "package.json", section: "catalog" } as const;
 
 describe("enforceHolds", () => {
   const holds: readonly Hold[] = [
@@ -67,11 +77,11 @@ describe("enforceHolds", () => {
   it("restores a fully held package that moved", () => {
     const restored = enforceHolds(
       holds,
-      new Map([
+      catalog([
         ["react", "19.3.0"],
         ["expo-router", "~58.0.32"],
       ]),
-      new Map([
+      catalog([
         ["react", "19.3.1"],
         ["expo-router", "~58.0.32"],
       ]),
@@ -79,6 +89,7 @@ describe("enforceHolds", () => {
 
     expect(restored).toEqual([
       {
+        ...inCatalog,
         name: "react",
         attempted: "19.3.1",
         restoredTo: "19.3.0",
@@ -90,12 +101,13 @@ describe("enforceHolds", () => {
 
   it("keeps a range-held package that stays in range and restores one that leaves it", () => {
     expect(
-      enforceHolds(holds, new Map([["typescript", "~6.0.2"]]), new Map([["typescript", "~6.0.3"]])),
+      enforceHolds(holds, catalog([["typescript", "~6.0.2"]]), catalog([["typescript", "~6.0.3"]])),
     ).toEqual([]);
     expect(
-      enforceHolds(holds, new Map([["typescript", "~6.0.3"]]), new Map([["typescript", "~7.0.2"]])),
+      enforceHolds(holds, catalog([["typescript", "~6.0.3"]]), catalog([["typescript", "~7.0.2"]])),
     ).toEqual([
       {
+        ...inCatalog,
         name: "typescript",
         attempted: "~7.0.2",
         restoredTo: "~6.0.3",
@@ -106,7 +118,7 @@ describe("enforceHolds", () => {
   });
 
   it("moves a group only when every member lands on the same version", () => {
-    const before = new Map([
+    const before = catalog([
       ["auth", "1.7.25"],
       ["@auth/expo", "1.7.25"],
     ]);
@@ -115,7 +127,7 @@ describe("enforceHolds", () => {
       enforceHolds(
         holds,
         before,
-        new Map([
+        catalog([
           ["auth", "1.7.26"],
           ["@auth/expo", "1.7.26"],
         ]),
@@ -125,13 +137,37 @@ describe("enforceHolds", () => {
       enforceHolds(
         holds,
         before,
-        new Map([
+        catalog([
           ["auth", "1.7.26"],
           ["@auth/expo", "1.7.25"],
         ]),
       ),
     ).toEqual([
       {
+        ...inCatalog,
+        name: "auth",
+        attempted: "1.7.26",
+        restoredTo: "1.7.25",
+        reason: "lockstep",
+        keepLocked: true,
+      },
+    ]);
+  });
+
+  it("compares a group's members across every place they are declared", () => {
+    const inWeb = { path: "apps/web/package.json", section: "dependencies" } as const;
+    const before = [
+      ...catalog([["auth", "1.7.25"]]),
+      { ...inWeb, name: "@auth/expo", spec: "1.7.25" },
+    ];
+    const after = [
+      ...catalog([["auth", "1.7.26"]]),
+      { ...inWeb, name: "@auth/expo", spec: "1.7.25" },
+    ];
+
+    expect(enforceHolds(holds, before, after)).toEqual([
+      {
+        ...inCatalog,
         name: "auth",
         attempted: "1.7.26",
         restoredTo: "1.7.25",
@@ -145,7 +181,7 @@ describe("enforceHolds", () => {
     const ranged: readonly Hold[] = [
       { packages: ["db", "db-cli"], group: "db", range: "0.29.x", reason: "the adapter's range" },
     ];
-    const before = new Map([
+    const before = catalog([
       ["db", "^0.29.9"],
       ["db-cli", "^0.29.9"],
     ]);
@@ -154,7 +190,7 @@ describe("enforceHolds", () => {
       enforceHolds(
         ranged,
         before,
-        new Map([
+        catalog([
           ["db", "^0.29.10"],
           ["db-cli", "^0.29.10"],
         ]),
@@ -164,7 +200,7 @@ describe("enforceHolds", () => {
       enforceHolds(
         ranged,
         before,
-        new Map([
+        catalog([
           ["db", "^0.30.0"],
           ["db-cli", "^0.30.0"],
         ]),
@@ -176,7 +212,7 @@ describe("enforceHolds", () => {
     const ranged: readonly Hold[] = [
       { packages: ["db", "db-cli"], group: "db", range: "0.29.x", reason: "the adapter's range" },
     ];
-    const before = new Map([
+    const before = catalog([
       ["db", "^0.29.9"],
       ["db-cli", "^0.29.9"],
     ]);
@@ -185,7 +221,7 @@ describe("enforceHolds", () => {
       enforceHolds(
         ranged,
         before,
-        new Map([
+        catalog([
           ["db", "next"],
           ["db-cli", "next"],
         ]),
@@ -196,8 +232,15 @@ describe("enforceHolds", () => {
   it("restores a held package moved to a spec that is not a version", () => {
     const ranged: readonly Hold[] = [{ packages: ["ts"], range: "<6.1.0", reason: "cap" }];
 
-    expect(enforceHolds(ranged, new Map([["ts", "~6.0.3"]]), new Map([["ts", "next"]]))).toEqual([
-      { name: "ts", attempted: "next", restoredTo: "~6.0.3", reason: "cap", keepLocked: false },
+    expect(enforceHolds(ranged, catalog([["ts", "~6.0.3"]]), catalog([["ts", "next"]]))).toEqual([
+      {
+        ...inCatalog,
+        name: "ts",
+        attempted: "next",
+        restoredTo: "~6.0.3",
+        reason: "cap",
+        keepLocked: false,
+      },
     ]);
   });
 
@@ -207,11 +250,12 @@ describe("enforceHolds", () => {
     expect(
       enforceHolds(
         [...holds, extra],
-        new Map([["@types/node", "^26.6.6"]]),
-        new Map([["@types/node", "^27.0.0"]]),
+        catalog([["@types/node", "^26.6.6"]]),
+        catalog([["@types/node", "^27.0.0"]]),
       ),
     ).toEqual([
       {
+        ...inCatalog,
         name: "@types/node",
         attempted: "^27.0.0",
         restoredTo: "^26.6.6",

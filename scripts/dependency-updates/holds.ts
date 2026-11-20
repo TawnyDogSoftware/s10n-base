@@ -1,3 +1,4 @@
+import type { Declaration } from "./manifests";
 import { satisfies, specBaseVersion } from "./semver";
 
 /**
@@ -12,7 +13,10 @@ export interface Hold {
   readonly group?: string;
 }
 
+/** A declaration of a held package that goes back to its earlier spec, at the same place. */
 export interface Restoration {
+  readonly path: string;
+  readonly section: Declaration["section"];
   readonly name: string;
   readonly attempted: string;
   readonly restoredTo: string;
@@ -73,8 +77,10 @@ function parseHold(entry: unknown, index: number): Hold {
 }
 
 export function parseHolds(json: unknown): Hold[] {
-  const entries = isRecord(json) && Array.isArray(json.holds) ? (json.holds as unknown[]) : [];
-  return entries.map(parseHold);
+  if (!isRecord(json) || !Array.isArray(json.holds)) {
+    throw new Error("dependency-holds.json needs a holds array");
+  }
+  return (json.holds as unknown[]).map(parseHold);
 }
 
 /** A hold without a range never lets its package move; one with a range, only inside it. */
@@ -91,23 +97,30 @@ function groupAllowed(hold: Hold, specs: readonly string[]): boolean {
   );
 }
 
+function placeOf(declaration: Declaration): string {
+  return `${declaration.path}\0${declaration.section}\0${declaration.name}`;
+}
+
 /**
- * Compares specs before and after `bun update --latest` and returns the held packages
- * that must go back to their earlier spec.
+ * Compares declarations before and after `bun update --latest` and returns the declarations of
+ * held packages that must go back to their earlier spec. Each place a package is declared is
+ * checked on its own, and a group's members are compared across every place they appear.
  */
 export function enforceHolds(
   holds: readonly Hold[],
-  before: ReadonlyMap<string, string>,
-  after: ReadonlyMap<string, string>,
+  before: readonly Declaration[],
+  after: readonly Declaration[],
 ): Restoration[] {
+  const earlier = new Map(before.map((declaration) => [placeOf(declaration), declaration.spec]));
   const restorations: Restoration[] = [];
-  const restore = (name: string, hold: Hold) => {
-    const attempted = after.get(name);
-    const original = before.get(name);
-    if (attempted !== undefined && original !== undefined && attempted !== original) {
+  const restore = (declaration: Declaration, hold: Hold) => {
+    const original = earlier.get(placeOf(declaration));
+    if (original !== undefined && declaration.spec !== original) {
       restorations.push({
-        name,
-        attempted,
+        path: declaration.path,
+        section: declaration.section,
+        name: declaration.name,
+        attempted: declaration.spec,
         restoredTo: original,
         reason: hold.reason,
         keepLocked: hold.range === undefined || hold.group !== undefined,
@@ -115,22 +128,27 @@ export function enforceHolds(
     }
   };
 
-  const groups = new Map<string, { hold: Hold; specs: Map<string, string> }>();
-  for (const [name, spec] of after) {
-    const hold = findHold(holds, name);
+  const groups = new Map<string, { hold: Hold; members: Declaration[] }>();
+  for (const declaration of after) {
+    const hold = findHold(holds, declaration.name);
     if (hold === undefined) continue;
     if (hold.group === undefined) {
-      if (!allowedByHold(hold, spec)) restore(name, hold);
+      if (!allowedByHold(hold, declaration.spec)) restore(declaration, hold);
       continue;
     }
-    const members = groups.get(hold.group) ?? { hold, specs: new Map<string, string>() };
-    members.specs.set(name, spec);
-    groups.set(hold.group, members);
+    const group = groups.get(hold.group) ?? { hold, members: [] };
+    group.members.push(declaration);
+    groups.set(hold.group, group);
   }
 
-  for (const { hold, specs } of groups.values()) {
-    if (!groupAllowed(hold, [...specs.values()])) {
-      for (const name of specs.keys()) restore(name, hold);
+  for (const { hold, members } of groups.values()) {
+    if (
+      !groupAllowed(
+        hold,
+        members.map(({ spec }) => spec),
+      )
+    ) {
+      for (const declaration of members) restore(declaration, hold);
     }
   }
 

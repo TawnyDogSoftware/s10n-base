@@ -13,10 +13,12 @@ import { enforceHolds, parseHolds, type Hold, type Restoration } from "./holds";
 import { resolveImageDigest, type RegistryIo } from "./image-digests";
 import { parseLockedVersions } from "./lockfile";
 import {
-  applySpecs,
+  applyDeclarations,
+  collectDeclarations,
   collectSpecs,
   formatManifest,
   setRuntimeVersions,
+  type Declaration,
   type Manifest,
   type ManifestFile,
 } from "./manifests";
@@ -253,7 +255,7 @@ async function updatePackages(
   holds: readonly Hold[],
   nodeMajor: string,
 ): Promise<Restoration[]> {
-  const before = collectSpecs(await readManifests(io));
+  const before = collectDeclarations(await readManifests(io));
   const lockedBefore = parseLockedVersions(await io.readFile("bun.lock"));
   await mustRun(io, "bun", ["update", "-r", "--latest", "--ignore-scripts"]);
   const updated = await readManifests(io);
@@ -262,15 +264,19 @@ async function updatePackages(
     range: `^${nodeMajor}.0.0`,
     reason: `Kept on Node's major version (${nodeMajor}).`,
   };
-  const restorations = enforceHolds([...holds, typesNodeHold], before, collectSpecs(updated));
+  const restorations = enforceHolds(
+    [...holds, typesNodeHold],
+    before,
+    collectDeclarations(updated),
+  );
   if (restorations.length > 0) await restore(io, restorations, lockedBefore);
   return restorations;
 }
 
-/** Writes `specs` into the manifests that declare those packages. */
-async function writeSpecs(io: Io, specs: ReadonlyMap<string, string>): Promise<void> {
+/** Writes each declaration's spec at its own place. */
+async function writeSpecs(io: Io, declarations: readonly Declaration[]): Promise<void> {
   await Promise.all(
-    applySpecs(await readManifests(io), specs).map((file) =>
+    applyDeclarations(await readManifests(io), declarations).map((file) =>
       io.writeFile(file.path, formatManifest(file.json)),
     ),
   );
@@ -286,19 +292,22 @@ async function restore(
   restorations: readonly Restoration[],
   lockedBefore: ReadonlyMap<string, string>,
 ): Promise<void> {
-  const specs = new Map(
-    restorations.map((restoration) => [restoration.name, restoration.restoredTo]),
-  );
-  const pins = new Map(
-    restorations.flatMap((restoration) => {
-      const locked = lockedBefore.get(restoration.name);
-      return restoration.keepLocked && locked !== undefined && locked !== restoration.restoredTo
-        ? [[restoration.name, locked] as const]
-        : [];
-    }),
-  );
-  if (pins.size > 0) {
-    await writeSpecs(io, new Map([...specs, ...pins]));
+  const specs = restorations.map(({ path, section, name, restoredTo }): Declaration => ({
+    path,
+    section,
+    name,
+    spec: restoredTo,
+  }));
+  const pins = specs.flatMap((declaration, index) => {
+    const locked = lockedBefore.get(declaration.name);
+    return restorations[index]?.keepLocked === true &&
+      locked !== undefined &&
+      locked !== declaration.spec
+      ? [{ ...declaration, spec: locked }]
+      : [];
+  });
+  if (pins.length > 0) {
+    await writeSpecs(io, [...specs, ...pins]);
     await mustRun(io, "bun", ["install", "--ignore-scripts"]);
   }
   await writeSpecs(io, specs);

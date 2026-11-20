@@ -26,6 +26,15 @@ function rootManifest(catalog: Record<string, string>, bun = "1.4.4", node = "26
   )}\n`;
 }
 
+function webManifest(devDependencies?: Record<string, string>): string {
+  const json = {
+    name: "web",
+    dependencies: { react: "catalog:" },
+    ...(devDependencies === undefined ? {} : { devDependencies }),
+  };
+  return `${JSON.stringify(json, null, 2)}\n`;
+}
+
 function lockfile(versions: Record<string, string>): string {
   const entries = Object.entries(versions)
     .map(([name, version]) => `    "${name}": ["${name}@${version}", "", {}, "sha512-x"],`)
@@ -55,6 +64,8 @@ interface Scenario {
   readonly dockerfile?: string;
   /** Digests the registry knows, by `<repository>:<tag>`; any other tag answers 404. */
   readonly digests?: Record<string, string>;
+  /** apps/web's own devDependencies at the start and after `bun update -r --latest`. */
+  readonly webDev?: { start: Record<string, string>; latest: Record<string, string> };
 }
 
 const startCatalog = {
@@ -84,10 +95,7 @@ class FakeIo implements Io {
 
   constructor(private readonly scenario: Scenario) {
     this.files.set("package.json", rootManifest(scenario.start?.catalog ?? startCatalog));
-    this.files.set(
-      "apps/web/package.json",
-      `${JSON.stringify({ name: "web", dependencies: { react: "catalog:" } }, null, 2)}\n`,
-    );
+    this.files.set("apps/web/package.json", webManifest(scenario.webDev?.start));
     this.files.set("bun.lock", lockfile(scenario.start?.lock ?? startLock));
     this.files.set(".nvmrc", "26.13.1\n");
     this.files.set("dependency-holds.json", holdsFile);
@@ -163,6 +171,8 @@ class FakeIo implements Io {
         this.files.set("package.json", rootManifest(latest.catalog));
         this.files.set("bun.lock", lockfile(latest.lock));
       }
+      const webDev = this.scenario.webDev;
+      if (webDev !== undefined) this.files.set("apps/web/package.json", webManifest(webDev.latest));
       return ok();
     }
     if (line === "bun install --ignore-scripts") {
@@ -338,6 +348,38 @@ describe("runDependencyUpdate", () => {
     expect(outcome.kind === "unchanged" ? "" : outcome.body).toContain(
       "typescript stays at ~6.0.3",
     );
+  });
+
+  it("checks and restores each declaration of a held package at its own place", async () => {
+    // typescript is in the catalog and, with another spec, in apps/web. Both leave the range;
+    // each must get its own spec back, not the spec of whichever declaration was read last.
+    const io = new FakeIo({
+      latest: {
+        catalog: { ...startCatalog, typescript: "~7.0.2", effect: "4.1.5" },
+        lock: { ...startLock, typescript: "7.0.2", effect: "4.1.5" },
+      },
+      webDev: { start: { typescript: "~6.0.1" }, latest: { typescript: "^7.0.2" } },
+    });
+
+    await runDependencyUpdate(io, options);
+
+    expect(io.files.get("package.json")).toContain('"typescript": "~6.0.3"');
+    expect(io.files.get("apps/web/package.json")).toContain('"typescript": "~6.0.1"');
+  });
+
+  it("restores a declaration that left a range even when another declaration stayed in it", async () => {
+    const io = new FakeIo({
+      latest: {
+        catalog: { ...startCatalog, typescript: "~7.0.2", effect: "4.1.5" },
+        lock: { ...startLock, typescript: "7.0.2", effect: "4.1.5" },
+      },
+      webDev: { start: { typescript: "~6.0.1" }, latest: { typescript: "~6.0.3" } },
+    });
+
+    await runDependencyUpdate(io, options);
+
+    expect(io.files.get("package.json")).toContain('"typescript": "~6.0.3"');
+    expect(io.files.get("apps/web/package.json")).toContain('"typescript": "~6.0.3"');
   });
 
   it("opens a labelled PR from main with the updates, restoring held packages", async () => {
