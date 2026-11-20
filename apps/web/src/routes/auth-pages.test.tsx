@@ -1,5 +1,5 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createFakeBackend } from "@s10n-base/client/testing/fake-backend";
 
@@ -377,6 +377,40 @@ describe("/verify-email", () => {
     expect(
       await screen.findByRole("heading", { name: "Email address confirmed" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("an auth call that throws something unexpected", () => {
+  it("leaves the verify page on an error with a retry, not on Confirming", async () => {
+    const report = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const backend = backendWith();
+    const app = renderApp("/verify-email?token=t1", backend);
+    const verify = vi
+      .spyOn(app.services.auth, "verifyEmail")
+      .mockRejectedValueOnce(new Error("adapter failed"));
+
+    expect(await screen.findByText("Something went wrong. Try again.")).toBeInTheDocument();
+    click("Try again");
+    await waitFor(() => {
+      expect(verify).toHaveBeenCalledTimes(2);
+    });
+    report.mockRestore();
+  });
+
+  it("ends the sign-in's pending state and says so", async () => {
+    const report = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const app = renderApp("/sign-in", backendWith("sam@example.com"));
+    await screen.findByRole("heading", { name: "Sign in" });
+    vi.spyOn(app.services.auth, "signIn").mockRejectedValueOnce(new Error("adapter failed"));
+
+    type("Email address", "sam@example.com");
+    type("Password", "correct horse");
+    click("Sign in");
+
+    expect(await screen.findByText("Something went wrong. Try again.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled();
+    expect(report).toHaveBeenCalled();
+    report.mockRestore();
   });
 });
 

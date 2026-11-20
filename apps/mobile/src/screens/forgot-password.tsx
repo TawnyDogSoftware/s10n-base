@@ -8,6 +8,7 @@ import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 import { fieldErrorText, validateEmail } from "@s10n-base/client/validation";
 
+import { Unexpected } from "../components/unexpected";
 import { Body, Button, Card, Field, Notice, Screen, TextButton } from "../components/ui";
 import { ActionOutcome } from "../components/unknown-outcome";
 import { useServices } from "../services";
@@ -25,7 +26,7 @@ export function ForgotPasswordScreen() {
   const [error, setError] = useState<string | undefined>(undefined);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<SettledAction<AuthResult> | null>(null);
-  const [pending, run] = usePending();
+  const [pending, run, failed] = usePending();
   const ref = useRef<TextInputInstance>(null);
 
   const submit = () =>
@@ -71,6 +72,7 @@ export function ForgotPasswordScreen() {
   return (
     <Screen key="form" title={t("forgotPassword.title")} intro={t("forgotPassword.intro")}>
       <Card>
+        <Unexpected show={failed} />
         <ActionOutcome outcome={outcome} signedInText={tCommon("unknownOutcome.nowSignedIn")} />
         <Field
           label={t("fields.email")}

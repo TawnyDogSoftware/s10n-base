@@ -9,6 +9,7 @@ import { usePending } from "@s10n-base/client/use-pending";
 import { fieldErrorText } from "@s10n-base/client/validation";
 import { profileGet, type Profile } from "@s10n-base/contracts";
 
+import { Unexpected } from "../components/Unexpected";
 import { Loading } from "../components/RouteStates";
 import { SignOutButton } from "../components/SignOutButton";
 import { UnknownOutcome } from "../components/UnknownOutcome";
@@ -133,7 +134,7 @@ function Passkeys() {
     if (!result.ok) throw new Error(result.code);
     return result.data;
   });
-  const [pending, run] = usePending();
+  const [pending, run, failed] = usePending();
   const [message, setMessage] = useState<PasskeyMessage | null>(null);
   const supported = typeof window.PublicKeyCredential === "function";
 
@@ -175,6 +176,7 @@ function Passkeys() {
       ) : (
         <p className="text-muted">{t("passkeys.unsupported")}</p>
       )}
+      <Unexpected show={failed} />
       <PasskeyNotice message={message} />
     </Card>
   );

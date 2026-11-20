@@ -19,6 +19,7 @@ type State =
   | { readonly kind: "verified" }
   | { readonly kind: "invalid" }
   | { readonly kind: "missing" }
+  | { readonly kind: "failed" }
   | { readonly kind: "unknown"; readonly outcome: SettledAction<AuthResult> };
 
 /** Asks for a new verification link, answering the same way whether or not the address exists. */
@@ -59,6 +60,7 @@ function Resend() {
 function VerifyEmailPage() {
   const { t } = useTranslation("auth");
   const { t: tCommon } = useTranslation("common");
+  const { t: tError } = useTranslation("errors");
   const { auth, gate } = useServices();
   const { token } = verifyEmailRoute.useSearch();
   const [state, setState] = useState<State>(
@@ -69,7 +71,15 @@ function VerifyEmailPage() {
   const verify = useCallback(
     async (value: string) => {
       setState({ kind: "pending" });
-      const result = await gate.settle(() => auth.verifyEmail(value));
+      let result: SettledAction<AuthResult>;
+      try {
+        result = await gate.settle(() => auth.verifyEmail(value));
+      } catch (error) {
+        // Something the page did not expect: say so and offer a retry, never wait forever.
+        console.error(error);
+        setState({ kind: "failed" });
+        return;
+      }
       if (result.kind === "unknown") setState({ kind: "unknown", outcome: result });
       else setState(result.value.ok ? { kind: "verified" } : { kind: "invalid" });
     },
@@ -105,6 +115,17 @@ function VerifyEmailPage() {
             session={state.outcome.session}
             signedInText={tCommon("unknownOutcome.nowSignedIn")}
           />
+          <div>
+            <Button onClick={() => token !== undefined && void verify(token)}>
+              {tCommon("routeError.retry")}
+            </Button>
+          </div>
+        </PageShell>
+      );
+    case "failed":
+      return (
+        <PageShell title={tCommon("routeError.title")}>
+          <Notice tone="danger">{tError("generic")}</Notice>
           <div>
             <Button onClick={() => token !== undefined && void verify(token)}>
               {tCommon("routeError.retry")}

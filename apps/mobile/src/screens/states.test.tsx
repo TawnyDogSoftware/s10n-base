@@ -129,6 +129,27 @@ describe("SignInScreen for an unconfirmed address", () => {
   });
 });
 
+describe("an auth call that throws something unexpected", () => {
+  it("ends the sign-in's pending state and says so", async () => {
+    const report = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const backend = createBackend();
+    backend.addUser({ email: "sam@example.com" });
+    const { services } = renderScreen(<SignInScreen />, { backend });
+    vi.spyOn(services.auth, "signIn").mockRejectedValueOnce(new Error("SecureStore failed"));
+
+    type("Email address", "sam@example.com");
+    type("Password", "correct horse");
+    press("Sign in");
+
+    expect(await screen.findByText("Something went wrong. Try again.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign in" })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    report.mockRestore();
+  });
+});
+
 describe("a sign-in whose answer or session read is lost", () => {
   it("says it is signed in but could not confirm, when only the read after it failed", async () => {
     const backend = createBackend();

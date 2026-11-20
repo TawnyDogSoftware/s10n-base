@@ -5,6 +5,7 @@ import type { AuthResult } from "@s10n-base/client/auth";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 
+import { Unexpected } from "./unexpected";
 import { useServices } from "../services";
 import { Button } from "./ui";
 import { ActionOutcome } from "./unknown-outcome";
@@ -20,7 +21,7 @@ import { ActionOutcome } from "./unknown-outcome";
 export function SignOutButton() {
   const { t } = useTranslation("common");
   const { auth, gate } = useServices();
-  const [pending, run] = usePending();
+  const [pending, run, failed] = usePending();
   const [outcome, setOutcome] = useState<SettledAction<AuthResult> | null>(null);
 
   const signOut = () =>
@@ -45,6 +46,7 @@ export function SignOutButton() {
       >
         {t("signOut")}
       </Button>
+      <Unexpected show={failed} />
       <ActionOutcome
         outcome={outcome}
         signedInText={t("unknownOutcome.stillSignedIn")}

@@ -12,7 +12,7 @@
 | `@s10n-base/client/messages`             | `errorMessageKey`: the `errors` message for any failure a screen shows                                                                           |
 | `@s10n-base/client/form`                 | `checkFields`: checks a form's fields together and focuses the first invalid one                                                                 |
 | `@s10n-base/client/profile-name`         | `useProfileNameForm`: the profile name form's draft, save and notices, shared by both apps                                                       |
-| `@s10n-base/client/use-pending`          | `usePending`: pending state for one action, ignoring a second press while it runs                                                                |
+| `@s10n-base/client/use-pending`          | `usePending`: pending state for one action, ignoring a second press while it runs, and whether it threw                                          |
 | `@s10n-base/client/testing/fake-backend` | Test code only: an in-memory server for both apps' screen tests                                                                                  |
 
 ## The base URL

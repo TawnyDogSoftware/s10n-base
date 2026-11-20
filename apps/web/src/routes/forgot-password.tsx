@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 
+import { Unexpected } from "../components/Unexpected";
 import { EmailForm } from "../components/EmailForm";
 import { ActionOutcome } from "../components/UnknownOutcome";
 import { Card, linkClass, Notice, PageShell } from "../components/ui";
@@ -18,7 +19,7 @@ function ForgotPasswordPage() {
   const { t } = useTranslation("auth");
   const { t: tCommon } = useTranslation("common");
   const { auth, gate } = useServices();
-  const [pending, run] = usePending();
+  const [pending, run, failed] = usePending();
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<SettledAction<AuthResult> | null>(null);
 
@@ -36,6 +37,7 @@ function ForgotPasswordPage() {
   return (
     <PageShell title={t("forgotPassword.title")} intro={t("forgotPassword.intro")}>
       <Card>
+        <Unexpected show={failed} />
         <ActionOutcome outcome={outcome} signedInText={tCommon("unknownOutcome.nowSignedIn")} />
         <EmailForm
           submitLabel={t("forgotPassword.submit")}

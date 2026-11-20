@@ -6,6 +6,7 @@ import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 import { PASSWORD_MIN, validateNewPassword, fieldErrorText } from "@s10n-base/client/validation";
 
+import { Unexpected } from "../components/Unexpected";
 import { ActionOutcome } from "../components/UnknownOutcome";
 import { Button, Card, Field, linkClass, PageShell } from "../components/ui";
 import type { AuthResult } from "../lib/auth";
@@ -22,7 +23,7 @@ function ResetPasswordPage() {
   const [error, setError] = useState<string | undefined>(undefined);
   const [outcome, setOutcome] = useState<SettledAction<AuthResult> | null>(null);
   const [done, setDone] = useState(false);
-  const [pending, run] = usePending();
+  const [pending, run, failed] = usePending();
   const ref = useRef<HTMLInputElement>(null);
 
   if (token === undefined) {
@@ -79,6 +80,7 @@ function ResetPasswordPage() {
             void submit();
           }}
         >
+          <Unexpected show={failed} />
           <ActionOutcome outcome={outcome} signedInText={tCommon("unknownOutcome.nowSignedIn")}>
             {refusedToken ? (
               <Link to="/forgot-password" className={linkClass}>

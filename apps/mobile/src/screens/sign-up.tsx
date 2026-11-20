@@ -15,6 +15,7 @@ import {
   validateNewPassword,
 } from "@s10n-base/client/validation";
 
+import { Unexpected } from "../components/unexpected";
 import { CheckEmail } from "../components/check-email";
 import { Body, Button, Card, Field, Notice, Screen, TextButton } from "../components/ui";
 import { ActionOutcome } from "../components/unknown-outcome";
@@ -34,7 +35,7 @@ export function SignUpScreen() {
   const [errors, setErrors] = useState<FieldErrors<Name>>({});
   const [outcome, setOutcome] = useState<SettledAction<AuthResult> | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
-  const [pending, run] = usePending();
+  const [pending, run, failed] = usePending();
   const nameRef = useRef<TextInputInstance>(null);
   const emailRef = useRef<TextInputInstance>(null);
   const passwordRef = useRef<TextInputInstance>(null);
@@ -86,6 +87,7 @@ export function SignUpScreen() {
         {Object.keys(errors).length > 0 ? (
           <Notice tone="danger">{t("validation.summary")}</Notice>
         ) : null}
+        <Unexpected show={failed} />
         <ActionOutcome outcome={outcome} signedInText={tCommon("unknownOutcome.nowSignedIn")} />
         <Field
           label={t("fields.name")}

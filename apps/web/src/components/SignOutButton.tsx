@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 
+import { Unexpected } from "./Unexpected";
 import type { AuthResult } from "../lib/auth";
 import { useServices } from "../services";
 import { ActionOutcome } from "./UnknownOutcome";
@@ -18,7 +19,7 @@ export function SignOutButton(props: { readonly variant?: "primary" | "secondary
   const { t } = useTranslation("common");
   const { auth, gate } = useServices();
   const navigate = useNavigate();
-  const [pending, run] = usePending();
+  const [pending, run, failed] = usePending();
   const [outcome, setOutcome] = useState<SettledAction<AuthResult> | null>(null);
 
   const signOut = () =>
@@ -48,6 +49,7 @@ export function SignOutButton(props: { readonly variant?: "primary" | "secondary
           {t("signOut")}
         </Button>
       </div>
+      <Unexpected show={failed} />
       <ActionOutcome
         outcome={outcome}
         signedInText={t("unknownOutcome.stillSignedIn")}

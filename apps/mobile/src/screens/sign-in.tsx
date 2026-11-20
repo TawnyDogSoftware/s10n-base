@@ -9,6 +9,7 @@ import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 import { fieldErrorText, validateEmail, validatePassword } from "@s10n-base/client/validation";
 
+import { Unexpected } from "../components/unexpected";
 import { CheckEmail } from "../components/check-email";
 import { Body, Button, Card, Field, Notice, Screen, TextButton } from "../components/ui";
 import { ActionOutcome } from "../components/unknown-outcome";
@@ -30,7 +31,7 @@ export function SignInScreen() {
   const [errors, setErrors] = useState<FieldErrors<Name>>({});
   const [outcome, setOutcome] = useState<SettledAction<AuthResult> | null>(null);
   const [unverified, setUnverified] = useState<string | null>(null);
-  const [pending, run] = usePending();
+  const [pending, run, failed] = usePending();
   const emailRef = useRef<TextInputInstance>(null);
   const passwordRef = useRef<TextInputInstance>(null);
 
@@ -85,6 +86,7 @@ export function SignInScreen() {
         {Object.keys(errors).length > 0 ? (
           <Notice tone="danger">{t("validation.summary")}</Notice>
         ) : null}
+        <Unexpected show={failed} />
         <ActionOutcome
           outcome={outcome}
           signedInText={tCommon("unknownOutcome.nowSignedIn")}

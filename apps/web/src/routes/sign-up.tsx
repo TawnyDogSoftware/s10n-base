@@ -13,6 +13,7 @@ import {
   fieldErrorText,
 } from "@s10n-base/client/validation";
 
+import { Unexpected } from "../components/Unexpected";
 import { CheckEmail } from "../components/CheckEmail";
 import { ActionOutcome } from "../components/UnknownOutcome";
 import { Button, Card, Field, linkClass, Notice, PageShell } from "../components/ui";
@@ -35,7 +36,7 @@ function SignUpPage() {
   const [errors, setErrors] = useState<FieldErrors<Name>>({});
   const [outcome, setOutcome] = useState<SettledAction<AuthResult> | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
-  const [pending, run] = usePending();
+  const [pending, run, failed] = usePending();
   const nameRef = useRef<HTMLInputElement>(null);
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -88,6 +89,7 @@ function SignUpPage() {
           {Object.keys(errors).length > 0 ? (
             <Notice tone="danger">{t("validation.summary")}</Notice>
           ) : null}
+          <Unexpected show={failed} />
           <ActionOutcome outcome={outcome} signedInText={tCommon("unknownOutcome.nowSignedIn")} />
           <Field
             label={t("fields.name")}
