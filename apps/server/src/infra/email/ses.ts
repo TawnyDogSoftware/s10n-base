@@ -149,15 +149,19 @@ function networkFailure(error: unknown): AttemptFailure {
   };
 }
 
+/**
+ * The response's JSON body when it is an object, else an empty object: a body that is not JSON
+ * (a proxy's error page, for instance) or is JSON but not an object (`null`) says nothing.
+ */
+async function jsonObject(response: Response): Promise<Readonly<Record<string, unknown>>> {
+  const value: unknown = await response.json().catch(() => null);
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+}
+
 /** The error type from `x-amzn-ErrorType` (`Type:namespace`), or the body's `__type` or `code`. */
 async function awsErrorType(response: Response): Promise<{ type?: string; message?: string }> {
   const header = response.headers.get("x-amzn-errortype")?.split(":", 1)[0]?.trim();
-  let body: { __type?: unknown; code?: unknown; message?: unknown; Message?: unknown } = {};
-  try {
-    body = (await response.json()) as typeof body;
-  } catch {
-    // Not JSON: a proxy's error page, for instance.
-  }
+  const body = await jsonObject(response);
   const fromBody = [body.__type, body.code].find((value) => typeof value === "string");
   const type = header || fromBody?.split("#").at(-1);
   const message = [body.message, body.Message].find((value) => typeof value === "string");
@@ -225,7 +229,7 @@ export function createSesClient(options: SesClientOptions): SesClient {
       return networkFailure(error);
     }
     if (response.ok) {
-      const parsed = (await response.json().catch(() => ({}))) as { MessageId?: unknown };
+      const parsed = await jsonObject(response);
       return typeof parsed.MessageId === "string" && parsed.MessageId !== ""
         ? { messageId: parsed.MessageId }
         : {
