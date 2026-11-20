@@ -440,6 +440,42 @@ describe("an auth call that throws something unexpected", () => {
   });
 });
 
+/** At each focus call: the role of the focused field's error, or null when it has none yet. */
+function watchFocus() {
+  const seen: Array<string | null> = [];
+  const focus = vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    const ids = (this.getAttribute("aria-describedby") ?? "").split(" ");
+    const error = ids
+      .map((id) => document.getElementById(id))
+      .find((element) => element?.id.endsWith("-error"));
+    seen.push(error === undefined || error === null ? null : (error.getAttribute("role") ?? ""));
+  });
+  return { seen, focus };
+}
+
+describe("a field error", () => {
+  it.each([
+    // A single field: its error is the alert.
+    ["/forgot-password", "Reset your password", "Send the link", "alert"],
+    // Several fields: the summary is the alert, and the field's error is there to be read.
+    ["/sign-in", "Sign in", "Sign in", ""],
+  ])("on %s exists before focus moves to the field", async (path, heading, submit, role) => {
+    renderApp(path, backendWith());
+    await screen.findByRole("heading", { level: 1, name: heading });
+    const { seen, focus } = watchFocus();
+
+    click(submit);
+
+    await waitFor(() => {
+      expect(seen).toEqual([role]);
+    });
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    focus.mockRestore();
+  });
+});
+
 describe("/forgot-password", () => {
   it.each(["sam@example.com", "nobody@example.com"])(
     "answers the same way for %s, whether or not it has an account",

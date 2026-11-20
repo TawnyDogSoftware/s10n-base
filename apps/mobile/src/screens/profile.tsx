@@ -2,6 +2,7 @@ import { type ReactNode, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, type TextInputInstance, View } from "react-native";
 
+import { useFocusAfterRender } from "@s10n-base/client/form";
 import { errorMessageKey } from "@s10n-base/client/messages";
 import { useProfileNameForm } from "@s10n-base/client/profile-name";
 import { useProtectedQuery } from "@s10n-base/client/query-state";
@@ -23,6 +24,7 @@ function NameForm(props: { readonly profile: Profile }) {
   const { rpc } = useServices();
   const form = useProfileNameForm(rpc, props.profile);
   const ref = useRef<TextInputInstance>(null);
+  const focusAfterRender = useFocusAfterRender();
 
   return (
     <>
@@ -40,7 +42,7 @@ function NameForm(props: { readonly profile: Profile }) {
         pending={form.pending}
         pendingLabel={t("saving")}
         onPress={() => {
-          if (!form.submit()) ref.current?.focus();
+          if (!form.submit()) focusAfterRender(ref);
         }}
       >
         {t("save")}

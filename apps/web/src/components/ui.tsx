@@ -44,12 +44,17 @@ export function Field(
     readonly label: string;
     readonly hint?: string | undefined;
     readonly error?: string | undefined;
+    /**
+     * Whether the error is an alert, read out when it appears. True by default; a form whose
+     * errors a summary alert already announces passes false, so one submit is read out once.
+     */
+    readonly alertError?: boolean;
     readonly inputRef?: Ref<HTMLInputElement>;
     readonly value: string;
     readonly onValueChange: (value: string) => void;
   } & Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "id">,
 ) {
-  const { label, hint, error, inputRef, value, onValueChange, ...input } = props;
+  const { label, hint, error, alertError = true, inputRef, value, onValueChange, ...input } = props;
   const id = useId();
   const hintId = `${id}-hint`;
   const errorId = `${id}-error`;
@@ -79,7 +84,9 @@ export function Field(
         className={`bg-background text-foreground border-border aria-[invalid=true]:border-danger ${focusRing} rounded-md border px-3 py-2`}
       />
       {error === undefined ? null : (
-        <p id={errorId} className="text-danger text-sm">
+        // An alert, so it is read out even when focus does not move (Enter in a field that
+        // already has focus).
+        <p id={errorId} role={alertError ? "alert" : undefined} className="text-danger text-sm">
           {error}
         </p>
       )}

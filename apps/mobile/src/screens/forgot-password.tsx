@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TextInputInstance } from "react-native";
 
+import { useFocusAfterRender } from "@s10n-base/client/form";
 import type { AuthResult } from "@s10n-base/client/auth";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
@@ -28,6 +29,7 @@ export function ForgotPasswordScreen() {
   const [outcome, setOutcome] = useState<SettledAction<AuthResult> | null>(null);
   const [pending, run, failed] = usePending();
   const ref = useRef<TextInputInstance>(null);
+  const focusAfterRender = useFocusAfterRender();
 
   const submit = () =>
     run(async () => {
@@ -35,7 +37,7 @@ export function ForgotPasswordScreen() {
       const checked = validateEmail(email);
       if (!checked.ok) {
         setError(fieldErrorText(t, checked.error));
-        ref.current?.focus();
+        focusAfterRender(ref);
         return;
       }
       setError(undefined);

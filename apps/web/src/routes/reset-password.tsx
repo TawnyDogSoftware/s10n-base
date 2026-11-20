@@ -2,6 +2,7 @@ import { createRoute, Link } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { useFocusAfterRender } from "@s10n-base/client/form";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 import { PASSWORD_MIN, validateNewPassword, fieldErrorText } from "@s10n-base/client/validation";
@@ -25,6 +26,7 @@ function ResetPasswordPage() {
   const [done, setDone] = useState(false);
   const [pending, run, failed] = usePending();
   const ref = useRef<HTMLInputElement>(null);
+  const focusAfterRender = useFocusAfterRender();
 
   if (token === undefined) {
     return (
@@ -52,7 +54,7 @@ function ResetPasswordPage() {
       const checked = validateNewPassword(password);
       if (!checked.ok) {
         setError(fieldErrorText(t, checked.error));
-        ref.current?.focus();
+        focusAfterRender(ref);
         return;
       }
       setError(undefined);

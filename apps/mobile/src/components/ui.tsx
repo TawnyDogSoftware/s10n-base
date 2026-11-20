@@ -120,6 +120,10 @@ export function Field(
 ) {
   const { label, value, onChangeText, error, hint, inputRef, ...input } = props;
   const invalid = error !== undefined;
+  // Read out when it appears, even when focus does not move.
+  useEffect(() => {
+    if (error !== undefined) AccessibilityInfo.announceForAccessibility(error);
+  }, [error]);
   return (
     <View className="gap-1">
       <Text className="text-foreground font-medium">{label}</Text>

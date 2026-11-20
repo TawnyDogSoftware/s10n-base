@@ -1,6 +1,7 @@
+import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { checkFields } from "./form";
+import { checkFields, useFocusAfterRender } from "./form";
 import { validateEmail, validateName } from "./validation";
 
 function field() {
@@ -22,24 +23,39 @@ describe("checkFields", () => {
     expect(name.focus).not.toHaveBeenCalled();
   });
 
-  it("returns each error and focuses the first invalid field", () => {
+  it("returns each error and the first invalid field, and moves no focus itself", () => {
     const name = field();
     const email = field();
+    const other = field();
 
     expect(
       checkFields([
         ["name", validateName("Sam"), name.ref],
         ["email", validateEmail(""), email.ref],
+        ["other", validateName(""), other.ref],
       ]),
-    ).toEqual({ ok: false, errors: { email: { key: "validation.emailRequired" } } });
-    expect(email.focus).toHaveBeenCalledOnce();
-    expect(name.focus).not.toHaveBeenCalled();
-  });
-
-  it("still reports the errors when the field is not mounted", () => {
-    expect(checkFields([["email", validateEmail(""), { current: null }]])).toEqual({
+    ).toEqual({
       ok: false,
-      errors: { email: { key: "validation.emailRequired" } },
+      errors: {
+        email: { key: "validation.emailRequired" },
+        other: { key: "validation.nameRequired" },
+      },
+      first: email.ref,
     });
+    expect(email.focus).not.toHaveBeenCalled();
+  });
+});
+
+describe("useFocusAfterRender", () => {
+  it("focuses the field after the next render, once", () => {
+    const email = field();
+    const { result, rerender } = renderHook(() => useFocusAfterRender());
+
+    result.current(email.ref);
+    expect(email.focus).not.toHaveBeenCalled();
+    rerender();
+    expect(email.focus).toHaveBeenCalledOnce();
+    rerender();
+    expect(email.focus).toHaveBeenCalledOnce();
   });
 });

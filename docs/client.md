@@ -10,7 +10,7 @@
 | `@s10n-base/client/auth`                 | `AuthResult`, `PasswordAuth`, `runAuthAction` and `lostAnswerFetch`: a Better Auth client's results as data, a lost answer as `NetworkError`     |
 | `@s10n-base/client/validation`           | The form fields' checks (name from the contract, email, password within Better Auth's limits) and `fieldErrorText`                               |
 | `@s10n-base/client/messages`             | `errorMessageKey`: the `errors` message for any failure a screen shows                                                                           |
-| `@s10n-base/client/form`                 | `checkFields`: checks a form's fields together and focuses the first invalid one                                                                 |
+| `@s10n-base/client/form`                 | `checkFields`: checks a form's fields together; `useFocusAfterRender`: focuses the first invalid one once its error is shown                     |
 | `@s10n-base/client/profile-name`         | `useProfileNameForm`: the profile name form's draft, save and notices, shared by both apps                                                       |
 | `@s10n-base/client/use-pending`          | `usePending`: pending state for one action, ignoring a second press while it runs, and whether it threw                                          |
 | `@s10n-base/client/testing/fake-backend` | Test code only: an in-memory server for both apps' screen tests                                                                                  |

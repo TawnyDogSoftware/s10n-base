@@ -2,7 +2,7 @@ import { createRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { checkFields, type FieldErrors } from "@s10n-base/client/form";
+import { checkFields, type FieldErrors, useFocusAfterRender } from "@s10n-base/client/form";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 import { validateEmail, validatePassword, fieldErrorText } from "@s10n-base/client/validation";
@@ -36,6 +36,7 @@ function SignInPage() {
   const [passkeyPending, runPasskey, passkeyFailed] = usePending();
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
+  const focusAfterRender = useFocusAfterRender();
 
   /** Whatever the action reported, the session read afterwards decides. */
   const finish = async (result: SettledAction<AuthResult>) => {
@@ -55,6 +56,7 @@ function SignInPage() {
       ]);
       if (!checked.ok) {
         setErrors(checked.errors);
+        focusAfterRender(checked.first);
         return;
       }
       setErrors({});
@@ -118,6 +120,7 @@ function SignInPage() {
             inputRef={emailRef}
             value={email}
             onValueChange={setEmail}
+            alertError={false}
             error={fieldError("email")}
           />
           <Field
@@ -128,6 +131,7 @@ function SignInPage() {
             inputRef={passwordRef}
             value={password}
             onValueChange={setPassword}
+            alertError={false}
             error={fieldError("password")}
           />
           <div className="flex flex-wrap items-center gap-4">

@@ -2,7 +2,7 @@ import { createRoute, Link } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { checkFields, type FieldErrors } from "@s10n-base/client/form";
+import { checkFields, type FieldErrors, useFocusAfterRender } from "@s10n-base/client/form";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 import {
@@ -40,6 +40,7 @@ function SignUpPage() {
   const nameRef = useRef<HTMLInputElement>(null);
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
+  const focusAfterRender = useFocusAfterRender();
 
   const submit = () =>
     run(async () => {
@@ -51,6 +52,7 @@ function SignUpPage() {
       ]);
       if (!checked.ok) {
         setErrors(checked.errors);
+        focusAfterRender(checked.first);
         return;
       }
       setErrors({});
@@ -98,6 +100,7 @@ function SignUpPage() {
             inputRef={nameRef}
             value={name}
             onValueChange={setName}
+            alertError={false}
             error={fieldError("name")}
           />
           <Field
@@ -108,6 +111,7 @@ function SignUpPage() {
             inputRef={emailRef}
             value={email}
             onValueChange={setEmail}
+            alertError={false}
             error={fieldError("email")}
           />
           <Field
@@ -119,6 +123,7 @@ function SignUpPage() {
             inputRef={passwordRef}
             value={password}
             onValueChange={setPassword}
+            alertError={false}
             error={fieldError("password")}
           />
           <div>

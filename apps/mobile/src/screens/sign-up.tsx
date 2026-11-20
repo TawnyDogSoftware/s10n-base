@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { TextInputInstance } from "react-native";
 
 import type { AuthResult } from "@s10n-base/client/auth";
-import { checkFields, type FieldErrors } from "@s10n-base/client/form";
+import { checkFields, type FieldErrors, useFocusAfterRender } from "@s10n-base/client/form";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 import {
@@ -39,6 +39,7 @@ export function SignUpScreen() {
   const nameRef = useRef<TextInputInstance>(null);
   const emailRef = useRef<TextInputInstance>(null);
   const passwordRef = useRef<TextInputInstance>(null);
+  const focusAfterRender = useFocusAfterRender();
 
   const submit = () =>
     run(async () => {
@@ -50,6 +51,7 @@ export function SignUpScreen() {
       ]);
       if (!checked.ok) {
         setErrors(checked.errors);
+        focusAfterRender(checked.first);
         return;
       }
       setErrors({});

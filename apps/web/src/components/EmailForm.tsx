@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { useFocusAfterRender } from "@s10n-base/client/form";
 import { validateEmail, fieldErrorText } from "@s10n-base/client/validation";
 
 import { Button, Field } from "./ui";
@@ -16,6 +17,7 @@ export function EmailForm(props: {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | undefined>(undefined);
   const ref = useRef<HTMLInputElement>(null);
+  const focusAfterRender = useFocusAfterRender();
   return (
     <form
       noValidate
@@ -25,7 +27,7 @@ export function EmailForm(props: {
         const checked = validateEmail(email);
         if (!checked.ok) {
           setError(fieldErrorText(t, checked.error));
-          ref.current?.focus();
+          focusAfterRender(ref);
           return;
         }
         setError(undefined);

@@ -2,6 +2,7 @@ import { createRoute } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { useFocusAfterRender } from "@s10n-base/client/form";
 import { errorMessageKey } from "@s10n-base/client/messages";
 import { useProfileNameForm } from "@s10n-base/client/profile-name";
 import { type SettledAction, useProtectedQuery } from "@s10n-base/client/query-state";
@@ -36,6 +37,7 @@ function NameForm(props: { readonly profile: Profile }) {
   const { rpc } = useServices();
   const form = useProfileNameForm(rpc, props.profile);
   const ref = useRef<HTMLInputElement>(null);
+  const focusAfterRender = useFocusAfterRender();
 
   return (
     <form
@@ -43,7 +45,7 @@ function NameForm(props: { readonly profile: Profile }) {
       className="flex flex-col gap-4"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!form.submit()) ref.current?.focus();
+        if (!form.submit()) focusAfterRender(ref);
       }}
     >
       <Field
