@@ -1,6 +1,6 @@
 # 011: Address the findings of the full-branch review
 
-> Status: not started.
+> Status: implemented on 2026-11-20, with four findings partly done (section 12).
 
 A follow-up to the rework ([000](000-hosted-starter-rework.md)), on the same pull request.
 
@@ -456,4 +456,64 @@ Done when every finding in sections 3 to 9 is either fixed with its test, or lis
 
 ## 12. How it was built
 
-Filled in by the implementors: for each finding, fixed (commit and test), found not to hold (what the test showed), or not done (why).
+Implemented on 2026-11-20 by three implementors working in parallel, each in its own worktree, on slices divided by file ownership rather than by the five packages above, so that no two edited the same files: the server (22 findings), the shared client with the web and mobile apps (37 findings and the two leads), and the scripts, dev tooling and docs (24 findings). Each finding had its failing test written and seen to fail before the code changed. The three branches merged without conflict.
+
+### Outcome
+
+| Outcome | Findings |
+|---|---|
+| Fixed, with a test that failed first | 67 of the 88, plus the pre-existing defect P1 |
+| Fixed in docs or wording only (no test could fail first) | F69, F86, F71, F45, F44 (docs half), F73, F87, F88, L1 |
+| Found not to hold | F49, F35 |
+| Partly done | F14, F47, F63, L2 |
+| No code change, as section 10 says | F5, F21, F28, F37, F38, F67, F68, F74 |
+
+### Found not to hold
+
+- **F49:** settled by experiment in a throwaway bun 1.4.4 workspace with the 3-day gate. A package held to `0.28.x` was moved to `^0.29.9` by `bun update -r --latest`; with the spec put back and no pin, `bun install` locked `0.28.20`, the newest 0.28 release the gate allows (`0.28.19` under a 10-day gate). bun re-resolves inside the restored range, so a range hold does not hide the newest permitted update. A flow test pins the behaviour; no code changed.
+- **F35:** as the verifier said, nothing to reproduce. F62 now opens the file earlier, so three tests check the handle is closed when the client has gone.
+
+### Partly done, and what is left
+
+- **F14:** visitor-only pages now leave when a session appears. Not done: re-reading the session at its expiry. `AppSession` carries no expiry, and adding one changes the server's session route, which belonged to another slice.
+- **F47:** new passkeys get a name with the date and time, and each remove button has a unique name. Not done: a rename control. The route is exposed; the UI is not built.
+- **F63:** the emails were already tied to the expiry constant by a test. A new test checks every catalog string that states a lifetime against the constant. The duration is not interpolated into the screen strings.
+- **L2:** a new browser journey shows that going Back keeps both pages of the user list. The scroll position resets to the top; the router's own scroll restoration did not restore it in this flow and was reverted.
+- **From F24:** the client's `validateName` reports a name containing a NUL as "too long". It needs its own message.
+- **Noticed, not changed:** the update PR's body says "newest allowed" of the version it refused.
+
+### Departures from the suggested fixes
+
+- **F10:** both parts were built. `profile.update` now takes `{userId, name}` and refuses a mismatch with `auth.unauthenticated` inside `sessionTransaction`; the web app passes a `BroadcastChannel` to the session gate so other tabs re-read the session when the user changes.
+- **F4:** `migrate` keeps targeting `public` and refuses when the connection's current schema differs; the server reads applied migrations in its connection's current schema only.
+- **F24:** `update-user` stays exposed, as `docs/auth.md` documents. The name rule is applied in Better Auth's database hooks on every create and update of a user.
+- **F23:** Better Auth 1.7.25 has a `disableRefresh` option, so the RPC session lookup is read-only and only the session route renews.
+- **F43:** the raw spelling is checked with a pattern, because requiring the input to equal the parsed origin would refuse an upper-case host with an explicit default port, which an existing test accepts on purpose.
+- **F16:** no expiry was added to the contract; the list computes `banned` with the rule the session lookup uses.
+- **F8:** Better Auth's per-call fetch option replaces the global counter. `trackNetworkFailures` is gone.
+- **F48:** field errors are alerts only in single-field forms; sign-in and sign-up already have a summary alert.
+- **F46:** Vite listens on `APP_URL`'s host and port when `APP_URL` is http, and on `127.0.0.1:5173` when it is https. The suggested loopback test would have broken the documented phone setup.
+- **F29:** each update PR's body ends with a hidden line naming the commit it describes; a run with no file change rewrites the body only when that line disagrees with the PR's head. The documented choice to leave a correct PR alone is kept. Older update PRs are closed even on a run with no change.
+- **F1:** a PR must also come from a branch of this repository.
+- **F27:** specs are tracked and restored per place of declaration.
+- **F32:** each role and the database are created by a separate run, so cleanup knows exactly what exists.
+
+### Two lint allowances were added
+
+Both are in `.oxlintrc.json` with their reasons, and listed in `docs/quality.md`:
+
+- `unicorn/require-post-message-target-origin` is off for `packages/client/src/query-state.ts`: the rule reads a `BroadcastChannel`'s one-argument `postMessage` as `window.postMessage`.
+- `jsx-a11y/no-noninteractive-tabindex` allows `tabIndex` on a `<section>`, so the user table's scroll region can take keyboard focus.
+
+### Verified on the merged result
+
+- `bun run agent:check`: all eleven gates; 1,951 tests; 100% of statements (5,024), branches (2,607), functions (1,388) and lines (4,480). No suppression, no new coverage exclusion, no new dependency.
+- With the database up: `db:migrate`, `db:generate:check`, `test:live` (77 tests), `build`, `smoke`, `test:e2e` (three journeys), `mobile:export`, `docker:build` and `docker:smoke`.
+- The scripts slice also ran `rename:proof` and a dry run of the dependency update on its own branch.
+
+### Not verified
+
+- Nothing was seen on a device or with a screen reader: the announcements of field errors, where focus lands on result pages and after "Load more", the scrolling startup error, and the tap area of link-styled buttons on iOS and Android.
+- The private-network recipe was not tried through a real forwarder, and the phone guide was not followed from a second machine.
+- The dependency-update workflow itself still cannot run before the branch is merged.
+- Running `bun dev` or the browser journeys from a second checkout recreates the shared local Postgres container, because the compose project is the same and its configuration differs per checkout. The data volume survives; open connections drop.

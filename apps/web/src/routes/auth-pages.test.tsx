@@ -498,9 +498,11 @@ describe("a form replaced by its result", () => {
     type(/^Password/, "long enough");
     click("Create account");
 
-    expect(
-      await screen.findByRole("heading", { level: 1, name: "Check your email" }),
-    ).toHaveFocus();
+    const result = await screen.findByRole("heading", { level: 1, name: "Check your email" });
+    // The heading takes focus in an effect, just after it appears.
+    await waitFor(() => {
+      expect(result).toHaveFocus();
+    });
   });
 
   it("moves focus to the result's heading after a reset request", async () => {
@@ -509,9 +511,11 @@ describe("a form replaced by its result", () => {
     type("Email address", "sam@example.com");
     click("Send the link");
 
-    expect(
-      await screen.findByRole("heading", { level: 1, name: "Check your email" }),
-    ).toHaveFocus();
+    const result = await screen.findByRole("heading", { level: 1, name: "Check your email" });
+    // The heading takes focus in an effect, just after it appears.
+    await waitFor(() => {
+      expect(result).toHaveFocus();
+    });
   });
 
   it("moves focus to the result's heading after a password reset", async () => {
@@ -522,9 +526,11 @@ describe("a form replaced by its result", () => {
     type(/^New password/, "a brand new one");
     click("Save the new password");
 
-    expect(
-      await screen.findByRole("heading", { level: 1, name: "Password changed" }),
-    ).toHaveFocus();
+    const result = await screen.findByRole("heading", { level: 1, name: "Password changed" });
+    // The heading takes focus in an effect, just after it appears.
+    await waitFor(() => {
+      expect(result).toHaveFocus();
+    });
   });
 
   it("moves focus to the result's heading when an email address is confirmed", async () => {
@@ -533,9 +539,14 @@ describe("a form replaced by its result", () => {
     const token = backend.issueToken("new@example.com", "verify");
     renderApp(`/verify-email?token=${token}`, backend);
 
-    expect(
-      await screen.findByRole("heading", { level: 1, name: "Email address confirmed" }),
-    ).toHaveFocus();
+    const result = await screen.findByRole("heading", {
+      level: 1,
+      name: "Email address confirmed",
+    });
+    // The heading takes focus in an effect, just after it appears.
+    await waitFor(() => {
+      expect(result).toHaveFocus();
+    });
   });
 });
 

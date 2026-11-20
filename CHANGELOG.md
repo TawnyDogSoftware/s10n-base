@@ -128,3 +128,54 @@ What changed under existing names, so a port does not miss it:
 - **Plans and decisions:** `plans/README.md` indexes the plans; `docs/adr/` holds a record for each of the ten decisions of the rework. A test keeps both indexes complete and numbers unique.
 - **Docs:** a new README and `docs/README.md`; `docs/new-project.md`; the existing guides corrected where they no longer matched the code; and a test that every `bun run` command, relative link and anchor in the docs exists.
 - **Fixed:** the dependency update's dry run left an empty temporary directory when git could not make its worktree; Vite warned on every build about an extensionless import in its config.
+
+### Fixed: the findings of the full-branch review
+
+[plans/011-review-findings.md](plans/011-review-findings.md)
+
+Changes under names a project may already use:
+
+- **`profile.update` takes `{userId, name}`.** The server refuses a save meant for a user other than the caller with `auth.unauthenticated`. A client must send the user id the screen was rendered for.
+- **`SES_ENDPOINT` must be an http loopback origin with an explicit port** (`http://127.0.0.1:8005`). An https or portless loopback value the config used to accept is refused.
+- **`dependency-holds.json` must have a `holds` array**, and a `^0.0.x` range means that patch only, as npm reads it.
+- **`@s10n-base/client`:** `usePending` returns `[pending, run, failed]` and catches unexpected throws; `checkFields` no longer moves focus (use `useFocusAfterRender`); `trackNetworkFailures` is replaced by `lostAnswerFetch`, and `runAuthAction(fetch, action)` hands the action its own fetch options; `createSessionGate` takes an optional `channel`. Mobile's `withAuthCookie(session, fetch)` changed signature.
+- **RPC calls no longer renew the session.** Only `GET /api/app-auth/session` does.
+- **Every write of a user's name** (sign-up, `update-user`, the admin routes, `profile.update`) is trimmed and held to 1 to 100 characters with no NUL; a name that breaks the rule gets a 400.
+
+Server:
+
+- Only the `X-Forwarded-For` entries the trusted proxies added are read. Client-written text further left no longer makes the server fall back to the proxy's address, which hid the client from the access log and put it in the proxy's rate-limit bucket. The server must be reachable only through its proxies.
+- The admin user list shows a temporary ban that has ended as not banned.
+- `set-role` follows `LOG_LEVEL`, and refuses an email that several users share in different case, changing none of them.
+- `migrate` refuses to run when the connection's search path would create tables outside its target schema. App-role grants run in one transaction and never give write access to the migrator's tables. The pending-migrations startup error names the command to run.
+- `migrate` and `set-role` log a database open failure and exit 1; a close failure no longer replaces their exit code.
+- A user-list cursor in year 0000 gets 400 `rpc.invalid_cursor` instead of a 500.
+- Static serving opens each file once and takes its size from that handle, refuses symlinks that lead outside the web build, serves names such as `..config.js`, answers 500 on a permission error, and parses `Accept` into media types.
+- `/verify-email` and `/reset-password` are served with `Referrer-Policy: no-referrer`.
+- The SES client classifies a reply whose JSON body is not an object; the local SigV4 verifier refuses a timestamp that names no real time; the auth schema check counts only valid indexes and validated foreign keys; `parseBareOrigin` refuses origins that are only bare after normalisation.
+
+Client, web and mobile:
+
+- The web session gate tells other tabs when the user changes, and re-reads the session after `auth.forbidden`: a changed role purges cached data, and a 403 alone signs nobody out.
+- RPC and session requests time out after 30 seconds as a `NetworkError`. A 502 to 504 is always a lost answer, and a status that disagrees with its envelope is a `DecodeError`.
+- A profile save no longer overwrites what the user typed while it was pending, a clean field adopts a name changed elsewhere, and other cached readers are refreshed after a save.
+- A lost answer in one auth call no longer turns another call's definite answer into "unknown". A mobile session renewal that arrives after a sign-in or sign-out is not stored.
+- A verification refused by a rate limit or a server error says so and offers a retry, instead of "this link does not work".
+- New passkeys are named with the date and time they were added, and each remove button has a unique name. Passkey sign-in is hidden in browsers without WebAuthn.
+- Form errors are on screen and announced before focus moves to the field. A field's error clears when its value changes, and fields are disabled while a submission is pending.
+- After a lost password-reset answer the page offers "Sign in" and "Ask for a new link" instead of the same form. The reset and verify pages start clean for a new link.
+- The "could not confirm" copy distinguishes checking from the result, with a "Check again" control that re-reads the session without repeating the action.
+- The user list says when a refresh failed and offers a retry; its scroll region takes keyboard focus; "Load more" keeps focus; long names wrap.
+
+Scripts and tooling:
+
+- The daily update recognises its own pull request by the label, a `deps/update-YYYY-MM-DD` branch of this repository and `main` as base, and leaves other labelled pull requests alone. It closes older update pull requests an interrupted run left open, and rewrites a body left stale by a failed edit.
+- A package held in both the catalog and a workspace is checked and restored at each place. A Node release with an unreadable date no longer passes the age gate. The Dockerfile update keeps each stage's own image variant.
+- The update pull request's body tells a failed Expo check from drift, lists packages added to or removed from the lockfile, says when no bun release on the fetched page is old enough, and shows the release the age gate actually held back.
+- `bun dev` stops every process when one cannot be spawned, instead of leaving the others holding their ports.
+- New optional `WEB_DEV_HOST` and `WEB_DEV_PORT` set where Vite listens. Vite listens on `127.0.0.1:5173` when `APP_URL` is https, so a forwarder can own the public origin.
+- The local inbox answers 500 when a handler fails and refuses a store size that is not a positive whole number. `docker:smoke` drops exactly what it created. The audit triage refuses impossible expiry dates. The runtime-dependency export refuses a non-empty output directory. The rename's lockfile check compares entry by entry.
+
+Docs: the phone guide says how to set `HOST`; `dev:server` and `smoke` need `bun run db:migrate` first; the deployment guide covers proxy-only reachability, redacting query strings in proxy logs, synchronised clocks and the access line being at `info`; `AGENTS.md` states the Expo version exception.
+
+Open after this change: re-reading the session at its expiry, a rename control for passkeys, and restoring the scroll position when going Back to the user list (plan 011, section 12).
