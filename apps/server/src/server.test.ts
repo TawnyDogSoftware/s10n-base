@@ -272,7 +272,7 @@ describe("startServer", () => {
       pending: ["001_auth"],
     });
     await expect(failure).rejects.toThrow(
-      "The database has not applied 001_auth, which this build needs. Run `migrate up` before starting it.",
+      "The database has not applied 001_auth, which this build needs. Apply the pending migrations before starting the server: `bun run db:migrate` in a checkout, or `node apps/server/dist/migrate.mjs up` from a build or the image.",
     );
     expect(events).toEqual(["pool:end"]);
   });

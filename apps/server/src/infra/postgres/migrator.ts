@@ -46,7 +46,7 @@ export class MigrationsPendingError extends Data.TaggedError("MigrationsPendingE
   readonly pending: ReadonlyArray<string>;
 }> {
   override get message(): string {
-    return `The database has not applied ${this.pending.join(", ")}, which this build needs. Run \`migrate up\` before starting it.`;
+    return `The database has not applied ${this.pending.join(", ")}, which this build needs. Apply the pending migrations before starting the server: \`bun run db:migrate\` in a checkout, or \`node apps/server/dist/migrate.mjs up\` from a build or the image.`;
   }
 }
 
