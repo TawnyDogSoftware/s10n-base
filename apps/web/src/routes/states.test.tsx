@@ -98,16 +98,44 @@ describe("/profile, when things go wrong", () => {
     expect(await screen.findByText("Something went wrong. Try again.")).toBeInTheDocument();
   });
 
-  it("shows an empty list when the passkey answer is not a list", async () => {
-    const backend = signedIn();
-    backend.failNext("/api/auth/passkey/list-user-passkeys", {
-      kind: "response",
-      status: 200,
-      body: { unexpected: true },
-    });
-    renderApp("/profile", backend);
+  it.each([{ unexpected: true }, [{ id: 1 }]])(
+    "says the passkeys could not be listed when the answer is not a passkey list: %j",
+    async (body) => {
+      const backend = signedIn();
+      backend.failNext("/api/auth/passkey/list-user-passkeys", {
+        kind: "response",
+        status: 200,
+        body,
+      });
+      renderApp("/profile", backend);
 
-    expect(await screen.findByText("You have no passkeys yet.")).toBeInTheDocument();
+      expect(await screen.findByText("Something went wrong. Try again.")).toBeInTheDocument();
+      expect(screen.queryByText("You have no passkeys yet.")).not.toBeInTheDocument();
+    },
+  );
+
+  it("keeps the passkeys it has when reading them again fails, and offers a retry", async () => {
+    const backend = signedIn();
+    const sam = backend.users.get("sam@example.com");
+    if (sam === undefined) throw new Error("no user");
+    sam.passkeys = [
+      { id: "pk1", name: "Laptop", createdAt: "2026-11-01T10:00:00.000Z" },
+      { id: "pk2", name: "Phone", createdAt: "2026-11-02T10:00:00.000Z" },
+    ];
+    renderApp("/profile", backend);
+    await screen.findByText("Phone");
+    // The removal is answered; the list read after it is not.
+    backend.failNext("/api/auth/passkey/list-user-passkeys", { kind: "network" });
+
+    click(/^Remove passkey Laptop, added /);
+
+    expect(await screen.findByText("We could not refresh your passkeys.")).toBeInTheDocument();
+    expect(screen.getByText("Phone")).toBeInTheDocument();
+    click("Try again");
+    await waitFor(() => {
+      expect(screen.queryByText("Laptop")).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText("We could not refresh your passkeys.")).not.toBeInTheDocument();
   });
 
   it("says why a passkey could not be removed", async () => {
@@ -123,7 +151,7 @@ describe("/profile, when things go wrong", () => {
       body: { code: "PASSKEY_NOT_FOUND", message: "x" },
     });
 
-    click("Remove passkey Laptop");
+    click(/^Remove passkey Laptop, added /);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("That passkey no longer exists.");
   });

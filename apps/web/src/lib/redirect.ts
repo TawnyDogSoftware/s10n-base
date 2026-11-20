@@ -15,3 +15,12 @@ export function safeRedirect(target: unknown): string | undefined {
   }
   return target;
 }
+
+/**
+ * The search for a link between the sign-in, sign-up and password-reset request pages: the
+ * `redirect` it was given, when it is safe, so the user still lands there after signing in.
+ */
+export function redirectSearch(target: unknown): { redirect?: string } {
+  const redirect = safeRedirect(target);
+  return redirect === undefined ? {} : { redirect };
+}

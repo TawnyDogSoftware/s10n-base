@@ -25,15 +25,6 @@ export interface PasswordAuth {
   readonly requestPasswordReset: (email: string) => Promise<AuthResult>;
 }
 
-/**
- * A `fetch` that counts requests that got no complete answer: the connection failed before the
- * headers, or dropped while the body was read. An abort is not counted.
- */
-export interface NetworkTracker {
-  readonly fetch: typeof fetch;
-  readonly failures: () => number;
-}
-
 function isAbort(error: unknown): boolean {
   // Not `instanceof Error`: a DOMException is not one in every environment.
   return (
@@ -46,20 +37,25 @@ function isAbort(error: unknown): boolean {
 /** Statuses whose responses cannot carry a body. */
 const NULL_BODY = new Set([101, 204, 205, 304]);
 
-export function trackNetworkFailures(base: typeof globalThis.fetch): NetworkTracker {
-  let failures = 0;
+/**
+ * A `fetch` that reads each answer whole and throws a `NetworkError` for a request that got no
+ * complete answer: the connection failed before the headers, or dropped while the body was read.
+ * `onLost` is told of each one. An abort is passed through as it is.
+ */
+export function lostAnswerFetch(base: typeof fetch, onLost: () => void = () => undefined) {
   const counted = async <T>(step: () => Promise<T>): Promise<T> => {
     try {
       return await step();
     } catch (error) {
-      if (!isAbort(error)) failures += 1;
-      throw error;
+      if (isAbort(error)) throw error;
+      onLost();
+      throw new NetworkError("No answer from the server.", { cause: error });
     }
   };
-  const tracked = async (input: RequestInfo | URL, init?: RequestInit) => {
+  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const response = await counted(() => base(input, init));
-    // The body is read here, inside the count: a connection that drops after the headers is as
-    // much a lost answer as one that drops before them. Auth answers are small JSON.
+    // The body is read here: a connection that drops after the headers is as much a lost answer
+    // as one that drops before them. Auth answers are small JSON.
     const body = await counted(() => response.arrayBuffer());
     return new Response(NULL_BODY.has(response.status) ? null : body, {
       status: response.status,
@@ -67,7 +63,11 @@ export function trackNetworkFailures(base: typeof globalThis.fetch): NetworkTrac
       headers: response.headers,
     });
   };
-  return { fetch: tracked, failures: () => failures };
+}
+
+/** The per-call options a Better Auth client method takes: this call's own `fetch`. */
+export interface CallFetchOptions {
+  readonly customFetchImpl: typeof fetch;
 }
 
 /** What a Better Auth client call resolves to. */
@@ -80,25 +80,31 @@ export interface AuthClientResult {
 const LOST_ANSWER = new Set([502, 503, 504]);
 
 /**
- * Runs one Better Auth client call and turns its result into an {@link AuthResult}.
+ * Runs one Better Auth client call and turns its result into an {@link AuthResult}. The call
+ * gets its own `fetch` to pass in its `fetchOptions`, so only its own requests decide whether its
+ * answer was lost, never another call running at the same time.
  *
  * @throws {NetworkError} when any request in the call got no answer, even if the client turned
  * that into an error result (the passkey client reports a lost answer as a cancellation).
  */
 export async function runAuthAction(
-  tracker: NetworkTracker,
-  action: () => Promise<AuthClientResult>,
+  base: typeof fetch,
+  action: (fetchOptions: CallFetchOptions) => Promise<AuthClientResult>,
 ): Promise<AuthResult> {
-  const before = tracker.failures();
+  // An object, not a variable: the requests set it from inside the action.
+  const call = { lost: false };
+  const customFetchImpl = lostAnswerFetch(base, () => {
+    call.lost = true;
+  });
   let result: AuthClientResult;
   try {
-    result = await action();
+    result = await action({ customFetchImpl });
   } catch (error) {
-    if (tracker.failures() !== before)
-      throw new NetworkError("No answer from the server.", { cause: error });
+    if (error instanceof NetworkError) throw error;
+    if (call.lost) throw new NetworkError("No answer from the server.", { cause: error });
     throw error;
   }
-  if (tracker.failures() !== before) throw new NetworkError("No answer from the server.");
+  if (call.lost) throw new NetworkError("No answer from the server.");
   const { error } = result;
   if (error === null) return { ok: true, data: result.data };
   if (error.code === undefined && LOST_ANSWER.has(error.status)) {

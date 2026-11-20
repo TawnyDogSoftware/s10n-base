@@ -1,5 +1,6 @@
 import { act, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { AccessibilityInfo } from "react-native";
+import { describe, expect, it, vi } from "vitest";
 
 import { authStoragePrefix } from "../lib/auth";
 import { router, secureStore } from "../test/native";
@@ -58,6 +59,48 @@ describe("ProfileScreen", () => {
     expect(backend.users.get("sam@example.com")?.name).toBe("Samantha");
     await waitFor(() => {
       expect(services.gate.current()?.name).toBe("Samantha");
+    });
+  });
+
+  it("keeps what the user typed while a save was pending", async () => {
+    const { backend, services } = await signedIn();
+    renderScreen(<ProfileScreen />, { backend, services });
+    await screen.findByText("sam@example.com");
+    const release = backend.hold("/rpc");
+
+    type("Name", "Robin");
+    press("Save");
+    await waitFor(() => {
+      expect(backend.calls("/rpc").at(-1)?.body).toMatchObject({ method: "profile.update" });
+    });
+    type("Name", "River");
+    release();
+
+    await waitFor(() => {
+      expect(backend.users.get("sam@example.com")?.name).toBe("Robin");
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Save" })).not.toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+    });
+    expect(screen.getByLabelText("Name")).toHaveValue("River");
+    expect(screen.queryByText("Your name is saved.")).toBeNull();
+  });
+
+  it("shows a name changed elsewhere while the field is untouched", async () => {
+    const { backend, services } = await signedIn();
+    renderScreen(<ProfileScreen />, { backend, services });
+    await screen.findByText("sam@example.com");
+    const sam = backend.users.get("sam@example.com");
+    if (sam === undefined) throw new Error("no user");
+
+    sam.name = "Changed Elsewhere";
+    await act(() => services.gate.queryClient.invalidateQueries({ queryKey: ["user"] }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Name")).toHaveValue("Changed Elsewhere");
     });
   });
 
@@ -130,6 +173,47 @@ describe("UsersScreen", () => {
 
     expect(await screen.findByText("You do not have access to this page")).toBeInTheDocument();
     expect(backend.calls("/rpc")).toHaveLength(0);
+  });
+
+  it("keeps the list and says so when reading it again fails, with a retry", async () => {
+    const { backend, services } = await signedIn("admin");
+    backend.addUser({ email: "robin@example.com", name: "Robin" });
+    renderScreen(<UsersScreen />, { backend, services });
+    await screen.findByText("Robin");
+    backend.failNext("/rpc", { kind: "network" });
+
+    await act(() => services.gate.queryClient.refetchQueries({ queryKey: ["user"] }));
+
+    expect(await screen.findByText("We could not refresh the list.")).toBeInTheDocument();
+    expect(screen.getByText("Robin")).toBeInTheDocument();
+    press("Try again");
+    await waitFor(() => {
+      expect(screen.queryByText("We could not refresh the list.")).toBeNull();
+    });
+  });
+
+  it("keeps Load more focusable while it loads, and says when every user is listed", async () => {
+    const announce = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
+    const { backend, services } = await signedIn("admin");
+    for (let index = 0; index < ADMIN_USERS_PAGE_SIZE; index += 1) {
+      backend.addUser({ email: `user${String(index)}@example.com`, name: `User ${String(index)}` });
+    }
+    renderScreen(<UsersScreen />, { backend, services });
+    await screen.findByText("user24@example.com");
+    const release = backend.hold("/rpc");
+
+    press("Load more");
+
+    const loading = await screen.findByRole("button", { name: "Loading more…" });
+    expect(loading).toHaveAttribute("tabindex", "0");
+    press("Loading more…");
+    expect(backend.calls("/rpc").filter((call) => call.body !== undefined)).toHaveLength(2);
+    release();
+    await screen.findByText("sam@example.com");
+    await waitFor(() => {
+      expect(announce).toHaveBeenCalledWith("Every user is listed.");
+    });
+    announce.mockRestore();
   });
 
   it("lists users for an admin, a page at a time", async () => {

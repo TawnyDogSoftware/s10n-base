@@ -10,26 +10,30 @@
  *    removed, synchronously, before React hears of the new session.
  * 3. A response that started under one user and finishes under another is discarded
  *    ({@link StaleSessionError}).
- * 4. `auth.unauthenticated` from a protected call re-reads the session; a session that is gone is
- *    a sign-out, so rule 2 applies.
+ * 4. `auth.unauthenticated` or `auth.forbidden` from a protected call re-reads the session; a
+ *    session that is gone is a sign-out, and a changed role a change of user, so rule 2 applies.
  * 5. A security action (sign in or out, sign up, password reset, passkey added or removed) is run
  *    through {@link SessionGate.settle}, which re-reads the session afterwards. A `NetworkError`
  *    is an unknown outcome, settled by that read rather than reported as a failure. The read runs
  *    even when the browser reports offline.
+ * 6. With a {@link SessionChannel}, a change of user seen in one tab makes every other tab of the
+ *    app re-read the session at once, rather than when its cached session goes stale.
  */
 import {
   hashKey,
+  CancelledError,
   type QueryClient,
   QueryClientProvider,
   type QueryFunctionContext,
   type UseQueryOptions,
   useQuery,
 } from "@tanstack/react-query";
-import { createContext, createElement, type ReactNode, useContext } from "react";
+import { createContext, createElement, type ReactNode, useContext, useState } from "react";
 
 import { type AppSession, ERROR_CODES } from "@s10n-base/contracts";
 
 import { NetworkError, RpcError } from "./transport";
+import { usePending } from "./use-pending";
 import {
   type SessionClient,
   SessionClientProvider,
@@ -89,7 +93,8 @@ export interface SessionGate {
   readonly ensure: () => Promise<AppSession | null>;
   /**
    * Reads the session from the server now, after cancelling any read already in flight (which
-   * may have started before the state changed). Undefined when the read fails.
+   * may have started before the state changed); a read cancelled that way answers with the newer
+   * one's result. Undefined when the read fails.
    */
   readonly refresh: () => Promise<AppSession | null | undefined>;
   readonly protectedQueryOptions: <T>(
@@ -114,7 +119,43 @@ export interface SessionGate {
   readonly dispose: () => void;
 }
 
+/**
+ * How the tabs of one app tell each other that the signed-in user changed (rule 6). A post
+ * reaches every other subscriber, never the poster.
+ */
+export interface SessionChannel {
+  readonly post: () => void;
+  /** Returns a function that stops listening. */
+  readonly subscribe: (listener: () => void) => () => void;
+}
+
+/**
+ * A {@link SessionChannel} over the browser's `BroadcastChannel`, which reaches the other tabs of
+ * the same origin. Undefined where the platform has none (React Native).
+ */
+export function browserSessionChannel(name: string): SessionChannel | undefined {
+  if (typeof globalThis.BroadcastChannel !== "function") return undefined;
+  const channel = new BroadcastChannel(name);
+  return {
+    post: () => {
+      channel.postMessage("session-changed");
+    },
+    subscribe: (listener) => {
+      channel.addEventListener("message", listener);
+      return () => {
+        channel.close();
+      };
+    },
+  };
+}
+
 const NOT_SEEN = Symbol("not seen");
+
+/** Refusals that may mean the session changed: its end, or a change of role. */
+const SESSION_REFUSALS: ReadonlySet<string> = new Set([
+  ERROR_CODES.unauthenticated,
+  ERROR_CODES.forbidden,
+]);
 
 function identityOf(session: AppSession | null): string | null {
   return session === null ? null : `${session.userId}\u0000${session.role}`;
@@ -127,8 +168,10 @@ function isPublic(meta: Record<string, unknown> | undefined): boolean {
 export function createSessionGate(options: {
   readonly queryClient: QueryClient;
   readonly sessionClient: SessionClient;
+  /** Where to tell other tabs of a change of user, and hear of theirs (rule 6). */
+  readonly channel?: SessionChannel | undefined;
 }): SessionGate {
-  const { queryClient, sessionClient } = options;
+  const { queryClient, sessionClient, channel } = options;
   const sessionOptions = () => sessionQueryOptions(sessionClient);
   const sessionHash = hashKey(SESSION_QUERY_KEY);
   let accepted: AppSession | null | typeof NOT_SEEN = NOT_SEEN;
@@ -153,8 +196,10 @@ export function createSessionGate(options: {
   };
 
   const accept = (session: AppSession | null) => {
-    if (accepted !== NOT_SEEN && identityOf(accepted) !== identityOf(session)) purge();
+    const changed = accepted !== NOT_SEEN && identityOf(accepted) !== identityOf(session);
+    if (changed) purge();
     accepted = session;
+    if (changed) channel?.post();
   };
 
   const existing = queryClient.getQueryData<AppSession | null>(SESSION_QUERY_KEY);
@@ -168,14 +213,28 @@ export function createSessionGate(options: {
     accept(event.query.state.data as AppSession | null);
   });
 
-  const refresh = async () => {
+  /** The newest read `refresh` started: a read it cancels answers with this one's result. */
+  let latest: { readonly result: Promise<AppSession | null | undefined> } | undefined;
+  const read = async (own: () => typeof latest): Promise<AppSession | null | undefined> => {
+    // A read in flight started before this one, maybe before the state changed: it is
+    // cancelled, and answers with this one's result.
     await queryClient.cancelQueries({ queryKey: SESSION_QUERY_KEY });
     try {
       return await queryClient.query({ ...sessionOptions(), staleTime: 0 });
-    } catch {
-      return undefined;
+    } catch (error) {
+      const newer = latest === own() ? undefined : latest;
+      return error instanceof CancelledError ? newer?.result : undefined;
     }
   };
+  const refresh = (): Promise<AppSession | null | undefined> => {
+    const reading: { result: Promise<AppSession | null | undefined> } = {
+      result: read(() => reading),
+    };
+    latest = reading;
+    return reading.result;
+  };
+
+  const stopListening = channel?.subscribe(() => void refresh());
 
   const guard = async <T>(run: () => Promise<T>): Promise<T> => {
     const started = epoch;
@@ -184,7 +243,9 @@ export function createSessionGate(options: {
       value = await run();
     } catch (error) {
       if (epoch !== started) throw new StaleSessionError();
-      if (error instanceof RpcError && error.code === ERROR_CODES.unauthenticated) void refresh();
+      // A refusal for the session (gone) or the role (demoted): the session read decides, and a
+      // change of user or role purges (rule 2). A 403 alone never signs anyone out.
+      if (error instanceof RpcError && SESSION_REFUSALS.has(error.code)) void refresh();
       throw error;
     }
     if (epoch !== started) throw new StaleSessionError();
@@ -219,7 +280,10 @@ export function createSessionGate(options: {
     confirmSignedOut: () => {
       queryClient.setQueryData(SESSION_QUERY_KEY, null);
     },
-    dispose: unsubscribe,
+    dispose: () => {
+      unsubscribe();
+      stopListening?.();
+    },
   };
 }
 
@@ -261,4 +325,19 @@ export function useProtectedQuery<T>(
   const session = useSession();
   const query = useQuery({ ...extra, ...gate.protectedQueryOptions(session, parts, fetcher) });
   return { session, query };
+}
+
+/**
+ * The session as last read after a security action, and a way to read it again without
+ * repeating the action: for a screen whose read after the action failed (`undefined`).
+ */
+export function useRecheck(initial: AppSession | null | undefined) {
+  const gate = useSessionGate();
+  const [session, setSession] = useState(initial);
+  const [checking, run] = usePending();
+  const recheck = () =>
+    run(async () => {
+      setSession(await gate.refresh());
+    });
+  return { session, checking, recheck };
 }

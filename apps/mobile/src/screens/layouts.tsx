@@ -5,7 +5,7 @@
  */
 import { Redirect, Stack } from "expo-router";
 import { useTranslation } from "react-i18next";
-import { View } from "react-native";
+import { ScrollView } from "react-native";
 
 import { useSessionQuery } from "@s10n-base/client/session";
 
@@ -15,12 +15,19 @@ import { Button, Loading, Notice } from "../components/ui";
 function StartError(props: { readonly onRetry: () => void }) {
   const { t } = useTranslation("common");
   return (
-    <View className="bg-background flex-1 justify-center gap-4 p-4">
+    // Scrolls, so the retry stays reachable with large text or a small screen; the inset
+    // adjustment keeps it clear of the notch and status bar, as Screen does.
+    <ScrollView
+      testID="start-error"
+      className="bg-background flex-1"
+      contentContainerClassName="grow justify-center gap-4 p-4"
+      contentInsetAdjustmentBehavior="automatic"
+    >
       <Notice tone="danger" title={t("startError.title")}>
         {t("startError.body")}
       </Notice>
       <Button onPress={props.onRetry}>{t("routeError.retry")}</Button>
-    </View>
+    </ScrollView>
   );
 }
 

@@ -1,5 +1,5 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createFakeBackend } from "@s10n-base/client/testing/fake-backend";
 
@@ -10,6 +10,10 @@ function backendWith(...emails: string[]) {
   for (const email of emails) backend.addUser({ email, name: "Sam" });
   return backend;
 }
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("/sign-up", () => {
   it("shows every field error, tied to its field, and moves focus to the first", async () => {
@@ -116,6 +120,8 @@ describe("/sign-up", () => {
     expect(alert).toHaveTextContent("We could not confirm whether that worked");
     expect(alert).toHaveTextContent("You are not signed in.");
     expect(app.backend.calls("/api/app-auth/session").length).toBeGreaterThanOrEqual(2);
+    // The check has finished: the notice never still says it is under way.
+    expect(alert).not.toHaveTextContent(/checking/i);
   });
 });
 
@@ -240,7 +246,9 @@ describe("/sign-in", () => {
     type("Password", "correct horse");
     click("Sign in");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("We could not reach the server.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "We could not reach the server to check your account.",
+    );
   });
 
   it("says the server cannot be reached when sign-in succeeded but the session cannot be read", async () => {
@@ -252,12 +260,76 @@ describe("/sign-in", () => {
     type("Password", "correct horse");
     click("Sign in");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("We could not reach the server.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The server accepted that, but we could not check your account afterwards.",
+    );
     expect(app.location()).toBe("/sign-in");
     expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled();
   });
 
+  it("checks again, without signing in again, when sign-in succeeded but the read failed", async () => {
+    const app = renderApp("/sign-in", backendWith("sam@example.com"));
+    await screen.findByRole("heading", { name: "Sign in" });
+    app.backend.failNext("/api/app-auth/session", { kind: "network" });
+    type("Email address", "sam@example.com");
+    type("Password", "correct horse");
+    click("Sign in");
+    await screen.findByRole("button", { name: "Check again" });
+
+    click("Check again");
+
+    await waitForLocation(app, "/");
+    expect(app.backend.calls("/api/auth/sign-in/email")).toHaveLength(1);
+  });
+
+  it("checks again when neither the sign-in's answer nor the read arrived", async () => {
+    const app = renderApp("/sign-in", backendWith("sam@example.com"));
+    await screen.findByRole("heading", { name: "Sign in" });
+    app.backend.failNext("/api/auth/sign-in/email", { kind: "network" });
+    app.backend.failNext("/api/app-auth/session", { kind: "network" });
+    type("Email address", "sam@example.com");
+    type("Password", "correct horse");
+    click("Sign in");
+    await screen.findByRole("button", { name: "Check again" });
+
+    click("Check again");
+
+    expect(await screen.findByText("You are not signed in.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Check again" })).not.toBeInTheDocument();
+    expect(app.backend.calls("/api/auth/sign-in/email")).toHaveLength(1);
+  });
+
+  it("does not navigate for a sign-in the user left before it finished", async () => {
+    const app = renderApp("/sign-in", backendWith("sam@example.com"));
+    await screen.findByRole("heading", { name: "Sign in" });
+    const release = app.backend.hold("/api/auth/sign-in/email");
+    type("Email address", "sam@example.com");
+    type("Password", "correct horse");
+    click("Sign in");
+    await waitFor(() => {
+      expect(app.backend.calls("/api/auth/sign-in/email")).toHaveLength(1);
+    });
+
+    await act(() => app.router.navigate({ to: "/verify-email" }));
+    release();
+
+    await waitFor(() => {
+      expect(app.services.gate.current()?.email).toBe("sam@example.com");
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(app.location()).toBe("/verify-email");
+  });
+
+  it("explains, instead of offering, passkey sign-in where the browser has no passkeys", async () => {
+    renderApp("/sign-in", backendWith());
+    await screen.findByRole("heading", { name: "Sign in" });
+
+    expect(screen.queryByRole("button", { name: "Sign in with a passkey" })).toBeNull();
+    expect(screen.getByText("This browser cannot use passkeys.")).toBeInTheDocument();
+  });
+
   it("reports a passkey sign-in that did not complete", async () => {
+    vi.stubGlobal("PublicKeyCredential", function PublicKeyCredential() {});
     const app = renderApp("/sign-in", backendWith());
     await screen.findByRole("heading", { name: "Sign in" });
 
@@ -314,6 +386,32 @@ describe("/verify-email", () => {
     });
   });
 
+  it.each([
+    [429, { code: "RATE_LIMITED" }, "Too many attempts. Wait a minute and try again."],
+    [500, { code: "INTERNAL_SERVER_ERROR" }, "Something went wrong. Try again."],
+  ])(
+    "does not call the link dead when the server answers %i, and its retry uses the same token",
+    async (status, body, message) => {
+      const backend = createFakeBackend();
+      backend.addUser({ email: "new@example.com", verified: false });
+      const token = backend.issueToken("new@example.com", "verify");
+      backend.failNext("/api/auth/verify-email", { kind: "response", status, body });
+      renderApp(`/verify-email?token=${token}`, backend);
+
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "This link does not work" })).toBeNull();
+      click("Try again");
+
+      expect(
+        await screen.findByRole("heading", { name: "Email address confirmed" }),
+      ).toBeInTheDocument();
+      expect(backend.calls("/api/auth/verify-email").map((call) => call.search)).toEqual([
+        `?token=${token}`,
+        `?token=${token}`,
+      ]);
+    },
+  );
+
   it("explains a link with no token, without calling the server", async () => {
     const backend = createFakeBackend();
     renderApp("/verify-email", backend);
@@ -339,6 +437,178 @@ describe("/verify-email", () => {
     expect(
       await screen.findByRole("heading", { name: "Email address confirmed" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("an auth call that throws something unexpected", () => {
+  it("leaves the verify page on an error with a retry, not on Confirming", async () => {
+    const report = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const backend = backendWith();
+    const app = renderApp("/verify-email?token=t1", backend);
+    const verify = vi
+      .spyOn(app.services.auth, "verifyEmail")
+      .mockRejectedValueOnce(new Error("adapter failed"));
+
+    expect(await screen.findByText("Something went wrong. Try again.")).toBeInTheDocument();
+    click("Try again");
+    await waitFor(() => {
+      expect(verify).toHaveBeenCalledTimes(2);
+    });
+    report.mockRestore();
+  });
+
+  it("ends the sign-in's pending state and says so", async () => {
+    const report = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const app = renderApp("/sign-in", backendWith("sam@example.com"));
+    await screen.findByRole("heading", { name: "Sign in" });
+    vi.spyOn(app.services.auth, "signIn").mockRejectedValueOnce(new Error("adapter failed"));
+
+    type("Email address", "sam@example.com");
+    type("Password", "correct horse");
+    click("Sign in");
+
+    expect(await screen.findByText("Something went wrong. Try again.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled();
+    expect(report).toHaveBeenCalled();
+    report.mockRestore();
+  });
+});
+
+/** At each focus call: the role of the focused field's error, or null when it has none yet. */
+function watchFocus() {
+  const seen: Array<string | null> = [];
+  const focus = vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    const ids = (this.getAttribute("aria-describedby") ?? "").split(" ");
+    const error = ids
+      .map((id) => document.getElementById(id))
+      .find((element) => element?.id.endsWith("-error"));
+    seen.push(error === undefined || error === null ? null : (error.getAttribute("role") ?? ""));
+  });
+  return { seen, focus };
+}
+
+describe("a form replaced by its result", () => {
+  it("moves focus to the result's heading after sign-up", async () => {
+    renderApp("/sign-up", backendWith());
+    await screen.findByRole("heading", { name: "Create an account" });
+    type("Name", "Robin");
+    type("Email address", "robin@example.com");
+    type(/^Password/, "long enough");
+    click("Create account");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Check your email" }),
+    ).toHaveFocus();
+  });
+
+  it("moves focus to the result's heading after a reset request", async () => {
+    renderApp("/forgot-password", backendWith());
+    await screen.findByRole("heading", { name: "Reset your password" });
+    type("Email address", "sam@example.com");
+    click("Send the link");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Check your email" }),
+    ).toHaveFocus();
+  });
+
+  it("moves focus to the result's heading after a password reset", async () => {
+    const backend = backendWith("sam@example.com");
+    const token = backend.issueToken("sam@example.com", "reset");
+    renderApp(`/reset-password?token=${token}`, backend);
+    await screen.findByRole("heading", { name: "Choose a new password" });
+    type(/^New password/, "a brand new one");
+    click("Save the new password");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Password changed" }),
+    ).toHaveFocus();
+  });
+
+  it("moves focus to the result's heading when an email address is confirmed", async () => {
+    const backend = backendWith();
+    backend.addUser({ email: "new@example.com", verified: false });
+    const token = backend.issueToken("new@example.com", "verify");
+    renderApp(`/verify-email?token=${token}`, backend);
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Email address confirmed" }),
+    ).toHaveFocus();
+  });
+});
+
+describe("feedback that no longer describes the form", () => {
+  it("clears a field's error when its value changes, and leaves the others", async () => {
+    renderApp("/sign-in", backendWith());
+    await screen.findByRole("heading", { level: 1, name: "Sign in" });
+    click("Sign in");
+    await waitFor(() => {
+      expect(screen.getByLabelText("Email address")).toHaveAttribute("aria-invalid", "true");
+    });
+
+    type("Email address", "sam@example.com");
+
+    expect(screen.getByLabelText("Email address")).not.toHaveAttribute("aria-invalid");
+    expect(screen.getByLabelText("Password")).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("clears a refusal when a field it concerned changes", async () => {
+    renderApp("/sign-in", backendWith("sam@example.com"));
+    await screen.findByRole("heading", { level: 1, name: "Sign in" });
+    type("Email address", "sam@example.com");
+    type("Password", "wrong password");
+    click("Sign in");
+    await screen.findByRole("alert");
+
+    type("Password", "correct horse");
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["/sign-in", "/api/auth/sign-in/email", "Sign in"],
+    ["/sign-up", "/api/auth/sign-up/email", "Create account"],
+  ])("on %s keeps the fields still while the request runs", async (path, route, submit) => {
+    const app = renderApp(path, backendWith());
+    await screen.findByLabelText("Email address");
+    if (path === "/sign-up") type("Name", "Robin");
+    type("Email address", "robin@example.com");
+    type(/^Password/, "long enough password");
+    const release = app.backend.hold(route);
+
+    click(submit);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Email address")).toBeDisabled();
+    });
+    expect(screen.getByLabelText(/^Password/)).toBeDisabled();
+    release();
+    await waitFor(() => {
+      expect(app.backend.calls("/api/app-auth/session").length).toBeGreaterThan(1);
+    });
+  });
+});
+
+describe("a field error", () => {
+  it.each([
+    // A single field: its error is the alert.
+    ["/forgot-password", "Reset your password", "Send the link", "alert"],
+    // Several fields: the summary is the alert, and the field's error is there to be read.
+    ["/sign-in", "Sign in", "Sign in", ""],
+  ])("on %s exists before focus moves to the field", async (path, heading, submit, role) => {
+    renderApp(path, backendWith());
+    await screen.findByRole("heading", { level: 1, name: heading });
+    const { seen, focus } = watchFocus();
+
+    click(submit);
+
+    await waitFor(() => {
+      expect(seen).toEqual([role]);
+    });
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    focus.mockRestore();
   });
 });
 
@@ -408,6 +678,47 @@ describe("/reset-password", () => {
     expect(backend.users.get("sam@example.com")?.password).toBe("a brand new one");
   });
 
+  it("does not offer the same form again after a reset whose answer was lost", async () => {
+    const backend = backendWith("sam@example.com");
+    const token = backend.issueToken("sam@example.com", "reset");
+    renderApp(`/reset-password?token=${token}`, backend);
+    await screen.findByRole("heading", { name: "Choose a new password" });
+    backend.failNext("/api/auth/reset-password", { kind: "network", afterHandling: true });
+
+    type(/^New password/, "a brand new one");
+    click("Save the new password");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Your password may have changed" }),
+    ).toBeInTheDocument();
+    // Sending the same token again would be refused as used, and read as "this link does not work".
+    expect(screen.queryByLabelText(/^New password/)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/sign-in");
+    expect(screen.getByRole("link", { name: "Ask for a new link" })).toHaveAttribute(
+      "href",
+      "/forgot-password",
+    );
+  });
+
+  it("starts clean when a new link opens the page", async () => {
+    const backend = backendWith("sam@example.com");
+    const first = backend.issueToken("sam@example.com", "reset");
+    const app = renderApp(`/reset-password?token=${first}`, backend);
+    await screen.findByRole("heading", { name: "Choose a new password" });
+    backend.failNext("/api/auth/reset-password", { kind: "network" });
+    type(/^New password/, "a brand new one");
+    click("Save the new password");
+    await screen.findByRole("heading", { level: 1, name: "Your password may have changed" });
+
+    const second = backend.issueToken("sam@example.com", "reset");
+    await act(() => app.router.navigate({ to: "/reset-password", search: { token: second } }));
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Choose a new password" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/^New password/)).toHaveValue("");
+  });
+
   it("keeps a numeric-looking token a string", async () => {
     const backend = backendWith("sam@example.com");
     renderApp("/reset-password?token=000123", backend);
@@ -466,17 +777,15 @@ describe("/reset-password", () => {
     backend.failNext("/api/auth/reset-password", { kind: "network", afterHandling: true });
     renderApp(`/reset-password?token=${token}`, backend);
     await screen.findByRole("heading", { name: "Choose a new password" });
+    // The reads so far are the page's own; the one that settles the reset comes after.
+    const readsBefore = backend.calls("/api/app-auth/session").length;
 
     type(/^New password/, "a brand new one");
     click("Save the new password");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "We could not confirm whether that worked",
-    );
-    await act(async () => {
-      await waitFor(() => {
-        expect(backend.calls("/api/app-auth/session").length).toBeGreaterThan(0);
-      });
-    });
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Your password may have changed" }),
+    ).toBeInTheDocument();
+    expect(backend.calls("/api/app-auth/session").length).toBeGreaterThan(readsBefore);
   });
 });

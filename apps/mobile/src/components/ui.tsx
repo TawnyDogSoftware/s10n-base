@@ -61,6 +61,21 @@ export function Body(props: { readonly children?: ReactNode; readonly muted?: bo
   );
 }
 
+/**
+ * Whether a button ignores presses, and whether it stays focusable meanwhile: only while
+ * pending, when asked to, and not when it is disabled for another reason.
+ */
+function buttonState(
+  pending: boolean,
+  props: { readonly disabled?: boolean; readonly keepFocusWhilePending?: boolean },
+) {
+  const disabled = props.disabled === true;
+  return {
+    disabled: pending || disabled,
+    focusable: pending && props.keepFocusWhilePending === true && !disabled,
+  };
+}
+
 export function Button(props: {
   readonly children: string;
   readonly onPress: () => void;
@@ -69,11 +84,16 @@ export function Button(props: {
   readonly pending?: boolean;
   readonly pendingLabel?: string;
   readonly disabled?: boolean;
+  /**
+   * While pending, stay focusable (marked disabled, presses ignored) rather than disabled, so a
+   * screen reader's focus is not dropped from a button the user is on.
+   */
+  readonly keepFocusWhilePending?: boolean;
   /** A fuller name for screen readers, when the visible label is not enough. */
   readonly accessibilityLabel?: string;
 }) {
   const pending = props.pending === true;
-  const disabled = pending || props.disabled === true;
+  const { disabled, focusable } = buttonState(pending, props);
   const label = pending ? (props.pendingLabel ?? props.children) : props.children;
   const primary = (props.variant ?? "primary") === "primary";
   return (
@@ -82,8 +102,8 @@ export function Button(props: {
       accessibilityLabel={props.accessibilityLabel ?? label}
       accessibilityState={{ disabled, busy: pending }}
       aria-disabled={disabled}
-      disabled={disabled}
-      onPress={props.onPress}
+      disabled={disabled && !focusable}
+      onPress={disabled ? undefined : props.onPress}
       className={`min-h-11 items-center justify-center rounded-md border px-4 py-2 ${
         primary ? "bg-primary border-primary" : "border-border bg-background"
       } ${disabled ? "opacity-60" : ""}`}
@@ -98,7 +118,8 @@ export function Button(props: {
 /** A link-styled button that navigates. */
 export function TextButton(props: { readonly children: string; readonly onPress: () => void }) {
   return (
-    <Pressable role="link" onPress={props.onPress} className="min-h-11 justify-center">
+    // Only as wide as its text, so a tap beside it does nothing; still at least 44 points tall.
+    <Pressable role="link" onPress={props.onPress} className="min-h-11 justify-center self-start">
       <Text className="text-primary font-semibold underline">{props.children}</Text>
     </Pressable>
   );
@@ -113,13 +134,19 @@ export function Field(
     readonly error?: string | undefined;
     readonly hint?: string;
     readonly inputRef?: Ref<TextInputInstance>;
+    /** Not editable, while what was typed is being sent. */
+    readonly disabled?: boolean;
   } & Pick<
     TextInputProps,
     "autoComplete" | "textContentType" | "keyboardType" | "secureTextEntry" | "autoCapitalize"
   >,
 ) {
-  const { label, value, onChangeText, error, hint, inputRef, ...input } = props;
+  const { label, value, onChangeText, error, hint, inputRef, disabled = false, ...input } = props;
   const invalid = error !== undefined;
+  // Read out when it appears, even when focus does not move.
+  useEffect(() => {
+    if (error !== undefined) AccessibilityInfo.announceForAccessibility(error);
+  }, [error]);
   return (
     <View className="gap-1">
       <Text className="text-foreground font-medium">{label}</Text>
@@ -131,6 +158,8 @@ export function Field(
         aria-invalid={invalid}
         value={value}
         onChangeText={onChangeText}
+        editable={!disabled}
+        aria-disabled={disabled}
         autoCorrect={false}
         className={`text-foreground bg-background min-h-11 rounded-md border px-3 py-2 ${
           invalid ? "border-danger" : "border-border"

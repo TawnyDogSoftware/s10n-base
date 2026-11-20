@@ -14,24 +14,34 @@ import * as SecureStore from "expo-secure-store";
 
 import {
   type AuthClientResult,
+  type CallFetchOptions,
+  lostAnswerFetch,
   type PasswordAuth,
   runAuthAction,
-  trackNetworkFailures,
 } from "@s10n-base/client/auth";
 import { AUTH_COOKIE_PREFIX } from "@s10n-base/shared/auth";
 
 /** Where Better Auth is mounted on the server. */
 const AUTH_BASE_PATH = "/api/auth";
 
-export interface MobileAuth extends PasswordAuth {
+/** The stored session cookie, as the RPC and session clients' `fetch` uses it. */
+export interface CookieSession {
   /** The stored session cookie as a `cookie` header value, or `""` when signed out. */
   readonly cookie: () => Promise<string>;
   /**
-   * Stores the auth cookies a response set outside Better Auth's own routes: the renewal the
-   * app's session route passes on. Other cookies are ignored.
+   * Goes up when a sign-in, sign-up or sign-out starts and when it ends: an answer to a request
+   * sent at another generation belongs to a session that may no longer be the stored one.
    */
-  readonly storeCookies: (setCookie: string) => Promise<void>;
+  readonly generation: () => number;
+  /**
+   * Stores the auth cookies a response set outside Better Auth's own routes: the renewal the
+   * app's session route passes on. Other cookies are ignored, and so is a response to a request
+   * sent at a generation other than the current one.
+   */
+  readonly storeCookies: (setCookie: string, sentAt: number) => Promise<void>;
 }
+
+export interface MobileAuth extends PasswordAuth, CookieSession {}
 
 function hex(text: string): string {
   return Array.from(new TextEncoder().encode(text), (byte) =>
@@ -54,9 +64,7 @@ export function createMobileAuth(options: {
   readonly scheme: string;
   readonly fetch?: typeof fetch;
 }): MobileAuth {
-  const tracker = trackNetworkFailures(
-    options.fetch ?? ((input, init) => globalThis.fetch(input, init)),
-  );
+  const base = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
   const client = createAuthClient({
     baseURL: `${options.baseUrl}${AUTH_BASE_PATH}`,
     plugins: [
@@ -67,21 +75,38 @@ export function createMobileAuth(options: {
         cookiePrefix: AUTH_COOKIE_PREFIX,
       }),
     ],
-    fetchOptions: { customFetchImpl: tracker.fetch },
+    // Every call passes its own fetch (below), so only its own requests decide its outcome.
+    fetchOptions: { customFetchImpl: lostAnswerFetch(base) },
   });
-  const run = (action: () => Promise<AuthClientResult>) => runAuthAction(tracker, action);
+  const run = (action: (fetchOptions: CallFetchOptions) => Promise<AuthClientResult>) =>
+    runAuthAction(base, action);
+  let generation = 0;
+  /** An action that changes the stored session: the generation moves before and after it. */
+  const changing = async <T>(action: () => Promise<T>): Promise<T> => {
+    generation += 1;
+    try {
+      return await action();
+    } finally {
+      generation += 1;
+    }
+  };
   // The same storage format and queue the Expo client uses: both are keyed by SecureStore.
   const storage = storageAdapter(SecureStore);
   const cookieKey = `${authStoragePrefix(options.baseUrl)}_cookie`;
   return {
-    signUp: (input) => run(() => client.signUp.email(input)),
-    signIn: (input) => run(() => client.signIn.email(input)),
-    signOut: () => run(() => client.signOut()),
-    sendVerificationEmail: (email) => run(() => client.sendVerificationEmail({ email })),
-    requestPasswordReset: (email) => run(() => client.requestPasswordReset({ email })),
+    signUp: (input) =>
+      changing(() => run((fetchOptions) => client.signUp.email({ ...input, fetchOptions }))),
+    signIn: (input) =>
+      changing(() => run((fetchOptions) => client.signIn.email({ ...input, fetchOptions }))),
+    signOut: () => changing(() => run((fetchOptions) => client.signOut({ fetchOptions }))),
+    sendVerificationEmail: (email) =>
+      run((fetchOptions) => client.sendVerificationEmail({ email, fetchOptions })),
+    requestPasswordReset: (email) =>
+      run((fetchOptions) => client.requestPasswordReset({ email, fetchOptions })),
     cookie: () => client.getCookie(),
-    storeCookies: async (setCookie) => {
-      if (!hasBetterAuthCookies(setCookie, AUTH_COOKIE_PREFIX)) return;
+    generation: () => generation,
+    storeCookies: async (setCookie, sentAt) => {
+      if (sentAt !== generation || !hasBetterAuthCookies(setCookie, AUTH_COOKIE_PREFIX)) return;
       const current = await storage.getItemAsync(cookieKey);
       await storage.setItemAsync(cookieKey, getSetCookie(setCookie, current ?? undefined));
     },
@@ -93,20 +118,21 @@ export function createMobileAuth(options: {
  * keeps the platform's own cookie handling out of it (`credentials: "omit"`), as the Expo client
  * does for Better Auth's routes. Cookies an answer sets go to `storeCookies`: the session route
  * passes on Better Auth's renewal of an active session, which must replace the stored cookie or
- * the session would end seven days after sign-in.
+ * the session would end seven days after sign-in, unless a sign-in or sign-out ran meanwhile: the
+ * renewal then belongs to a session that is no longer the stored one.
  */
 export function withAuthCookie(
-  cookie: () => Promise<string>,
+  session: CookieSession,
   base: typeof fetch = (input, init) => globalThis.fetch(input, init),
-  storeCookies: (setCookie: string) => Promise<void> = () => Promise.resolve(),
 ): typeof fetch {
   return async (input, init) => {
+    const sentAt = session.generation();
     const headers = new Headers(init?.headers);
-    const value = await cookie();
+    const value = await session.cookie();
     if (value !== "") headers.set("cookie", value);
     const response = await base(input, { ...init, headers, credentials: "omit" });
     const setCookie = response.headers.get("set-cookie");
-    if (setCookie !== null && setCookie !== "") await storeCookies(setCookie);
+    if (setCookie !== null && setCookie !== "") await session.storeCookies(setCookie, sentAt);
     return response;
   };
 }

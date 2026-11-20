@@ -2,7 +2,10 @@
  * `beforeLoad` guards. They read the session through the gate, so a guard and the screens agree
  * on who is signed in.
  */
-import { redirect } from "@tanstack/react-router";
+import { redirect, useRouter } from "@tanstack/react-router";
+import { useEffect } from "react";
+
+import { useSession } from "@s10n-base/client/session";
 
 import type { AppSession } from "@s10n-base/contracts";
 
@@ -41,4 +44,17 @@ export async function redirectSignedIn(context: RouterContext, target: unknown):
   if (session !== null) {
     throw redirect({ href: safeRedirect(target) ?? "/", replace: true });
   }
+}
+
+/**
+ * For the pages {@link redirectSignedIn} guards: when a session appears while one is open (signed
+ * in in another tab), the router runs the guard again, which sends the user on. As the signed-in
+ * layout does, it does not navigate itself, so the guard decides from the location it matched.
+ */
+export function useLeaveWhenSignedIn(): void {
+  const session = useSession();
+  const router = useRouter();
+  useEffect(() => {
+    if (session) void router.invalidate();
+  }, [session, router]);
 }

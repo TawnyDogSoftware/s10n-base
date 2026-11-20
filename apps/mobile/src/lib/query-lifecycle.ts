@@ -2,7 +2,9 @@
  * TanStack Query learns about focus and connectivity from browser events, which a native app does
  * not have. This wires its focus manager to `AppState` and its online manager to `expo-network`.
  * Without it the session is never re-read when the app returns to the foreground, so a session
- * revoked elsewhere (signed out on the web, password reset, banned) would go unnoticed.
+ * ended elsewhere would go unnoticed: by a password reset (which ends every session), by ending
+ * it from another session's list, or by a ban. Signing out in a browser does not end it: the
+ * browser and the app each have a session of their own.
  */
 import { focusManager, onlineManager } from "@tanstack/react-query";
 import { addNetworkStateListener } from "expo-network";

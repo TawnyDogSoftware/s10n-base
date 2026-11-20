@@ -132,18 +132,23 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     return token;
   }
 
+  /** A name typed for another user than the session's is refused, as the server does. */
+  function updateProfile(user: FakeUser, payload: Record<string, unknown>): Response {
+    if (payload.userId !== user.id) return rpcError(401, "auth.unauthenticated");
+    const name = String(payload.name).trim();
+    if (name === "" || name.length > 100) return rpcError(400, "rpc.invalid_payload");
+    user.name = name;
+    return json({ ok: true, data: profileOf(user) });
+  }
+
   function handleRpc(body: { method: string; payload: Record<string, unknown> }): Response {
     const user = current();
     if (user === undefined) return rpcError(401, "auth.unauthenticated");
     switch (body.method) {
       case "profile.get":
         return json({ ok: true, data: profileOf(user) });
-      case "profile.update": {
-        const name = String(body.payload.name).trim();
-        if (name === "" || name.length > 100) return rpcError(400, "rpc.invalid_payload");
-        user.name = name;
-        return json({ ok: true, data: profileOf(user) });
-      }
+      case "profile.update":
+        return updateProfile(user, body.payload);
       case "admin.listUsers": {
         if (user.role !== "admin") return rpcError(403, "auth.forbidden");
         const all = [...users.values()].toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));

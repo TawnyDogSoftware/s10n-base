@@ -75,11 +75,18 @@ describe("profile.get", () => {
   });
 });
 
+async function userIdOf(browser: TestClient): Promise<string> {
+  return ((await browser.session()) as { userId: string }).userId;
+}
+
 describe("profile.update", () => {
   it("trims and saves the name, and the session route shows it at once", async () => {
     const browser = await signedInUser(address("rename"));
 
-    const result = await call(browser, "profile.update", { name: "  New Name  " });
+    const result = await call(browser, "profile.update", {
+      userId: await userIdOf(browser),
+      name: "  New Name  ",
+    });
 
     expect(result.status).toBe(200);
     expect(result.body).toMatchObject({ ok: true, data: { name: "New Name" } });
@@ -87,21 +94,44 @@ describe("profile.update", () => {
     expect((await call(browser, "profile.get")).body).toMatchObject({ data: { name: "New Name" } });
   });
 
-  it.each([{ name: "" }, { name: "   " }, { name: "x".repeat(101) }, {}])(
-    "refuses the payload %j with 400",
-    async (payload) => {
-      const browser = await signedInUser(address("bad-name"));
+  it.each([
+    { name: "" },
+    { name: "   " },
+    { name: "x".repeat(101) },
+    { userId: 42, name: "Valid" },
+    {},
+  ])("refuses the payload %j with 400", async (payload) => {
+    const browser = await signedInUser(address("bad-name"));
 
-      const result = await call(browser, "profile.update", payload);
+    const result = await call(browser, "profile.update", {
+      userId: await userIdOf(browser),
+      ...payload,
+    });
 
-      expect(result.status).toBe(400);
-      expect(result.body).toMatchObject({ error: { code: ERROR_CODES.invalidPayload } });
-      expect(await browser.session()).toMatchObject({ name: "Test User" });
-    },
-  );
+    expect(result.status).toBe(400);
+    expect(result.body).toMatchObject({ error: { code: ERROR_CODES.invalidPayload } });
+    expect(await browser.session()).toMatchObject({ name: "Test User" });
+  });
 
   it("refuses an anonymous caller with 401", async () => {
-    expect((await call(client(), "profile.update", { name: "Nobody" })).status).toBe(401);
+    expect(
+      (await call(client(), "profile.update", { userId: "nobody", name: "Nobody" })).status,
+    ).toBe(401);
+  });
+
+  it("refuses with 401, and changes nobody, a name meant for another user", async () => {
+    const other = await signedInUser(address("rename-other"), "Other");
+    const browser = await signedInUser(address("rename-caller"), "Caller");
+
+    const result = await call(browser, "profile.update", {
+      userId: await userIdOf(other),
+      name: "Typed For Other",
+    });
+
+    expect(result.status).toBe(401);
+    expect(result.body).toMatchObject({ error: { code: ERROR_CODES.unauthenticated } });
+    expect(await browser.session()).toMatchObject({ name: "Caller" });
+    expect(await other.session()).toMatchObject({ name: "Other" });
   });
 });
 

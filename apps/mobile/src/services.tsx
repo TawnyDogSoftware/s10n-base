@@ -31,7 +31,7 @@ export function createServices(options: {
   });
   const transport = {
     baseUrl: options.apiBaseUrl,
-    fetch: withAuthCookie(auth.cookie, options.fetch, auth.storeCookies),
+    fetch: withAuthCookie(auth, options.fetch),
     credentials: "omit",
   } as const;
   // No automatic retries: a refused request will be refused again, and retrying a lost one is

@@ -5,7 +5,11 @@
 import { QueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext } from "react";
 
-import { createSessionGate, type SessionGate } from "@s10n-base/client/query-state";
+import {
+  createSessionGate,
+  type SessionChannel,
+  type SessionGate,
+} from "@s10n-base/client/query-state";
 import { createRpcClient, type RpcClient } from "@s10n-base/client/rpc";
 import { createSessionClient } from "@s10n-base/client/session";
 
@@ -20,6 +24,8 @@ export interface WebServices {
 export function createServices(options: {
   readonly apiBaseUrl: string;
   readonly fetch?: typeof fetch;
+  /** Tells the app's other tabs when the signed-in user changes, and hears of theirs. */
+  readonly channel?: SessionChannel | undefined;
 }): WebServices {
   const transport = {
     baseUrl: options.apiBaseUrl,
@@ -31,7 +37,11 @@ export function createServices(options: {
   return {
     rpc: createRpcClient(transport),
     auth: createWebAuth(transport),
-    gate: createSessionGate({ queryClient, sessionClient: createSessionClient(transport) }),
+    gate: createSessionGate({
+      queryClient,
+      sessionClient: createSessionClient(transport),
+      channel: options.channel,
+    }),
   };
 }
 

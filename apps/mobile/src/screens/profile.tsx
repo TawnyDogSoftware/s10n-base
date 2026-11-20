@@ -1,12 +1,13 @@
-import { useMutation } from "@tanstack/react-query";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, type TextInputInstance, View } from "react-native";
 
+import { useFocusAfterRender } from "@s10n-base/client/form";
 import { errorMessageKey } from "@s10n-base/client/messages";
-import { protectedQueryKey, useProtectedQuery } from "@s10n-base/client/query-state";
-import { fieldErrorText, validateName } from "@s10n-base/client/validation";
-import { type Profile, profileGet, profileUpdate } from "@s10n-base/contracts";
+import { useProfileNameForm } from "@s10n-base/client/profile-name";
+import { useProtectedQuery } from "@s10n-base/client/query-state";
+import { fieldErrorText } from "@s10n-base/client/validation";
+import { type Profile, profileGet } from "@s10n-base/contracts";
 
 import { SignOutButton } from "../components/sign-out-button";
 import { Body, Button, Card, Field, Loading, Notice, Screen } from "../components/ui";
@@ -20,51 +21,36 @@ function NameForm(props: { readonly profile: Profile }) {
   const { t } = useTranslation("profile");
   const { t: tAuth } = useTranslation("auth");
   const { t: tError } = useTranslation("errors");
-  const { rpc, gate } = useServices();
-  const [name, setName] = useState(props.profile.name);
-  const [fieldError, setFieldError] = useState<string | undefined>(undefined);
+  const { rpc } = useServices();
+  const form = useProfileNameForm(rpc, props.profile);
   const ref = useRef<TextInputInstance>(null);
-  const session = gate.current();
-  const save = useMutation({
-    mutationKey: protectedQueryKey(session, ["profile", "update"]),
-    mutationFn: (value: string) => gate.guard(() => rpc.call(profileUpdate, { name: value })),
-    onSuccess: async (profile) => {
-      gate.queryClient.setQueryData(protectedQueryKey(session, ["profile"]), profile);
-      setName(profile.name);
-      // The greeting reads the name from the session.
-      await gate.refresh();
-    },
-  });
-
-  // Only the Save button submits, and it is disabled while a save is pending.
-  const submit = () => {
-    const checked = validateName(name);
-    if (!checked.ok) {
-      setFieldError(fieldErrorText(tAuth, checked.error));
-      ref.current?.focus();
-      return;
-    }
-    setFieldError(undefined);
-    save.mutate(checked.value);
-  };
+  const focusAfterRender = useFocusAfterRender();
 
   return (
     <>
       <Field
         label={t("nameLabel")}
         inputRef={ref}
-        value={name}
-        onChangeText={setName}
-        error={fieldError}
+        value={form.value}
+        onChangeText={form.setValue}
+        error={form.fieldError === undefined ? undefined : fieldErrorText(tAuth, form.fieldError)}
         autoComplete="name"
         textContentType="name"
         autoCapitalize="words"
       />
-      <Button pending={save.isPending} pendingLabel={t("saving")} onPress={submit}>
+      <Button
+        pending={form.pending}
+        pendingLabel={t("saving")}
+        onPress={() => {
+          if (!form.submit()) focusAfterRender(ref);
+        }}
+      >
         {t("save")}
       </Button>
-      {save.isSuccess ? <Notice tone="success">{t("saved")}</Notice> : null}
-      {save.isError ? <Notice tone="danger">{tError(errorMessageKey(save.error))}</Notice> : null}
+      {form.saved ? <Notice tone="success">{t("saved")}</Notice> : null}
+      {form.error === null ? null : (
+        <Notice tone="danger">{tError(errorMessageKey(form.error))}</Notice>
+      )}
     </>
   );
 }

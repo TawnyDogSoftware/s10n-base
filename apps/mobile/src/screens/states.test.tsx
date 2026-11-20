@@ -129,6 +129,27 @@ describe("SignInScreen for an unconfirmed address", () => {
   });
 });
 
+describe("an auth call that throws something unexpected", () => {
+  it("ends the sign-in's pending state and says so", async () => {
+    const report = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const backend = createBackend();
+    backend.addUser({ email: "sam@example.com" });
+    const { services } = renderScreen(<SignInScreen />, { backend });
+    vi.spyOn(services.auth, "signIn").mockRejectedValueOnce(new Error("SecureStore failed"));
+
+    type("Email address", "sam@example.com");
+    type("Password", "correct horse");
+    press("Sign in");
+
+    expect(await screen.findByText("Something went wrong. Try again.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign in" })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    report.mockRestore();
+  });
+});
+
 describe("a sign-in whose answer or session read is lost", () => {
   it("says it is signed in but could not confirm, when only the read after it failed", async () => {
     const backend = createBackend();
@@ -140,7 +161,27 @@ describe("a sign-in whose answer or session read is lost", () => {
     type("Password", "correct horse");
     press("Sign in");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(NETWORK);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The server accepted that, but we could not check your account afterwards.",
+    );
+  });
+
+  it("checks again, without signing in again, when only the read after it failed", async () => {
+    const backend = createBackend();
+    backend.addUser({ email: "sam@example.com" });
+    const { services } = renderScreen(<SignInScreen />, { backend });
+    backend.failNext("/api/app-auth/session", { kind: "network" });
+    type("Email address", "sam@example.com");
+    type("Password", "correct horse");
+    press("Sign in");
+    await screen.findByRole("button", { name: "Check again" });
+
+    press("Check again");
+
+    await waitFor(() => {
+      expect(services.gate.current()?.email).toBe("sam@example.com");
+    });
+    expect(backend.calls("/api/auth/sign-in/email")).toHaveLength(1);
   });
 
   it("says it cannot tell, and that the device is offline, when both were lost", async () => {
@@ -364,23 +405,23 @@ describe("the auth client's defaults", () => {
       ok: true,
     });
     secureStore.clear();
-    await auth.storeCookies("s10n-base.session_token=abc; Path=/; HttpOnly");
+    await auth.storeCookies("s10n-base.session_token=abc; Path=/; HttpOnly", auth.generation());
 
     expect(secureStore.get(`${authStoragePrefix(API)}_cookie`)).toContain("abc");
   });
 
-  it("sends with the platform's fetch and ignores cookies unless told where to keep them", async () => {
+  it("sends with the platform's fetch", async () => {
     const seen: Headers[] = [];
     vi.stubGlobal("fetch", (_input: RequestInfo | URL, init?: RequestInit) => {
       seen.push(new Headers(init?.headers));
-      return Promise.resolve(
-        new Response("{}", { headers: { "set-cookie": "s10n-base.session_token=new; Path=/" } }),
-      );
+      return Promise.resolve(new Response("{}"));
     });
 
-    const response = await withAuthCookie(() => Promise.resolve("s10n-base.session_token=old"))(
-      `${API}/rpc`,
-    );
+    const response = await withAuthCookie({
+      cookie: () => Promise.resolve("s10n-base.session_token=old"),
+      generation: () => 0,
+      storeCookies: () => Promise.resolve(),
+    })(`${API}/rpc`);
 
     expect(response.ok).toBe(true);
     expect(seen[0]?.get("cookie")).toBe("s10n-base.session_token=old");

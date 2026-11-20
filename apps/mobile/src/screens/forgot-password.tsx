@@ -3,11 +3,13 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TextInputInstance } from "react-native";
 
+import { useFocusAfterRender } from "@s10n-base/client/form";
 import type { AuthResult } from "@s10n-base/client/auth";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 import { fieldErrorText, validateEmail } from "@s10n-base/client/validation";
 
+import { Unexpected } from "../components/unexpected";
 import { Body, Button, Card, Field, Notice, Screen, TextButton } from "../components/ui";
 import { ActionOutcome } from "../components/unknown-outcome";
 import { useServices } from "../services";
@@ -25,8 +27,9 @@ export function ForgotPasswordScreen() {
   const [error, setError] = useState<string | undefined>(undefined);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<SettledAction<AuthResult> | null>(null);
-  const [pending, run] = usePending();
+  const [pending, run, failed] = usePending();
   const ref = useRef<TextInputInstance>(null);
+  const focusAfterRender = useFocusAfterRender();
 
   const submit = () =>
     run(async () => {
@@ -34,7 +37,7 @@ export function ForgotPasswordScreen() {
       const checked = validateEmail(email);
       if (!checked.ok) {
         setError(fieldErrorText(t, checked.error));
-        ref.current?.focus();
+        focusAfterRender(ref);
         return;
       }
       setError(undefined);
@@ -71,6 +74,7 @@ export function ForgotPasswordScreen() {
   return (
     <Screen key="form" title={t("forgotPassword.title")} intro={t("forgotPassword.intro")}>
       <Card>
+        <Unexpected show={failed} />
         <ActionOutcome outcome={outcome} signedInText={tCommon("unknownOutcome.nowSignedIn")} />
         <Field
           label={t("fields.email")}

@@ -56,8 +56,10 @@ A rule a framework or library cannot satisfy is changed in the config, once, wit
   - `vitest/expect-expect` counts `expectTypeOf` and the web tests' `waitForLocation` as assertions.
   - `import/no-unassigned-import` allows stylesheets and `@testing-library/jest-dom/vitest`.
   - `react/style-prop-object` allows `StatusBar`, whose `style` is a string.
+  - `jsx-a11y/no-noninteractive-tabindex` allows `tabIndex` on a `<section>`: a region that scrolls must be reachable by keyboard to be scrolled (WCAG 2.1.1, axe's `scrollable-region-focusable`), as the user table's is.
   - `no-await-in-loop` off: every loop it found waits on purpose, because each step depends on the one before (cursor pagination, rolling back one migration at a time, counting rate-limited attempts in order, polling a server until it answers). Independent work uses `Promise.all`.
   - In `apps/mobile`, `jsx-a11y/prefer-tag-over-role` and `jsx-a11y/role-has-required-aria-props` off: React Native has no HTML elements and no `aria-level`, so `role` is how a native view is named a heading, button or link.
+  - In `packages/client/src/query-state.ts`, `unicorn/require-post-message-target-origin` off: the rule reads any one-argument `postMessage` as `window.postMessage`, and the session gate's is a `BroadcastChannel`'s, which takes no target origin and stays within the origin.
 - `eslint.config.mjs`:
   - `@typescript-eslint/only-throw-error` allows TanStack Router's `Redirect` in `apps/web`, the router's documented way to redirect from `beforeLoad`.
   - `sonarjs/no-os-command-from-path` off in `scripts/`, `e2e/` and tests: development tools run `git`, `bun`, `node` and `docker` from `PATH` as the developer's shell does. Nothing that ships runs a command.
@@ -146,12 +148,13 @@ The acceptance ends at the start of `expires` (UTC), so the decision is looked a
 
 ## Browser journeys
 
-`e2e/` holds two journeys, run by Playwright in Chromium against the **built** server serving the **built** web app, so the real security headers apply:
+`e2e/` holds three journeys, run by Playwright in Chromium against the **built** server serving the **built** web app, so the real security headers apply:
 
-1. Sign up with a fresh address, read the confirmation email from the capture server, confirm, sign in, sign out.
+1. Sign up with a fresh address, read the confirmation email from the capture server, confirm, sign in, sign out. A result that replaces its form (check your email, address confirmed) must take focus.
 2. With a virtual authenticator, add a passkey on the profile page, sign out, sign in with the passkey, remove it.
+3. As an admin (made with the set-role command), page through the user list, leave it and come Back: both pages are still there. The table's scroll region must be focusable.
 
-Every page visited gets an axe check that fails on serious or critical violations, and any console error fails the journey; Chromium reports a Content-Security-Policy violation as a console error.
+Every distinct page state a journey reaches gets an axe check that fails on serious or critical violations: each page of the first journey, including sign-in after signing out; in the second, the profile with no passkeys and with one, sign-in after signing out, home after a passkey sign-in, and the profile after removal; in the third, the user list. The second journey's sign-up, confirmation and sign-in pages on its way to the profile are the states the first journey checks, so they are not checked again. Any console error fails the journey; Chromium reports a Content-Security-Policy violation as a console error.
 
 ```bash
 bunx playwright install chromium   # once, and after Playwright updates

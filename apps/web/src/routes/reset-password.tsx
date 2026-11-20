@@ -2,10 +2,12 @@ import { createRoute, Link } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { useFocusAfterRender } from "@s10n-base/client/form";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 import { PASSWORD_MIN, validateNewPassword, fieldErrorText } from "@s10n-base/client/validation";
 
+import { Unexpected } from "../components/Unexpected";
 import { ActionOutcome } from "../components/UnknownOutcome";
 import { Button, Card, Field, linkClass, PageShell } from "../components/ui";
 import type { AuthResult } from "../lib/auth";
@@ -13,18 +15,10 @@ import { optionalString } from "../lib/search";
 import { useServices } from "../services";
 import { rootRoute } from "./root";
 
+/** The page for one link: a new token in the address starts it again, clean. */
 function ResetPasswordPage() {
   const { t } = useTranslation("auth");
-  const { t: tCommon } = useTranslation("common");
-  const { auth, gate } = useServices();
   const { token } = resetPasswordRoute.useSearch();
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | undefined>(undefined);
-  const [outcome, setOutcome] = useState<SettledAction<AuthResult> | null>(null);
-  const [done, setDone] = useState(false);
-  const [pending, run] = usePending();
-  const ref = useRef<HTMLInputElement>(null);
-
   if (token === undefined) {
     return (
       <PageShell title={t("resetPassword.missingTitle")} intro={t("resetPassword.missingBody")}>
@@ -34,10 +28,50 @@ function ResetPasswordPage() {
       </PageShell>
     );
   }
+  return <ResetPasswordForm key={token} token={token} />;
+}
+
+function ResetPasswordForm(props: { readonly token: string }) {
+  const { t } = useTranslation("auth");
+  const { t: tCommon } = useTranslation("common");
+  const { auth, gate } = useServices();
+  const { token } = props;
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [outcome, setOutcome] = useState<SettledAction<AuthResult> | null>(null);
+  const [done, setDone] = useState(false);
+  const [pending, run, failed] = usePending();
+  const ref = useRef<HTMLInputElement>(null);
+  const focusAfterRender = useFocusAfterRender();
+
+  // The reset may have happened, and its token is then used: sending it again would be
+  // refused and read as a dead link. Offer the two ways forward instead of the form.
+  if (outcome?.kind === "unknown") {
+    return (
+      <PageShell
+        focus
+        title={t("resetPassword.unknownTitle")}
+        intro={t("resetPassword.unknownBody")}
+      >
+        <div className="flex flex-wrap gap-4">
+          <Link to="/sign-in" className={linkClass}>
+            {t("resetPassword.signIn")}
+          </Link>
+          <Link to="/forgot-password" className={linkClass}>
+            {t("resetPassword.requestNew")}
+          </Link>
+        </div>
+      </PageShell>
+    );
+  }
 
   if (done) {
     return (
-      <PageShell title={t("resetPassword.successTitle")} intro={t("resetPassword.successBody")}>
+      <PageShell
+        focus
+        title={t("resetPassword.successTitle")}
+        intro={t("resetPassword.successBody")}
+      >
         <Link to="/sign-in" className={linkClass}>
           {t("resetPassword.signIn")}
         </Link>
@@ -51,7 +85,7 @@ function ResetPasswordPage() {
       const checked = validateNewPassword(password);
       if (!checked.ok) {
         setError(fieldErrorText(t, checked.error));
-        ref.current?.focus();
+        focusAfterRender(ref);
         return;
       }
       setError(undefined);
@@ -79,6 +113,7 @@ function ResetPasswordPage() {
             void submit();
           }}
         >
+          <Unexpected show={failed} />
           <ActionOutcome outcome={outcome} signedInText={tCommon("unknownOutcome.nowSignedIn")}>
             {refusedToken ? (
               <Link to="/forgot-password" className={linkClass}>

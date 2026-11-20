@@ -46,6 +46,10 @@ describe("SignedInLayout", () => {
     renderScreen(<SignedInLayout />, { backend });
 
     expect(await screen.findByText("We could not reach the server")).toBeInTheDocument();
+    // In a scroll view, so large text can still reach the retry.
+    expect(screen.getByTestId("start-error")).toContainElement(
+      screen.getByText("We could not reach the server"),
+    );
     expect(screen.queryByTestId("redirect")).toBeNull();
     press("Try again");
     expect(await screen.findByTestId("redirect")).toHaveTextContent("/sign-in");

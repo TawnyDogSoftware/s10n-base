@@ -27,7 +27,7 @@ describe("createRpcClient", () => {
         method: "POST",
         body: { method: "example.count", payload: { n: "2" } },
         credentials: "include",
-        signal: undefined,
+        signal: expect.any(AbortSignal) as AbortSignal,
       },
     ]);
   });
@@ -43,7 +43,8 @@ describe("createRpcClient", () => {
 
     await client.call(count, { n: 1 }, { signal: controller.signal });
 
-    expect(requests[0]?.signal).toBe(controller.signal);
+    // The request's own signal, which follows the caller's and the request's deadline.
+    expect(requests[0]?.signal).toBeInstanceOf(AbortSignal);
     expect(requests[0]?.credentials).toBe("omit");
   });
 
@@ -143,6 +144,70 @@ describe("createRpcClient", () => {
 
     expect(error).not.toBeInstanceOf(NetworkError);
     expect((error as Error).name).toBe("AbortError");
+  });
+
+  it("gives up with a NetworkError when the answer's body never ends", async () => {
+    const endless = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"ok":'));
+        },
+      }),
+      { status: 200 },
+    );
+    const client = createRpcClient({
+      baseUrl: "https://api.example.com",
+      fetch: () => Promise.resolve(endless),
+      timeoutMs: 20,
+    });
+
+    await expect(client.call(count, { n: 1 })).rejects.toBeInstanceOf(NetworkError);
+  });
+
+  it("gives up with a NetworkError when no headers arrive, and aborts the request", async () => {
+    let signal: AbortSignal | undefined;
+    const client = createRpcClient({
+      baseUrl: "https://api.example.com",
+      fetch: (_input, init) => {
+        signal = init?.signal ?? undefined;
+        return new Promise<Response>(() => undefined);
+      },
+      timeoutMs: 20,
+    });
+
+    await expect(client.call(count, { n: 1 })).rejects.toBeInstanceOf(NetworkError);
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it.each([502, 503, 504])(
+    "treats a proxy's %i as a lost answer even with a well-formed error envelope",
+    async (status) => {
+      const client = createRpcClient({
+        baseUrl: "https://api.example.com",
+        fetch: () =>
+          Promise.resolve(
+            json({ ok: false, error: { code: "rpc.internal", message: "upstream" } }, status),
+          ),
+      });
+
+      await expect(client.call(count, { n: 1 })).rejects.toBeInstanceOf(NetworkError);
+    },
+  );
+
+  it.each([
+    ["a success envelope with an error status", { ok: true, data: { total: "1" } }, 500],
+    [
+      "an error envelope with a success status",
+      { ok: false, error: { code: "x", message: "m" } },
+      200,
+    ],
+  ])("does not trust %s", async (_name, body, status) => {
+    const client = createRpcClient({
+      baseUrl: "https://api.example.com",
+      fetch: () => Promise.resolve(json(body, status)),
+    });
+
+    await expect(client.call(count, { n: 1 })).rejects.toBeInstanceOf(DecodeError);
   });
 
   it("refuses to send a payload the contract cannot encode, without a request", async () => {

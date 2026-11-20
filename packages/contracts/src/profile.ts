@@ -39,10 +39,15 @@ export const profileGet = defineRpc({
   success: Profile,
 });
 
-/** `profile.update`: changes the caller's display name and returns the updated profile. */
+/**
+ * `profile.update`: changes the caller's display name and returns the updated profile. `userId`
+ * is the user the screen was showing when the name was typed; the server refuses the call with
+ * `auth.unauthenticated` when the session belongs to anyone else (another tab signed in as
+ * someone else meanwhile), so a name typed for one user is never saved for another.
+ */
 export const profileUpdate = defineRpc({
   method: "profile.update",
   auth: "session",
-  payload: Schema.Struct({ name: ProfileName }),
+  payload: Schema.Struct({ userId: Schema.String, name: ProfileName }),
   success: Profile,
 });

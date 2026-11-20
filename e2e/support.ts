@@ -1,10 +1,12 @@
 /** What every journey needs: page checks, the capture server's inbox, and fresh accounts. */
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
 
 import { AxeBuilder } from "@axe-core/playwright";
 import { expect, type Page } from "@playwright/test";
 
-import { E2E_SES } from "./env";
+import { E2E_ENV, E2E_ORIGIN, E2E_SES } from "./env";
 
 /** Collects console errors and page errors, which include Content-Security-Policy violations. */
 export function watchConsole(page: Page): string[] {
@@ -69,4 +71,35 @@ export async function signUpAndSignIn(page: Page, name: string, email: string, p
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: `Hello, ${name}` })).toBeVisible();
+}
+
+/** Makes `email`'s account an admin with the set-role command, as an operator would. */
+export function makeAdmin(email: string): void {
+  const command = fileURLToPath(new URL("../apps/server/src/set-role.ts", import.meta.url));
+  const args = [command, email, "admin"];
+  execFileSync("bun", args, { env: { ...process.env, ...E2E_ENV }, stdio: "ignore" });
+}
+
+/**
+ * Signs up `count` accounts through the API, each from its own client address so the sign-up
+ * rate limit (3 per 10 seconds per address) does not apply. They stay unconfirmed.
+ */
+export async function signUpUsers(count: number): Promise<void> {
+  const batch = randomUUID().slice(0, 8);
+  for (let index = 0; index < count; index += 1) {
+    const response = await fetch(`${E2E_ORIGIN}/api/auth/sign-up/email`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: E2E_ORIGIN,
+        "x-forwarded-for": `203.0.113.${String(index + 1)}`,
+      },
+      body: JSON.stringify({
+        name: `Listed ${String(index)}`,
+        email: `listed-${batch}-${String(index)}@example.com`,
+        password: "a long enough passphrase",
+      }),
+    });
+    expect(response.status, await response.text()).toBe(200);
+  }
 }

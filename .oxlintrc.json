@@ -27,6 +27,13 @@
       "error",
       { "allow": ["**/*.css", "@testing-library/jest-dom/vitest"] }
     ],
+    // A region that scrolls must be reachable by keyboard to be scrolled (WCAG 2.1.1; axe's
+    // scrollable-region-focusable), so a named <section> may take tabIndex 0. The default
+    // allows only tabpanel.
+    "jsx-a11y/no-noninteractive-tabindex": [
+      "error",
+      { "tags": ["section"], "roles": ["tabpanel"] }
+    ],
     // expo-status-bar's StatusBar takes `style` as a string ("auto", "light", "dark").
     "react/style-prop-object": ["error", { "allow": ["StatusBar"] }],
     // Off for the whole repo: the loops it finds wait on purpose, one step at a time, because each
@@ -43,6 +50,15 @@
       "rules": {
         "jsx-a11y/prefer-tag-over-role": "off",
         "jsx-a11y/role-has-required-aria-props": "off"
+      }
+    },
+    {
+      // The rule reads every one-argument `postMessage` as `window.postMessage`, which needs a
+      // target origin. The session gate posts on a BroadcastChannel, whose postMessage takes the
+      // message alone and never leaves the origin.
+      "files": ["packages/client/src/query-state.ts"],
+      "rules": {
+        "unicorn/require-post-message-target-origin": "off"
       }
     }
   ],
