@@ -40,12 +40,15 @@ export const en = {
     },
     unknownOutcome: {
       title: "We could not confirm whether that worked",
-      body: "The connection dropped before the server answered. We are checking your account now.",
+      body: "The connection dropped before the server answered, so it may or may not have happened.",
+      unconfirmed: "The server accepted that, but we could not check your account afterwards.",
+      checkAgain: "Check again",
       checking: "Checking…",
       stillSignedIn: "You are still signed in.",
       nowSignedIn: "You are signed in.",
       notSignedIn: "You are not signed in.",
-      offline: "We could not reach the server. Check your connection and try again.",
+      offline:
+        "We could not reach the server to check your account. Check your connection, then check again.",
     },
   },
   auth: {

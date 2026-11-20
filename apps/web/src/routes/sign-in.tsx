@@ -23,7 +23,6 @@ function SignInPage() {
   useLeaveWhenSignedIn();
   const { t } = useTranslation("auth");
   const { t: tCommon } = useTranslation("common");
-  const { t: tError } = useTranslation("errors");
   const { auth, gate } = useServices();
   const navigate = useNavigate();
   const { redirect } = signInRoute.useSearch();
@@ -107,7 +106,7 @@ function SignInPage() {
           <ActionOutcome
             outcome={outcome}
             signedInText={tCommon("unknownOutcome.nowSignedIn")}
-            unconfirmedText={tError("network")}
+            unconfirmedText={tCommon("unknownOutcome.unconfirmed")}
           />
           <Field
             label={t("fields.email")}

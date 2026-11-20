@@ -140,7 +140,27 @@ describe("a sign-in whose answer or session read is lost", () => {
     type("Password", "correct horse");
     press("Sign in");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(NETWORK);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The server accepted that, but we could not check your account afterwards.",
+    );
+  });
+
+  it("checks again, without signing in again, when only the read after it failed", async () => {
+    const backend = createBackend();
+    backend.addUser({ email: "sam@example.com" });
+    const { services } = renderScreen(<SignInScreen />, { backend });
+    backend.failNext("/api/app-auth/session", { kind: "network" });
+    type("Email address", "sam@example.com");
+    type("Password", "correct horse");
+    press("Sign in");
+    await screen.findByRole("button", { name: "Check again" });
+
+    press("Check again");
+
+    await waitFor(() => {
+      expect(services.gate.current()?.email).toBe("sam@example.com");
+    });
+    expect(backend.calls("/api/auth/sign-in/email")).toHaveLength(1);
   });
 
   it("says it cannot tell, and that the device is offline, when both were lost", async () => {

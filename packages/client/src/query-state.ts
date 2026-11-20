@@ -27,11 +27,12 @@ import {
   type UseQueryOptions,
   useQuery,
 } from "@tanstack/react-query";
-import { createContext, createElement, type ReactNode, useContext } from "react";
+import { createContext, createElement, type ReactNode, useContext, useState } from "react";
 
 import { type AppSession, ERROR_CODES } from "@s10n-base/contracts";
 
 import { NetworkError, RpcError } from "./transport";
+import { usePending } from "./use-pending";
 import {
   type SessionClient,
   SessionClientProvider,
@@ -310,4 +311,19 @@ export function useProtectedQuery<T>(
   const session = useSession();
   const query = useQuery({ ...extra, ...gate.protectedQueryOptions(session, parts, fetcher) });
   return { session, query };
+}
+
+/**
+ * The session as last read after a security action, and a way to read it again without
+ * repeating the action: for a screen whose read after the action failed (`undefined`).
+ */
+export function useRecheck(initial: AppSession | null | undefined) {
+  const gate = useSessionGate();
+  const [session, setSession] = useState(initial);
+  const [checking, run] = usePending();
+  const recheck = () =>
+    run(async () => {
+      setSession(await gate.refresh());
+    });
+  return { session, checking, recheck };
 }

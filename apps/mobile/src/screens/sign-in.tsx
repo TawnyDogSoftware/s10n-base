@@ -23,7 +23,6 @@ type Name = "email" | "password";
 export function SignInScreen() {
   const { t } = useTranslation("auth");
   const { t: tCommon } = useTranslation("common");
-  const { t: tError } = useTranslation("errors");
   const { auth, gate } = useServices();
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -89,7 +88,7 @@ export function SignInScreen() {
         <ActionOutcome
           outcome={outcome}
           signedInText={tCommon("unknownOutcome.nowSignedIn")}
-          unconfirmedText={tError("network")}
+          unconfirmedText={tCommon("unknownOutcome.unconfirmed")}
         />
         <Field
           label={t("fields.email")}

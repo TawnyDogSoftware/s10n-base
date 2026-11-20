@@ -116,6 +116,8 @@ describe("/sign-up", () => {
     expect(alert).toHaveTextContent("We could not confirm whether that worked");
     expect(alert).toHaveTextContent("You are not signed in.");
     expect(app.backend.calls("/api/app-auth/session").length).toBeGreaterThanOrEqual(2);
+    // The check has finished: the notice never still says it is under way.
+    expect(alert).not.toHaveTextContent(/checking/i);
   });
 });
 
@@ -240,7 +242,9 @@ describe("/sign-in", () => {
     type("Password", "correct horse");
     click("Sign in");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("We could not reach the server.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "We could not reach the server to check your account.",
+    );
   });
 
   it("says the server cannot be reached when sign-in succeeded but the session cannot be read", async () => {
@@ -252,9 +256,43 @@ describe("/sign-in", () => {
     type("Password", "correct horse");
     click("Sign in");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("We could not reach the server.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The server accepted that, but we could not check your account afterwards.",
+    );
     expect(app.location()).toBe("/sign-in");
     expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled();
+  });
+
+  it("checks again, without signing in again, when sign-in succeeded but the read failed", async () => {
+    const app = renderApp("/sign-in", backendWith("sam@example.com"));
+    await screen.findByRole("heading", { name: "Sign in" });
+    app.backend.failNext("/api/app-auth/session", { kind: "network" });
+    type("Email address", "sam@example.com");
+    type("Password", "correct horse");
+    click("Sign in");
+    await screen.findByRole("button", { name: "Check again" });
+
+    click("Check again");
+
+    await waitForLocation(app, "/");
+    expect(app.backend.calls("/api/auth/sign-in/email")).toHaveLength(1);
+  });
+
+  it("checks again when neither the sign-in's answer nor the read arrived", async () => {
+    const app = renderApp("/sign-in", backendWith("sam@example.com"));
+    await screen.findByRole("heading", { name: "Sign in" });
+    app.backend.failNext("/api/auth/sign-in/email", { kind: "network" });
+    app.backend.failNext("/api/app-auth/session", { kind: "network" });
+    type("Email address", "sam@example.com");
+    type("Password", "correct horse");
+    click("Sign in");
+    await screen.findByRole("button", { name: "Check again" });
+
+    click("Check again");
+
+    expect(await screen.findByText("You are not signed in.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Check again" })).not.toBeInTheDocument();
+    expect(app.backend.calls("/api/auth/sign-in/email")).toHaveLength(1);
   });
 
   it("reports a passkey sign-in that did not complete", async () => {

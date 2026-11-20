@@ -4,10 +4,10 @@ import type { TFunction } from "i18next";
 
 import type { AuthResult } from "@s10n-base/client/auth";
 import { errorMessageKey } from "@s10n-base/client/messages";
-import type { SettledAction } from "@s10n-base/client/query-state";
+import { type SettledAction, useRecheck } from "@s10n-base/client/query-state";
 import type { AppSession } from "@s10n-base/contracts";
 
-import { Notice } from "./ui";
+import { Button, Notice } from "./ui";
 
 function sessionText(
   t: TFunction,
@@ -17,6 +17,35 @@ function sessionText(
   if (session === undefined) return t("unknownOutcome.offline");
   if (session === null) return t("unknownOutcome.notSignedIn");
   return signedInText;
+}
+
+/**
+ * What the session read after an action says, or, when that read failed, a button that reads it
+ * again without repeating the action.
+ */
+function SessionAfter(props: {
+  readonly session: AppSession | null | undefined;
+  readonly signedInText: string;
+}) {
+  const { t } = useTranslation("common");
+  const { session, checking, recheck } = useRecheck(props.session);
+  return (
+    <>
+      <p>{sessionText(t, session, props.signedInText)}</p>
+      {session === undefined ? (
+        <div>
+          <Button
+            variant="secondary"
+            pending={checking}
+            pendingLabel={t("unknownOutcome.checking")}
+            onClick={() => void recheck()}
+          >
+            {t("unknownOutcome.checkAgain")}
+          </Button>
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 /**
@@ -33,7 +62,7 @@ export function UnknownOutcome(props: {
   return (
     <Notice tone="danger" title={t("unknownOutcome.title")}>
       <p>{t("unknownOutcome.body")}</p>
-      <p>{sessionText(t, props.session, props.signedInText)}</p>
+      <SessionAfter session={props.session} signedInText={props.signedInText} />
     </Notice>
   );
 }
@@ -42,7 +71,7 @@ export function UnknownOutcome(props: {
  * What a settled security action leaves on screen: nothing before it ran, the unknown outcome
  * of a lost answer, or the server's refusal, followed by `children`. An action the server
  * accepted shows `unconfirmedText` if given: the screen is still here only because the session
- * read afterwards failed.
+ * read afterwards failed, and it offers to read it again.
  */
 export function ActionOutcome(props: {
   readonly outcome: SettledAction<AuthResult> | null;
@@ -66,5 +95,10 @@ export function ActionOutcome(props: {
     );
   }
   if (props.unconfirmedText === undefined) return null;
-  return <Notice tone="danger">{props.unconfirmedText}</Notice>;
+  return (
+    <Notice tone="danger">
+      <p>{props.unconfirmedText}</p>
+      <SessionAfter session={outcome.session} signedInText={props.signedInText} />
+    </Notice>
+  );
 }
