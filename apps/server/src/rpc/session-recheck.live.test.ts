@@ -35,11 +35,18 @@ async function signedInUser() {
     (await browser.post("/api/auth/sign-in/email", { email, password: PASSWORD })).status,
   ).toBe(200);
   const { userId } = (await browser.session()) as { userId: string };
+  userIds.set(browser, userId);
   return { browser, userId };
 }
 
+/** Each client's user, read once at sign-in: a read during a race would take part in it. */
+const userIds = new WeakMap<TestClient, string>();
+
 async function rename(browser: TestClient, name: string) {
-  const response = await browser.post("/rpc", { method: "profile.update", payload: { name } });
+  const response = await browser.post("/rpc", {
+    method: "profile.update",
+    payload: { userId: userIds.get(browser), name },
+  });
   return { status: response.status, body: (await response.json()) as Record<string, unknown> };
 }
 

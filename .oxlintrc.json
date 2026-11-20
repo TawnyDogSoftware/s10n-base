@@ -44,6 +44,15 @@
         "jsx-a11y/prefer-tag-over-role": "off",
         "jsx-a11y/role-has-required-aria-props": "off"
       }
+    },
+    {
+      // The rule reads every one-argument `postMessage` as `window.postMessage`, which needs a
+      // target origin. The session gate posts on a BroadcastChannel, whose postMessage takes the
+      // message alone and never leaves the origin.
+      "files": ["packages/client/src/query-state.ts"],
+      "rules": {
+        "unicorn/require-post-message-target-origin": "off"
+      }
     }
   ],
   // Generated output only.

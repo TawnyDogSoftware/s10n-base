@@ -50,9 +50,9 @@ describe("profile.update and ProfileName", () => {
   const decodeName = Schema.decodeUnknownExit(ProfileName);
 
   it("trims the name", () => {
-    expect(Schema.decodeUnknownSync(profileUpdate.payload)({ name: "  Sam  " })).toEqual({
-      name: "Sam",
-    });
+    expect(
+      Schema.decodeUnknownSync(profileUpdate.payload)({ userId: "u1", name: "  Sam  " }),
+    ).toEqual({ userId: "u1", name: "Sam" });
   });
 
   it("accepts 1 to 100 characters after trimming, and nothing else", () => {

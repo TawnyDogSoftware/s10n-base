@@ -16,6 +16,8 @@
  *    through {@link SessionGate.settle}, which re-reads the session afterwards. A `NetworkError`
  *    is an unknown outcome, settled by that read rather than reported as a failure. The read runs
  *    even when the browser reports offline.
+ * 6. With a {@link SessionChannel}, a change of user seen in one tab makes every other tab of the
+ *    app re-read the session at once, rather than when its cached session goes stale.
  */
 import {
   hashKey,
@@ -114,6 +116,36 @@ export interface SessionGate {
   readonly dispose: () => void;
 }
 
+/**
+ * How the tabs of one app tell each other that the signed-in user changed (rule 6). A post
+ * reaches every other subscriber, never the poster.
+ */
+export interface SessionChannel {
+  readonly post: () => void;
+  /** Returns a function that stops listening. */
+  readonly subscribe: (listener: () => void) => () => void;
+}
+
+/**
+ * A {@link SessionChannel} over the browser's `BroadcastChannel`, which reaches the other tabs of
+ * the same origin. Undefined where the platform has none (React Native).
+ */
+export function browserSessionChannel(name: string): SessionChannel | undefined {
+  if (typeof globalThis.BroadcastChannel !== "function") return undefined;
+  const channel = new BroadcastChannel(name);
+  return {
+    post: () => {
+      channel.postMessage("session-changed");
+    },
+    subscribe: (listener) => {
+      channel.addEventListener("message", listener);
+      return () => {
+        channel.close();
+      };
+    },
+  };
+}
+
 const NOT_SEEN = Symbol("not seen");
 
 function identityOf(session: AppSession | null): string | null {
@@ -127,8 +159,10 @@ function isPublic(meta: Record<string, unknown> | undefined): boolean {
 export function createSessionGate(options: {
   readonly queryClient: QueryClient;
   readonly sessionClient: SessionClient;
+  /** Where to tell other tabs of a change of user, and hear of theirs (rule 6). */
+  readonly channel?: SessionChannel | undefined;
 }): SessionGate {
-  const { queryClient, sessionClient } = options;
+  const { queryClient, sessionClient, channel } = options;
   const sessionOptions = () => sessionQueryOptions(sessionClient);
   const sessionHash = hashKey(SESSION_QUERY_KEY);
   let accepted: AppSession | null | typeof NOT_SEEN = NOT_SEEN;
@@ -153,8 +187,10 @@ export function createSessionGate(options: {
   };
 
   const accept = (session: AppSession | null) => {
-    if (accepted !== NOT_SEEN && identityOf(accepted) !== identityOf(session)) purge();
+    const changed = accepted !== NOT_SEEN && identityOf(accepted) !== identityOf(session);
+    if (changed) purge();
     accepted = session;
+    if (changed) channel?.post();
   };
 
   const existing = queryClient.getQueryData<AppSession | null>(SESSION_QUERY_KEY);
@@ -176,6 +212,8 @@ export function createSessionGate(options: {
       return undefined;
     }
   };
+
+  const stopListening = channel?.subscribe(() => void refresh());
 
   const guard = async <T>(run: () => Promise<T>): Promise<T> => {
     const started = epoch;
@@ -219,7 +257,10 @@ export function createSessionGate(options: {
     confirmSignedOut: () => {
       queryClient.setQueryData(SESSION_QUERY_KEY, null);
     },
-    dispose: unsubscribe,
+    dispose: () => {
+      unsubscribe();
+      stopListening?.();
+    },
   };
 }
 

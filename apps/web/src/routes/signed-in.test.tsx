@@ -70,7 +70,7 @@ describe("/profile", () => {
     expect(screen.getByLabelText("Name")).toHaveValue("Sam Renamed");
     expect(app.backend.calls("/rpc").map((call) => call.body)).toContainEqual({
       method: "profile.update",
-      payload: { name: "Sam Renamed" },
+      payload: { userId: "user-1", name: "Sam Renamed" },
     });
     await act(() => app.router.navigate({ to: "/" }));
     expect(
@@ -224,6 +224,28 @@ describe("switching user", () => {
     release();
     expect(await screen.findByLabelText("Name")).toHaveValue("Bob");
     expect(screen.getByText("bob@example.com")).toBeInTheDocument();
+  });
+
+  it("never saves a name typed for one user after another tab signed in as someone else", async () => {
+    const backend = signedIn("alice@example.com");
+    backend.addUser({ email: "bob@example.com", name: "Bob" });
+    renderApp("/profile", backend);
+    expect(await screen.findByLabelText("Name")).toHaveValue("Sam");
+
+    // Another tab signs out and in as Bob; this tab's session is still fresh in its cache.
+    backend.signInAs("bob@example.com");
+    type("Name", "Typed for Alice");
+    click("Save");
+
+    await waitFor(() => {
+      expect(
+        backend.calls("/rpc").filter((call) => JSON.stringify(call.body).includes("update")),
+      ).toHaveLength(1);
+    });
+    expect(backend.users.get("bob@example.com")?.name).toBe("Bob");
+    expect(backend.users.get("alice@example.com")?.name).toBe("Sam");
+    // The tab re-reads the session and shows Bob.
+    await waitFor(() => expect(screen.getByLabelText("Name")).toHaveValue("Bob"));
   });
 });
 

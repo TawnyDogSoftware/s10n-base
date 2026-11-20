@@ -5,7 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppSession } from "@s10n-base/contracts";
 
 import {
+  browserSessionChannel,
   createSessionGate,
+  type SessionChannel,
   SessionGateProvider,
   StaleSessionError,
   useProtectedQuery,
@@ -43,8 +45,12 @@ function controllableSession(initial: AppSession | null) {
   };
 }
 
+function newQueryClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
 function setup(initial: AppSession | null = alice) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = newQueryClient();
   const server = controllableSession(initial);
   const gate = createSessionGate({ queryClient, sessionClient: server.client });
   return { queryClient, server, gate };
@@ -373,6 +379,109 @@ describe("security actions", () => {
 
     expect(result).toMatchObject({ session: alice });
     expect(gate.current()).toEqual(alice);
+  });
+});
+
+/** Endpoints of one in-memory channel; like a BroadcastChannel, a post reaches the others only. */
+function sharedChannel() {
+  const endpoints = new Set<Set<() => void>>();
+  return (): SessionChannel => {
+    const own = new Set<() => void>();
+    endpoints.add(own);
+    return {
+      post: () => {
+        for (const listeners of endpoints) {
+          if (listeners === own) continue;
+          for (const listener of listeners) queueMicrotask(listener);
+        }
+      },
+      subscribe: (listener) => {
+        own.add(listener);
+        return () => {
+          own.delete(listener);
+        };
+      },
+    };
+  };
+}
+
+describe("other tabs", () => {
+  it("re-read the session when one tab sees the user change", async () => {
+    const server = controllableSession(alice);
+    const endpoint = sharedChannel();
+    const tabA = createSessionGate({
+      queryClient: newQueryClient(),
+      sessionClient: server.client,
+      channel: endpoint(),
+    });
+    const tabB = createSessionGate({
+      queryClient: newQueryClient(),
+      sessionClient: server.client,
+      channel: endpoint(),
+    });
+    await tabA.refresh();
+    await tabB.refresh();
+
+    // Tab B signs out and in as Bob; tab A has not read the session since.
+    server.set(bob);
+    await tabB.refresh();
+
+    await waitFor(() => {
+      expect(tabA.current()).toEqual(bob);
+    });
+    // Tab A's own change makes tab B read once more, which changes nothing there: no loop.
+    await waitFor(() => {
+      expect(server.fetchSession).toHaveBeenCalledTimes(5);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(server.fetchSession).toHaveBeenCalledTimes(5);
+    tabA.dispose();
+    tabB.dispose();
+  });
+
+  it("are not told when the same user is read again", async () => {
+    const server = controllableSession(alice);
+    const channel = {
+      post: vi.fn<() => void>(),
+      subscribe: vi.fn<SessionChannel["subscribe"]>(() => () => undefined),
+    };
+    const gate = createSessionGate({
+      queryClient: new QueryClient(),
+      sessionClient: server.client,
+      channel,
+    });
+
+    await gate.refresh();
+    await gate.refresh();
+    expect(channel.post).not.toHaveBeenCalled();
+    server.set(null);
+    await gate.refresh();
+    expect(channel.post).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("browserSessionChannel", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("carries a post to the other channels of the same name, and stops when unsubscribed", async () => {
+    const sender = browserSessionChannel("test.session");
+    const receiver = browserSessionChannel("test.session");
+    const heard = vi.fn<() => void>();
+    const unsubscribe = receiver?.subscribe(heard);
+
+    sender?.post();
+    await waitFor(() => {
+      expect(heard).toHaveBeenCalledTimes(1);
+    });
+    unsubscribe?.();
+  });
+
+  it("is undefined where the platform has no BroadcastChannel", () => {
+    vi.stubGlobal("BroadcastChannel", undefined);
+
+    expect(browserSessionChannel("test.session")).toBeUndefined();
   });
 });
 

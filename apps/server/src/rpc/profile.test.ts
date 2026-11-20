@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { ERROR_CODES } from "@s10n-base/contracts";
+
 import type { AppAuth } from "../auth/instance";
 import type { DB } from "../infra/postgres/generated/db";
 import { createLogger } from "../observability/logger";
@@ -106,11 +108,20 @@ describe("profile.update", () => {
       return Promise.resolve({ ...row, id, name, emailVerified: true, createdAt: row.created_at });
     });
 
-    expect(await update.handle({ name: "Sam" }, signedIn)).toMatchObject({
+    expect(await update.handle({ userId: USER_ID, name: "Sam" }, signedIn)).toMatchObject({
       userId: USER_ID,
       name: "Sam",
     });
     expect(updateUserName).toHaveBeenCalledWith(USER_ID, "Sam");
     expect(transactions).toEqual(["begin", "commit"]);
+  });
+
+  it("refuses, without writing, a rename meant for another user than the caller", async () => {
+    const { update, updateUserName } = handlers([]);
+
+    await expect(
+      update.handle({ userId: "00000000-0000-4000-8000-000000000002", name: "Sam" }, signedIn),
+    ).rejects.toMatchObject({ status: 401, code: ERROR_CODES.unauthenticated });
+    expect(updateUserName).not.toHaveBeenCalled();
   });
 });

@@ -6,7 +6,7 @@
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `@s10n-base/client/rpc`                  | `createRpcClient`, the three failure classes, `parseBaseUrl`                                                                                      |
 | `@s10n-base/client/session`              | `createSessionClient`, `sessionQueryOptions`, `useSession`, `SESSION_QUERY_KEY`                                                                   |
-| `@s10n-base/client/query-state`          | `createSessionGate`, `SessionGateProvider`, `useProtectedQuery`, `protectedQueryKey`, `StaleSessionError`                                         |
+| `@s10n-base/client/query-state`          | `createSessionGate`, `SessionGateProvider`, `useProtectedQuery`, `protectedQueryKey`, `StaleSessionError`, `browserSessionChannel`                |
 | `@s10n-base/client/auth`                 | `AuthResult`, `PasswordAuth`, `runAuthAction` and `trackNetworkFailures`: a Better Auth client's results as data, a lost answer as `NetworkError` |
 | `@s10n-base/client/validation`           | The form fields' checks (name from the contract, email, password within Better Auth's limits) and `fieldErrorText`                                |
 | `@s10n-base/client/messages`             | `errorMessageKey`: the `errors` message for any failure a screen shows                                                                            |
@@ -39,13 +39,17 @@ An aborted call (its `signal` fired) rejects with the abort error itself, not a 
 
 ## Session-gated query state
 
-Cached server data belongs to the user who was signed in when it was fetched. `createSessionGate({queryClient, sessionClient})` watches the session query and enforces five rules:
+Cached server data belongs to the user who was signed in when it was fetched. `createSessionGate({queryClient, sessionClient, channel})` watches the session query and enforces six rules:
 
 1. **Protected queries carry the user's id.** `useProtectedQuery(parts, fetcher)` (or `gate.protectedQueryOptions(session, parts, fetcher)`) uses the key `["user", userId, ...parts]` and is disabled while signed out. A component rendering for one user cannot read another user's data, even if a purge were late.
 2. **A change of user purges.** When the session's user or role changes, including to signed out, the gate cancels in-flight queries, then removes every query and mutation not marked public (`meta: PUBLIC_META`). The session query itself is always kept. This happens synchronously, inside the cache update that installed the new session, before React hears of it.
 3. **A late answer is discarded.** A protected query, or a call wrapped in `gate.guard(...)`, that started under one user and finishes under another rejects with `StaleSessionError` instead of returning data.
 4. **`auth.unauthenticated` re-reads the session.** If a protected call is refused because the session ended, the gate reads the session again. If it is gone, that is a sign-out, and rule 2 applies.
 5. **Security actions settle by re-reading.** Run sign-in, sign-out, sign-up, password reset and passkey changes through `gate.settle(action)`. It re-reads the session afterwards and returns `{kind: "done", value, session}`, or `{kind: "unknown", session}` when the action ended in a `NetworkError`. Trust `session`, not the action's own result: a sign-in whose answer was lost may have signed the user in. The session query uses `networkMode: "always"`, so this read runs even when the browser reports it is offline (TanStack Query would otherwise pause it). One case allows the client to decide for itself: a sign-out the server answered with success, whose answer cleared the cookie, followed by a read that failed. Then call `gate.confirmSignedOut()`, which installs "signed out" and purges as rule 2 says. A successful sign-in followed by a failed read is not signed in until a read says so; the web app reports that the server could not be reached.
+
+6. **Other tabs hear of a change of user.** Given a `channel`, a gate that sees the user change tells the app's other tabs, and each re-reads the session at once instead of when its cached session goes stale (30 seconds). The web app passes `browserSessionChannel(name)`, a `BroadcastChannel`; the mobile app has one screen at a time and passes none.
+
+Rule 3 compares users only on this tab. Within one tab's stale window, another tab can sign out and in as someone else, and a request this tab sends then carries the new user's cookie. So a write that acts for "the user this screen was rendered for" sends that user's id, and the server refuses it with `auth.unauthenticated` when the session's user differs, which the gate treats as a session change (rule 4). `profile.update` takes `{userId, name}` this way.
 
 Route guards read the session with `gate.ensure()` (the cache while fresh, otherwise the server), and `useSession()` returns it in components: the `AppSession`, `null` when signed out, or `undefined` before the first read.
 

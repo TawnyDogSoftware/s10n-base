@@ -27,7 +27,8 @@ function NameForm(props: { readonly profile: Profile }) {
   const session = gate.current();
   const save = useMutation({
     mutationKey: protectedQueryKey(session, ["profile", "update"]),
-    mutationFn: (value: string) => gate.guard(() => rpc.call(profileUpdate, { name: value })),
+    mutationFn: (value: string) =>
+      gate.guard(() => rpc.call(profileUpdate, { userId: props.profile.userId, name: value })),
     onSuccess: async (profile) => {
       gate.queryClient.setQueryData(protectedQueryKey(session, ["profile"]), profile);
       setName(profile.name);
