@@ -364,23 +364,23 @@ describe("the auth client's defaults", () => {
       ok: true,
     });
     secureStore.clear();
-    await auth.storeCookies("s10n-base.session_token=abc; Path=/; HttpOnly");
+    await auth.storeCookies("s10n-base.session_token=abc; Path=/; HttpOnly", auth.generation());
 
     expect(secureStore.get(`${authStoragePrefix(API)}_cookie`)).toContain("abc");
   });
 
-  it("sends with the platform's fetch and ignores cookies unless told where to keep them", async () => {
+  it("sends with the platform's fetch", async () => {
     const seen: Headers[] = [];
     vi.stubGlobal("fetch", (_input: RequestInfo | URL, init?: RequestInit) => {
       seen.push(new Headers(init?.headers));
-      return Promise.resolve(
-        new Response("{}", { headers: { "set-cookie": "s10n-base.session_token=new; Path=/" } }),
-      );
+      return Promise.resolve(new Response("{}"));
     });
 
-    const response = await withAuthCookie(() => Promise.resolve("s10n-base.session_token=old"))(
-      `${API}/rpc`,
-    );
+    const response = await withAuthCookie({
+      cookie: () => Promise.resolve("s10n-base.session_token=old"),
+      generation: () => 0,
+      storeCookies: () => Promise.resolve(),
+    })(`${API}/rpc`);
 
     expect(response.ok).toBe(true);
     expect(seen[0]?.get("cookie")).toBe("s10n-base.session_token=old");

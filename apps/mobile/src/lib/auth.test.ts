@@ -1,3 +1,4 @@
+import { waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { NetworkError } from "@s10n-base/client/rpc";
@@ -138,39 +139,75 @@ describe("session renewal", () => {
     });
   });
 
+  it("does not store a renewal that arrives after a sign-out", async () => {
+    const backend = createFakeBackend({ origin: API, cookies: true });
+    backend.addUser({ email: "sam@example.com", password: "correct horse" });
+    // The session route's answer, renewal included, is made at once and delivered later.
+    let deliver!: () => void;
+    const delivered = new Promise<void>((resolve) => {
+      deliver = resolve;
+    });
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      const response = await backend.fetch(input, init);
+      if (new Request(input, init).url.endsWith("/api/app-auth/session")) await delivered;
+      return response;
+    };
+    const services = createServices({ apiBaseUrl: API, scheme: SCHEME, fetch });
+    await services.auth.signIn({ email: "sam@example.com", password: "correct horse" });
+
+    backend.renewNextSessionRead();
+    const read = services.gate.refresh();
+    await waitFor(() => {
+      expect(backend.calls("/api/app-auth/session")).toHaveLength(1);
+    });
+    await services.auth.signOut();
+    deliver();
+    await read;
+
+    await expect(services.auth.cookie()).resolves.toBe("");
+  });
+
   it("ignores cookies that are not the auth cookies", async () => {
     const stored: string[] = [];
     const fetch = withAuthCookie(
-      () => Promise.resolve(""),
-      () => Promise.resolve(new Response("{}", { headers: { "set-cookie": "other=1; Path=/" } })),
-      (header) => {
-        stored.push(header);
-        return Promise.resolve();
+      {
+        cookie: () => Promise.resolve(""),
+        generation: () => 0,
+        storeCookies: (header) => {
+          stored.push(header);
+          return Promise.resolve();
+        },
       },
+      () => Promise.resolve(new Response("{}", { headers: { "set-cookie": "other=1; Path=/" } })),
     );
 
     await fetch(`${API}/rpc`);
 
     expect(stored).toEqual(["other=1; Path=/"]);
     const { auth } = setup();
-    await auth.storeCookies("other=1; Path=/");
+    await auth.storeCookies("other=1; Path=/", auth.generation());
     await expect(auth.cookie()).resolves.toBe("");
   });
 });
 
+function signedInAs(cookie: string) {
+  return {
+    cookie: () => Promise.resolve(cookie),
+    generation: () => 0,
+    storeCookies: () => Promise.resolve(),
+  };
+}
+
 describe("withAuthCookie", () => {
   it("sends the stored cookie itself and never the platform's cookie jar", async () => {
     const seen: Array<{ cookie: string | null; credentials: RequestCredentials | undefined }> = [];
-    const fetch = withAuthCookie(
-      () => Promise.resolve(`${SESSION_COOKIE}=abc`),
-      (input, init) => {
-        seen.push({
-          cookie: new Headers(init?.headers).get("cookie"),
-          credentials: init?.credentials,
-        });
-        return Promise.resolve(new Response("{}"));
-      },
-    );
+    const fetch = withAuthCookie(signedInAs(`${SESSION_COOKIE}=abc`), (input, init) => {
+      seen.push({
+        cookie: new Headers(init?.headers).get("cookie"),
+        credentials: init?.credentials,
+      });
+      return Promise.resolve(new Response("{}"));
+    });
 
     await fetch(`${API}/rpc`, { method: "POST", headers: { accept: "application/json" } });
 
@@ -179,13 +216,10 @@ describe("withAuthCookie", () => {
 
   it("sends no cookie header when signed out", async () => {
     let cookie: string | null = "unset";
-    const fetch = withAuthCookie(
-      () => Promise.resolve(""),
-      (_input, init) => {
-        cookie = new Headers(init?.headers).get("cookie");
-        return Promise.resolve(new Response("{}"));
-      },
-    );
+    const fetch = withAuthCookie(signedInAs(""), (_input, init) => {
+      cookie = new Headers(init?.headers).get("cookie");
+      return Promise.resolve(new Response("{}"));
+    });
 
     await fetch(`${API}/api/app-auth/session`);
 
