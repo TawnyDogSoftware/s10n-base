@@ -8,7 +8,7 @@ It runs in a **development build** (a dev client), not in Expo Go, so the app's 
 
 ## Variants
 
-`APP_VARIANT` picks one of three apps. Each installs side by side with the others and keeps its own data. The values come from `packages/shared/src/app-variants.ts`, which the server also reads for the origin it trusts (the URL scheme of its own `APP_VARIANT`). They are placeholders: replace them before your first store build, because a bundle identifier cannot change after that.
+`APP_VARIANT` picks one of three apps. Each installs side by side with the others and keeps its own data. The values come from `packages/shared/src/app-variants.ts`, which the server also reads for the origin it trusts (the URL scheme of its own `APP_VARIANT`). They are placeholders, which `bun run rename` replaces with your own ([new-project.md](new-project.md#3-rename)): do that before your first store build, because a bundle identifier cannot change after that.
 
 | Variant       | Name                | URL scheme         | Bundle identifier / application id |
 | ------------- | ------------------- | ------------------ | ---------------------------------- |
@@ -100,7 +100,7 @@ Metro can run on any machine on the private network that has the checkout, inclu
 
 For a team that writes code on Linux:
 
-1. On Linux: change code, run the checks (`bun run fmt:check`, `lint`, `typecheck`, `test`, and `bun run mobile:export` for a mobile change), commit and push. Everything except native builds and the simulator runs on Linux, and CI checks the same.
+1. On Linux: change code, run the checks (`bun run agent:check`, and `bun run mobile:export` for a mobile change), commit and push. Everything except native builds and the simulator runs on Linux, and CI checks the same.
 2. On the Mac: pull, `bun install`, then `bun run ios:simulator` (or `ios:device`) when native code, a native module or the config changed, or just `bun run dev:mobile` otherwise.
 3. Try the change on the simulator or the phone. Record what native checks you ran with the commit they ran on; a Linux pass is not a native pass.
 

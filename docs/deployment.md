@@ -174,6 +174,6 @@ The role applies from the user's next request. After that, an admin can change r
 
 ## What the base does not include
 
-- Infrastructure code. Projects that need it write Terraform in their own repository (plan 000, decision D10).
+- Infrastructure code. Projects that need it write Terraform in their own repository ([decision 010](adr/010-no-infrastructure-code.md)).
 - An image registry, signing or a bill of materials: push and sign the image wherever the project deploys from.
 - A CDN, TLS certificates, a proxy, database backups, a worker, and observability beyond JSON logs on stdout.

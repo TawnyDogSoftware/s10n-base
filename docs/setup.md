@@ -140,7 +140,7 @@ Migrations are append-only: once merged, a migration file is never edited or rem
 ## Tests
 
 ```bash
-bun run agent:check     # every gate that needs no database: lint, format, types, boundaries, dead code, coverage, audit
+bun run agent:check     # every gate that needs no database: commit attribution, lint, format, types, boundaries, dead code, coverage, audit
 bun run test            # unit tests; no database needed
 bun run test:coverage   # the same, with the 100% coverage thresholds
 bun run test:live       # tests against Postgres

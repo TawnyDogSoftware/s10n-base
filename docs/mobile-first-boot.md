@@ -90,4 +90,4 @@ Result:
 
 ## When it is done
 
-Fill in the header, commit this file, and change plan 006's status to "done" and plan 000's status line accordingly. If any step failed, open an issue or a plan with the error text instead, and leave the status as it is.
+Fill in the header, commit this file, and change plan 006's status to "done", its row in `plans/README.md`, and plan 000's status line accordingly. If any step failed, open an issue or a plan with the error text instead, and leave the status as it is.

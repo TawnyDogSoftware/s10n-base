@@ -13,7 +13,7 @@ Where the rule is enforced:
 - **GitHub Actions:** Dependabot, with `cooldown.default-days: 3` in `.github/dependabot.yml`.
 - **Container base images:** the daily update moves the Node and bun images' tags with Node and bun; Dependabot (same cooldown) refreshes the digest a pinned tag points to when the image is rebuilt, for example for a security fix in the base.
 
-Two packages are deliberately behind the newest release: TypeScript and React. The reasons are in `dependency-holds.json` and in plan 000 (decisions D4 and D6).
+Two packages are deliberately behind the newest release: TypeScript and React. The reasons are in `dependency-holds.json` and in decision records [004](adr/004-lint-stack.md) and [006](adr/006-toolchain.md).
 
 ## Where each version lives
 

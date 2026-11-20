@@ -6,7 +6,7 @@ Every change passes the same gates locally and in CI. One command runs every gat
 bun run agent:check
 ```
 
-It runs the gates below in this order and stops at the first failure, naming it (`agent:check failed at lint:eslint (exit 1)`). CI's first job runs this same command, then builds, migrates, runs the live tests and the smoke test; a second job bundles the mobile app; a third runs the browser journeys; a fourth builds the container image and runs it in production mode (`bun run docker:smoke`, [deployment.md](deployment.md)). `scripts/ci-workflow.test.ts` fails if the first job stops running `agent:check`.
+It runs the gates below in this order and stops at the first failure, naming it (`agent:check failed at lint:eslint (exit 1)`). CI's first job runs this same command, then builds, migrates, runs the live tests and the smoke test; a second job bundles the mobile app; a third runs the browser journeys; a fourth builds the container image and runs it in production mode (`bun run docker:smoke`, [deployment.md](deployment.md)); a fifth renames a copy of the repository and runs the install, `agent:check`, the build and the mobile export in it (`bun run rename:proof`, [new-project.md](new-project.md#3-rename)). `scripts/ci-workflow.test.ts` fails if the first job stops running `agent:check`.
 
 | Gate                | Run it alone                  | What it checks                                                        |
 | ------------------- | ----------------------------- | --------------------------------------------------------------------- |
@@ -22,7 +22,7 @@ It runs the gates below in this order and stops at the first failure, naming it 
 | Coverage            | `bun run test:coverage`       | 100% of lines, branches, functions and statements                     |
 | Audit               | `bun run deps:audit`          | No advisory against an installed package that nobody has triaged      |
 
-`bun run lint` runs the directive check, oxlint and ESLint. Outside `agent:check`: `bun run test:live` (needs the database), `bun run smoke` (needs a build and the database), `bun run test:e2e` (the browser journeys), and `bun run docker:build` then `bun run docker:smoke` (Docker and the database).
+`bun run lint` runs the directive check, oxlint and ESLint. Outside `agent:check`: `bun run test:live` (needs the database), `bun run smoke` (needs a build and the database), `bun run test:e2e` (the browser journeys), `bun run mobile:export` (the mobile bundles), `bun run docker:build` then `bun run docker:smoke` (Docker and the database), and `bun run rename:proof` (a renamed copy passes; slow).
 
 ## Commit attribution
 
