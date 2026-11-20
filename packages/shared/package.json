@@ -16,6 +16,10 @@
       "types": "./src/id.ts",
       "import": "./src/id.ts"
     },
+    "./local-endpoint": {
+      "types": "./src/local-endpoint.ts",
+      "import": "./src/local-endpoint.ts"
+    },
     "./origin": {
       "types": "./src/origin.ts",
       "import": "./src/origin.ts"
@@ -26,7 +30,7 @@
     }
   },
   "scripts": {
-    "build": "tsdown src/app-variants.ts src/auth.ts src/id.ts src/origin.ts src/time.ts --format esm,cjs --dts --clean",
+    "build": "tsdown src/app-variants.ts src/auth.ts src/id.ts src/local-endpoint.ts src/origin.ts src/time.ts --format esm,cjs --dts --clean",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts"
   },

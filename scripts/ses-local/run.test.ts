@@ -8,12 +8,18 @@ describe("listenAddress", () => {
     expect(listenAddress("http://[::1]:8005")).toEqual({ host: "::1", port: 8005 });
   });
 
-  it.each([undefined, "", "https://127.0.0.1:8005", "http://127.0.0.1", "nonsense"])(
-    "refuses %j",
-    (value) => {
-      expect(() => listenAddress(value)).toThrow(/SES_ENDPOINT/);
-    },
-  );
+  it.each([
+    undefined,
+    "",
+    "https://127.0.0.1:8005",
+    "http://127.0.0.1",
+    "nonsense",
+    // What the server's config refuses, the capture server refuses too (plan 011, F42).
+    "http://127.0.0.1:8005/v2",
+    "http://ses.example.com:8005",
+  ])("refuses %j", (value) => {
+    expect(() => listenAddress(value)).toThrow(/SES_ENDPOINT/);
+  });
 });
 
 const noop = () => {};
@@ -57,7 +63,7 @@ describe("runSesLocal", () => {
 
     expect(await runSesLocal({}, run.io)).toBe(1);
     expect(run.lines).toEqual([
-      "! ses-local: SES_ENDPOINT must be set to the capture server's address, such as http://127.0.0.1:8005.",
+      "! ses-local: SES_ENDPOINT must be set to the capture server's address, an http loopback origin with a port, such as http://127.0.0.1:8005.",
     ]);
   });
 });

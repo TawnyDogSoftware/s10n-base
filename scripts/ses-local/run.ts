@@ -2,21 +2,22 @@
  * `bun run ses:local` (run.main.ts): runs the local SES capture server on the host and port of `SES_ENDPOINT`
  * (from `.env`, or `.env.example`), until Ctrl-C. The inbox is at that address.
  */
+import { parseCaptureEndpoint } from "../../packages/shared/src/local-endpoint";
 import { type SesLocal, startSesLocal } from "./server";
 
 /**
- * Where to listen, from `SES_ENDPOINT`.
+ * Where to listen, from `SES_ENDPOINT`: the same rule the server's config applies to it.
  *
- * @throws {Error} when it is unset or not an http URL with a port.
+ * @throws {Error} when it is unset or not an http loopback origin with a port.
  */
 export function listenAddress(endpoint: string | undefined): { host: string; port: number } {
-  const url = endpoint === undefined || endpoint === "" ? null : URL.parse(endpoint);
-  if (url === null || url.protocol !== "http:" || url.port === "") {
+  const parsed = parseCaptureEndpoint(endpoint ?? "");
+  if (parsed === null) {
     throw new Error(
-      "SES_ENDPOINT must be set to the capture server's address, such as http://127.0.0.1:8005.",
+      "SES_ENDPOINT must be set to the capture server's address, an http loopback origin with a port, such as http://127.0.0.1:8005.",
     );
   }
-  return { host: url.hostname.replace(/^\[(.*)\]$/, "$1"), port: Number(url.port) };
+  return { host: parsed.host, port: parsed.port };
 }
 
 /** What `ses:local` touches: where it prints and how it learns to stop. */
