@@ -68,6 +68,13 @@ The web app reads one variable at build time (Vite exposes `VITE_*` variables to
 | ------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------- |
 | `VITE_API_BASE_URL` | The API's origin (`https://api.example.com`), with no path, query or credentials. The build fails on anything else. | the page's own origin |
 
+The Vite dev server reads two more, both optional, for where it listens when that is not where the browser reaches it:
+
+| Variable       | Rule                                                      | Default                                                               |
+| -------------- | --------------------------------------------------------- | --------------------------------------------------------------------- |
+| `WEB_DEV_HOST` | The address Vite listens on, such as `0.0.0.0`            | `APP_URL`'s host when `APP_URL` is http; `127.0.0.1` when it is https |
+| `WEB_DEV_PORT` | The port Vite listens on, 1 to 65535; anything else fails | `APP_URL`'s port when `APP_URL` is http; `5173` when it is https      |
+
 The mobile app reads `APP_VARIANT`, `EXPO_PUBLIC_API_BASE_URL` and `EAS_PROJECT_ID` when it builds, from your shell or `apps/mobile/.env.local` (copy `apps/mobile/.env.example`). Its table, and how to point a phone at this server, are in [mobile-dev.md](mobile-dev.md#environment). The server's `APP_VARIANT` must match the app's, since the server trusts only that variant's URL scheme.
 
 Leave `VITE_API_BASE_URL` unset when the server serves the web app (the built server does) or, in development, when Vite proxies the API. Set it when the web app is hosted on its own origin. The server then has to accept that page: its `APP_URL` must be the web app's origin (CORS and Better Auth's origin checks allow only `APP_URL`), the session cookie must reach the API (same site, or `SameSite=None` with `Secure`), and the HTML's Content-Security-Policy, which allows `connect-src 'self'`, must list the API origin if the server still serves the page.
@@ -76,7 +83,7 @@ Leave `VITE_API_BASE_URL` unset when the server serves the web app (the built se
 
 Notes:
 
-- **`APP_URL`** is also what `GET /config` returns as `apiBaseUrl`, and the only origin allowed by CORS. In development it is the Vite dev server's origin, and Vite listens on its host and port.
+- **`APP_URL`** is also what `GET /config` returns as `apiBaseUrl`, and the only origin allowed by CORS. In development it is the origin the browser opens the Vite dev server at. When it is http, Vite listens on its host and port. When it is https, a forwarder in front of Vite ends TLS, so Vite listens on `127.0.0.1:5173` for the forwarder to point at, and answers requests for `APP_URL`'s host name. `WEB_DEV_HOST` and `WEB_DEV_PORT` change where Vite listens in either case.
 - **`TRUSTED_PROXY_HOPS`** decides which `X-Forwarded-For` entry is the client's address: with one proxy, the last entry; with two, the one before it. With `0` the header is ignored and the socket's address is used. Set it to exactly the number of proxies you run, or clients can choose their own address.
 - **`SHUTDOWN_TIMEOUT_MS`:** on SIGTERM or SIGINT the server stops accepting connections, answers `/ready` with 503, waits up to this long for requests in flight, then closes what is left and the database pool. It exits 0 after a clean stop and 1 when it had to force anything.
 - **`SES_ENDPOINT`, `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`:** `.env.example` points the server at the local capture server with the placeholder keys `local`/`local`, so email works on a fresh clone with no AWS account. In production, leave `SES_ENDPOINT` unset and give real keys for an IAM user allowed to call `ses:SendEmail`; `EMAIL_FROM` must be a verified SES identity.

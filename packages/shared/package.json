@@ -24,13 +24,17 @@
       "types": "./src/origin.ts",
       "import": "./src/origin.ts"
     },
+    "./web-dev-server": {
+      "types": "./src/web-dev-server.ts",
+      "import": "./src/web-dev-server.ts"
+    },
     "./time": {
       "types": "./src/time.ts",
       "import": "./src/time.ts"
     }
   },
   "scripts": {
-    "build": "tsdown src/app-variants.ts src/auth.ts src/id.ts src/local-endpoint.ts src/origin.ts src/time.ts --format esm,cjs --dts --clean",
+    "build": "tsdown src/app-variants.ts src/auth.ts src/id.ts src/local-endpoint.ts src/origin.ts src/time.ts src/web-dev-server.ts --format esm,cjs --dts --clean",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts"
   },
