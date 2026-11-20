@@ -73,13 +73,14 @@ The phone runs the app, loads its JavaScript from Metro on your computer, and ca
 
 ## Pointing a phone at a server on your own machine
 
-The server listens on every interface by default (`HOST=0.0.0.0`), so a phone on the same network reaches it at your computer's address.
+On a fresh clone the server listens on loopback only: `.env.example` sets `HOST=127.0.0.1`, and `bun dev` reads it when there is no `.env`. A phone cannot reach that. To reach the server from a phone on the same network:
 
+- **`HOST`:** copy `.env.example` to `.env` and set `HOST` to your computer's address on that network, such as `HOST=192.168.1.20`, or to `0.0.0.0` for every interface. Either way anyone on that network can then reach the development server, so do it only on a network you trust. Restart `bun dev`.
 - **`EXPO_PUBLIC_API_BASE_URL`:** `http://<your-computer's-address>:4210`, for example `http://192.168.1.20:4210`. Restart Metro after changing it; the dev client does not need a rebuild.
 - **Plain http** is fine in development: the development variant allows it on iOS (App Transport Security's arbitrary loads, development only), and Android debug builds allow cleartext traffic. Preview and production refuse anything but https at config time.
 - **Trusted origins:** nothing to add. The app identifies itself with its URL scheme, which the server trusts for its own `APP_VARIANT` (keep both on `development`). `/rpc` and the session route accept requests without an `Origin` header, which is what the app sends.
 - **`APP_URL`** is the web app's origin. It decides where the links in emails go. The links open the web app in a browser, which finishes the verification or the password reset; the person then returns to the app and signs in (the app's screens say so). To open those links on the phone, `APP_URL` must be an address the phone can reach, such as `http://192.168.1.20:5173`; the Vite dev server then listens on that address. Otherwise open the links on the computer: verifying in one browser verifies the account everywhere.
-- **The local inbox listens on loopback only** (`http://127.0.0.1:8005/`), on purpose. Read the emails on the computer running `bun dev`.
+- **The local inbox stays on loopback** (`http://127.0.0.1:8005/`), whatever `HOST` is, on purpose: it has no sign-in. Read the emails on the computer running `bun dev`.
 
 Opening email links in the app instead of the browser needs universal links (iOS) and app links (Android): a real https domain serving association files. That is not set up; see "Later" below.
 
