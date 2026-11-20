@@ -277,12 +277,17 @@ function parseAuthorization(authorization: string) {
   return { accessKeyId, dateStamp, region, service, signedNames: signedList.split(";"), signature };
 }
 
-/** The time an `X-Amz-Date` value names, in milliseconds, or null when it is malformed. */
+/**
+ * The time an `X-Amz-Date` value names, in milliseconds, or null when it is malformed or names
+ * no real time (minute 60, hour 24, 30 February): `Date.UTC` would roll those over to another
+ * time, so the value must read back unchanged.
+ */
 function parseAmzDate(amzDate: string): number | null {
   const parts = AMZ_DATE.exec(amzDate);
   if (parts === null) return null;
   const [, year = 0, month = 1, day, hour, minute, second] = parts.map(Number);
-  return Date.UTC(year, month - 1, day, hour, minute, second);
+  const time = Date.UTC(year, month - 1, day, hour, minute, second);
+  return toAmzDate(new Date(time)) === amzDate ? time : null;
 }
 
 /** What the request's `Authorization` and `X-Amz-Date` headers claim, if they are well formed. */

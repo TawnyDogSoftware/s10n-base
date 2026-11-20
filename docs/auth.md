@@ -18,13 +18,15 @@ browser / app
 - **Allow-list** (`apps/server/src/auth/allowed-routes.ts`). Every route Better Auth serves is listed either as exposed or as deliberately not, with a reason. The guard admits only exposed routes. A test fails when Better Auth serves a route on neither list (so an upgrade that adds an endpoint forces a decision) or when a listed route no longer exists.
 - **Bridge** (`apps/server/src/http/fetch-bridge.ts`). Builds the Fetch `Request` with a URL from `APP_URL`, never from `Host`; reads the body through the same limit as `/rpc` (413); replaces any incoming copy of the internal client-IP header with the address the server resolved (`TRUSTED_PROXY_HOPS` applies); copies the response back with every `Set-Cookie` header kept separate and `Cache-Control: no-store`.
 - **Session route.** `GET /api/app-auth/session` answers `{"ok":true,"data":{"session":AppSession|null}}`. `AppSession` (`packages/contracts`) is ours: `userId`, `email`, `name`, `image`, `role` (`user` or `admin`) and `emailVerified`. Clients depend on it, not on Better Auth's objects, so it stays the same when Better Auth's change. Reading the session also renews it: once a session is a day old (Better Auth's `updateAge`), Better Auth extends it to seven days from now and sets a new session cookie, which this route passes on. Without that, an active user's cookie would expire seven days after sign-in. The browser stores the renewal itself; the mobile app stores it in SecureStore (`withAuthCookie` in `apps/mobile/src/lib/auth.ts`).
-- **RPC caller.** The dispatcher looks up the session only for methods whose `auth` is not `public`, and at most once per call; a handler gets the caller with `await context.getActor()`. A banned user or an expired session is anonymous. A signed-in caller carries the id of the session row it called with, which a write handler rechecks inside its transaction ([below](#pitfalls-our-projects-reviews-found)).
+- **RPC caller.** The dispatcher looks up the session only for methods whose `auth` is not `public`, and at most once per call; a handler gets the caller with `await context.getActor()`. A banned user or an expired session is anonymous. The lookup never renews the session, since an RPC response carries no cookie; the session route above is what renews it. A signed-in caller carries the id of the session row it called with, which a write handler rechecks inside its transaction ([below](#pitfalls-our-projects-reviews-found)).
 
 ### Exposed and unexposed routes
 
 Exposed: email sign-up, sign-in and sign-out, the session, email verification and resending it, password reset (request and set), changing the password and the name or image, listing and ending one's own sessions, all passkey routes, and these admin routes: list and get users, set role, ban and unban, list and end a user's sessions, check a permission.
 
 Not exposed: social sign-in and every OAuth route, Better Auth's own reset link (`GET /reset-password/:token`, since reset emails open the web page), account deletion, email change, `update-session`, `verify-password`, Better Auth's `/ok` and `/error`, and the admin routes that create users, change arbitrary user fields, set a user's password or impersonate. `/admin/remove-user` is turned off in Better Auth itself (`disabledPaths`), because removing a user needs cleanup only a product knows about.
+
+Every write of a user's name, through sign-up, `update-user`, the admin routes or the `profile.update` RPC, goes through one rule: the contract's `ProfileName` (trimmed, 1 to 100 characters, no NUL), applied by a Better Auth database hook (`checkUserName` in `apps/server/src/auth/options.ts`). A name that breaks it gets a 400 and nothing is written.
 
 To expose a route, move it to `EXPOSED_AUTH_ROUTES` with the reason a client needs it. To add your own guarded user removal, add an RPC method with `auth: { role: "admin" }` that does the product's cleanup and then deletes the `ba_user` row (sessions, accounts and passkeys cascade).
 
@@ -70,7 +72,7 @@ Sign up and verify the account, then:
 bun run auth:set-role you@example.com admin
 ```
 
-In a deployment, run `node apps/server/dist/set-role.mjs you@example.com admin` with `DATABASE_URL` set. It refuses unknown roles and addresses no user has. The role applies to the user's next request. After that, admins can change roles through `POST /api/auth/admin/set-role`.
+In a deployment, run `node apps/server/dist/set-role.mjs you@example.com admin` with `DATABASE_URL` set. It refuses unknown roles, addresses no user has, and an address several users have in different case (which an import of existing users can create), changing none of them. The role applies to the user's next request. After that, admins can change roles through `POST /api/auth/admin/set-role`.
 
 ## Passkeys
 

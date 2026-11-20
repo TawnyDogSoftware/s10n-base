@@ -16,11 +16,13 @@ import {
   pendingMigrations,
   resetSchema,
   runMigrationCommand,
+  SchemaMismatchError,
   withMigrationLock,
 } from "./migrator";
 
 const LOCK = "select pg_advisory_lock($1, hashtext($2))";
 const UNLOCK = "select pg_advisory_unlock($1, hashtext($2))";
+const CURRENT_SCHEMA = "select current_schema() as schema";
 
 function table(name: string): Migration {
   return {
@@ -37,11 +39,14 @@ const migrations = { "001_widget": table("widget"), "002_gadget": table("gadget"
 
 /** A database where `applied` migrations have run, answering Kysely's bookkeeping queries. */
 function database(applied: readonly string[] = []) {
-  return scriptedDb<unknown>((query) =>
-    query.sql.startsWith('select "name", "timestamp" from')
+  return scriptedDb<unknown>((query) => {
+    if (query.sql === CURRENT_SCHEMA) return [{ schema: "app" }];
+    if (query.sql.includes("from pg_catalog.pg_class"))
+      return [{ name: "gadget" }, { name: "widget" }];
+    return query.sql.startsWith('select "name", "timestamp" from')
       ? applied.map((name, index) => ({ name, timestamp: `2026-11-1${String(index)}` }))
-      : [],
-  );
+      : [];
+  });
 }
 
 const statements = (queries: ReadonlyArray<{ sql: string }>) =>
@@ -172,6 +177,26 @@ describe("runMigrationCommand", () => {
   });
 });
 
+describe("runMigrationCommand's schema check", () => {
+  it.each([
+    [[{ schema: "other" }], 'creates tables in schema "other", not in "app"'],
+    [[{ schema: null }], 'creates tables in no schema, not in "app"'],
+    [[], 'creates tables in no schema, not in "app"'],
+  ])("refuses before any change when the connection answers %j", async (rows, message) => {
+    const { db, queries } = scriptedDb<unknown>((query) =>
+      query.sql === CURRENT_SCHEMA ? rows : [],
+    );
+    const log = vi.fn<(message: string) => void>();
+
+    const run = runMigrationCommand("up", { db, schema: "app", migrations, nodeEnv: "test", log });
+
+    await expect(run).rejects.toThrow(SchemaMismatchError);
+    await expect(run).rejects.toThrow(message);
+    expect(queries.map((query) => query.sql)).toEqual([CURRENT_SCHEMA]);
+    expect(log).not.toHaveBeenCalled();
+  });
+});
+
 describe("migrationStatus order", () => {
   it("lists pending migrations by name, whatever order the list gives them in", async () => {
     const { db } = database();
@@ -194,11 +219,12 @@ const grants = (queries: ReadonlyArray<{ sql: string }>) =>
 describe("granting the app role", () => {
   const EXPECTED_GRANTS = [
     'grant usage on schema "app" to "app_runtime"',
-    'grant select, insert, update, delete on all tables in schema "app" to "app_runtime"',
+    'grant select, insert, update, delete on "app"."gadget", "app"."widget" to "app_runtime"',
+    'grant select on "app"."kysely_migration", "app"."kysely_migration_lock" to "app_runtime"',
+    'revoke insert, update, delete, truncate on "app"."kysely_migration", "app"."kysely_migration_lock" from "app_runtime"',
     'grant usage on all sequences in schema "app" to "app_runtime"',
     'alter default privileges in schema "app" grant select, insert, update, delete on tables to "app_runtime"',
     'alter default privileges in schema "app" grant usage on sequences to "app_runtime"',
-    'revoke insert, update, delete on "app"."kysely_migration", "app"."kysely_migration_lock" from "app_runtime"',
   ];
 
   it("grants what the server needs after the migrations, inside the lock", async () => {
@@ -218,6 +244,18 @@ describe("granting the app role", () => {
 
     expect(await migrateUp({ db, schema: "app", migrations, appRole: "app_runtime" })).toEqual([]);
     expect(grants(queries)).toEqual(EXPECTED_GRANTS);
+  });
+
+  it("lists the schema's tables but the migrator's, and grants writing on no table when there is none", async () => {
+    const { db, queries } = scriptedDb<unknown>((query) =>
+      query.sql === CURRENT_SCHEMA ? [{ schema: "app" }] : [],
+    );
+
+    await migrateUp({ db, schema: "app", migrations: {}, appRole: "app_runtime" });
+
+    const listing = queries.find((query) => query.sql.includes("from pg_catalog.pg_class"));
+    expect(listing?.parameters).toEqual(["app", "kysely_migration", "kysely_migration_lock"]);
+    expect(grants(queries)).toEqual(EXPECTED_GRANTS.filter((text) => !text.includes('"gadget"')));
   });
 
   it("grants nothing without an app role", async () => {
@@ -267,19 +305,28 @@ describe("granting the app role", () => {
 });
 
 describe("pendingMigrations", () => {
-  it("is every migration when the migrator's table is not on the search path", async () => {
-    const { db, queries } = scriptedDb<unknown>(() => [{ present: false }]);
+  const LOCATE = "select current_schema() as schema,";
+
+  it("is every migration when the migrator's table is not in the current schema", async () => {
+    const { db, queries } = scriptedDb<unknown>(() => [{ schema: "app", present: false }]);
 
     expect(await pendingMigrations(db, migrations)).toEqual(["001_widget", "002_gadget"]);
-    expect(queries.map((query) => query.sql)).toEqual([
-      "select to_regclass('kysely_migration') is not null as present",
-    ]);
+    expect(queries).toHaveLength(1);
+    expect(queries[0]?.sql.trim()).toMatch(
+      /^select current_schema\(\) as schema,\s+to_regclass\(quote_ident\(current_schema\(\)\) \|\| '\.' \|\| 'kysely_migration'\) is not null as present$/,
+    );
+  });
+
+  it("is every migration when the query answers nothing", async () => {
+    const { db } = scriptedDb<unknown>(() => []);
+
+    expect(await pendingMigrations(db, migrations)).toEqual(["001_widget", "002_gadget"]);
   });
 
   it("is the migrations not applied yet, in name order, ignoring ones this build does not know", async () => {
-    const { db } = scriptedDb<unknown>((query) =>
-      query.sql.startsWith("select to_regclass")
-        ? [{ present: true }]
+    const { db, queries } = scriptedDb<unknown>((query) =>
+      query.sql.trim().startsWith(LOCATE)
+        ? [{ schema: "app", present: true }]
         : [{ name: "001_widget" }, { name: "009_from_the_future" }],
     );
 
@@ -288,12 +335,13 @@ describe("pendingMigrations", () => {
       "002_gadget",
       "003_gizmo",
     ]);
+    expect(queries[1]?.sql).toBe('select name from "app"."kysely_migration"');
   });
 
   it("is empty when every migration has been applied", async () => {
     const { db } = scriptedDb<unknown>((query) =>
-      query.sql.startsWith("select to_regclass")
-        ? [{ present: true }]
+      query.sql.trim().startsWith(LOCATE)
+        ? [{ schema: "app", present: true }]
         : [{ name: "001_widget" }, { name: "002_gadget" }],
     );
 

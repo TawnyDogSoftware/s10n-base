@@ -10,7 +10,7 @@ import type { Kysely } from "kysely";
 import type { Migration } from "kysely/migration";
 
 import type { MigrationConfig } from "./config";
-import { openCliDatabase, readMigrationConfig } from "./database-cli";
+import { closeCliDatabase, openCliDatabase, readMigrationConfig } from "./database-cli";
 import { pingDatabase, waitForDatabase } from "./infra/postgres/connect";
 import { migrations as committedMigrations } from "./infra/postgres/migrations";
 import {
@@ -42,10 +42,13 @@ async function runWithDatabase(
   options: MigrateCliOptions,
 ): Promise<number> {
   const schema = options.schema ?? "public";
-  const db = options.db ?? (openCliDatabase(config, logger, options.schema) as Kysely<unknown>);
+  let db: Kysely<unknown> | undefined;
   try {
+    const opened =
+      options.db ?? (openCliDatabase(config, logger, options.schema) as Kysely<unknown>);
+    db = opened;
     await Effect.runPromise(
-      waitForDatabase(() => pingDatabase(db), {
+      waitForDatabase(() => pingDatabase(opened), {
         ...(options.schedule ? { schedule: options.schedule } : {}),
         onAttemptFailed: (error) => {
           logger.warn("database_unavailable", { error });
@@ -53,7 +56,7 @@ async function runWithDatabase(
       }),
     );
     await runMigrationCommand(command, {
-      db,
+      db: opened,
       nodeEnv: config.nodeEnv,
       schema,
       migrations: options.migrations ?? committedMigrations,
@@ -65,7 +68,7 @@ async function runWithDatabase(
     logger.error("migrate_failed", { command, error });
     return 1;
   } finally {
-    await db.destroy();
+    if (db !== undefined) await closeCliDatabase(db, logger);
   }
 }
 

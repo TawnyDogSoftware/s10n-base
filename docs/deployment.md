@@ -29,7 +29,7 @@ The web app is built into the image and served by the server from `APP_URL`, its
 - What it holds: the bundled server (`apps/server/dist`), the built web app (`apps/web/dist`) and only the packages the server needs at run time, in `node_modules` (`scripts/container/runtime-dependencies.ts` picks them). No sources, tests, `.env` files, development tools, mobile app or docs, and no package manager.
 - It runs as the unprivileged `node` user (uid 1000), with `NODE_ENV=production`, `HOST=0.0.0.0` and `PORT=4210`, and writes nothing to its filesystem, so it runs with a read-only root filesystem. No shell is needed to start it.
 - `STOPSIGNAL` is `SIGTERM`, and its `HEALTHCHECK` asks `/health` with Node every 10 seconds.
-- Logs are JSON lines on stdout. Nothing is written anywhere else.
+- Logs are JSON lines on stdout. Nothing is written anywhere else. Each request gets one access line (`"message":"request"`) at `info`, so a `LOG_LEVEL` of `warn` or `error` leaves the access lines out.
 
 ## Environment
 
@@ -112,7 +112,7 @@ From Postgres 15 on, the `public` schema of a new database belongs to the databa
 
 Then:
 
-- `migrate` runs with `MIGRATION_DATABASE_URL` set to `app_owner`'s URL and `DATABASE_APP_ROLE=app_runtime`. After applying migrations, every `up` grants `app_runtime` what the server needs: use of the schema, reading and writing rows in its tables, use of its sequences, and the same on tables later migrations create (through default privileges). The migrator's own tables are read-only to it.
+- `migrate` runs with `MIGRATION_DATABASE_URL` set to `app_owner`'s URL and `DATABASE_APP_ROLE=app_runtime`. After applying migrations, every `up` grants `app_runtime` what the server needs: use of the schema, reading and writing rows in its tables, use of its sequences, and the same on tables later migrations create (through default privileges). The migrator's own tables are read-only to it. The grants run in one transaction, so a failure part way grants nothing, and the next `up` grants again.
 - The server runs with `DATABASE_URL` set to `app_runtime`'s URL. It can read and write rows; it cannot create, alter, drop or truncate a table (`apps/server/src/infra/postgres/app-role.live.test.ts` shows each).
 
 With neither variable set, `migrate` and the server share `DATABASE_URL`'s role, as local development does.
@@ -127,7 +127,8 @@ docker run --rm -e NODE_ENV=production -e MIGRATION_DATABASE_URL=... -e DATABASE
 
 - It is safe to run more than once, and from more than one place at a time: runs take turns on a Postgres advisory lock, and each migration is applied once. All pending migrations apply in one transaction, so a failure leaves none of them applied.
 - `migrate status` lists applied, pending and unknown migrations without changing anything.
-- The server never migrates. It checks at startup that every migration in its build has been applied, and refuses to start otherwise, naming what is missing (`MigrationsPendingError`, exit code 1). Migrations the database has and the build does not know are allowed, so the previous version keeps running while a rollout or a rollback is under way.
+- Everything lives in the `public` schema. `migrate` refuses to run when its connection's search path would create tables in another schema (`SchemaMismatchError`), and the server reads which migrations are applied in the first schema of its own search path, so a role whose search path starts elsewhere is refused at startup rather than served from tables that were never migrated.
+- The server never migrates. It checks at startup that every migration in its build has been applied, and refuses to start otherwise, naming what is missing and the command that applies it (`MigrationsPendingError`, exit code 1). Migrations the database has and the build does not know are allowed, so the previous version keeps running while a rollout or a rollback is under way.
 - The previous version keeps serving while the new one starts, against the migrated schema. Write migrations it can live with: add a column before the code that needs it, and drop one only after no running version reads it.
 
 ## Health and lifecycle
@@ -135,7 +136,7 @@ docker run --rm -e NODE_ENV=production -e MIGRATION_DATABASE_URL=... -e DATABASE
 - `GET /health` is liveness: 200 while the process is serving. It does not touch the database.
 - `GET /ready` is readiness: 200 when the database answers `select 1` within two seconds, 503 while it does not or once shutdown has started. Send traffic only to a ready instance.
 - On `SIGTERM` (or `SIGINT`) the server stops accepting connections, lets requests in flight finish for up to `SHUTDOWN_TIMEOUT_MS`, cuts off what is left, then closes the database pool, which may take up to `SHUTDOWN_TIMEOUT_MS` again. Set the platform's termination grace period above twice `SHUTDOWN_TIMEOUT_MS` plus a few seconds: 25 seconds for the default of 10.
-- Exit codes. The server: 0 after a clean stop; 1 after a forced stop, a failed stop, or a failed start (invalid configuration, no database, a pending migration). `migrate`: 0, or 1 for any failure. `set-role`: 0, 1 for an unknown user, 2 for bad arguments.
+- Exit codes. The server: 0 after a clean stop; 1 after a forced stop, a failed stop, or a failed start (invalid configuration, no database, a pending migration). `migrate`: 0, or 1 for any failure. `set-role`: 0, 1 for an unknown user, an address several users have in different case, or any other failure, 2 for bad arguments.
 
 ## Behind a proxy
 
@@ -143,12 +144,14 @@ The server speaks plain HTTP on `PORT`. TLS ends at a proxy or load balancer in 
 
 - `APP_URL` is the public `https` origin users see, such as `https://app.example.com`. Production refuses anything else. Email links, CORS, Better Auth's origin checks and the passkey relying party are all derived from it.
 - Cookies are `Secure` and responses carry `Strict-Transport-Security` because `APP_URL` is `https`.
-- `TRUSTED_PROXY_HOPS` must equal the number of proxies in front of the server that append to `X-Forwarded-For`. The client's address is the entry that many places from the right. Too low, and every user appears to come from the proxy, so one user's failed sign-ins rate-limit everyone. Too high, and a client can choose its own address by sending the header, and escape the rate limits. Request logs show the address the server used (`clientIp`); check it once after deploying.
+- `TRUSTED_PROXY_HOPS` must equal the number of proxies in front of the server that append to `X-Forwarded-For`. The client's address is the entry that many places from the right. Too low, and every user appears to come from the proxy, so one user's failed sign-ins rate-limit everyone. Too high, and a client can choose its own address by sending the header, and escape the rate limits. Request logs show the address the server used (`clientIp`); check it once after deploying. Entries further left were written by the client and are never read.
+- The server must be reachable only through those proxies. A hop count cannot prove that the last hop is a proxy: a client that reaches the server directly can write the entries the server trusts.
 - The proxy must allow request bodies up to `REQUEST_BODY_LIMIT_BYTES`; the server answers 413 above it.
+- Email links carry their token in the query string (`/verify-email?token=…`, `/reset-password?token=…`, and the API call the page then makes), so a proxy or load balancer that logs full URLs logs working tokens for up to an hour. Log paths without query strings, or redact `token`. The server's own access line logs the path only, and those two pages are served with `Referrer-Policy: no-referrer` so the token is not sent on in a `Referer` header.
 
 ## More than one instance
 
-Any number of instances can run side by side. Sessions and rate-limit counters are kept in Postgres, and nothing is held in memory between requests or written to local disk, so any instance can answer any request. Each instance opens up to `DATABASE_POOL_MAX` connections: keep instances × pool size below the database's connection limit, leaving room for `migrate`.
+Any number of instances can run side by side. Sessions and rate-limit counters are kept in Postgres, and nothing is held in memory between requests or written to local disk, so any instance can answer any request. Each instance opens up to `DATABASE_POOL_MAX` connections: keep instances × pool size below the database's connection limit, leaving room for `migrate`. Keep the instances' clocks synchronised (NTP, as any host provides): each instance judges session and ban expiry by its own clock, so instances whose clocks disagree disagree about whether a session has ended.
 
 What a project must keep true as it adds features: no state in memory that another instance would need (use Postgres), no files on local disk (use object storage), and no background work in the request process (the worker recipe in plan 000 is the way to add it).
 

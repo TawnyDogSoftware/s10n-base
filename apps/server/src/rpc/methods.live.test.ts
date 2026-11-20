@@ -129,15 +129,21 @@ describe("admin.listUsers", () => {
     }
   });
 
-  it.each(["not-a-cursor", Buffer.from('{"at":"x","id":"y"}').toString("base64url")])(
-    "refuses the cursor %s with 400",
-    async (cursor) => {
-      const result = await call(admin, "admin.listUsers", { limit: 5, cursor });
+  it.each([
+    "not-a-cursor",
+    Buffer.from('{"at":"x","id":"y"}').toString("base64url"),
+    Buffer.from(
+      JSON.stringify({
+        at: "0000-01-01T00:00:00.000000Z",
+        id: "6f1c2b9e-0000-4000-8000-000000000001",
+      }),
+    ).toString("base64url"),
+  ])("refuses the cursor %s with 400", async (cursor) => {
+    const result = await call(admin, "admin.listUsers", { limit: 5, cursor });
 
-      expect(result.status).toBe(400);
-      expect(result.body).toMatchObject({ error: { code: ERROR_CODES.invalidCursor } });
-    },
-  );
+    expect(result.status).toBe(400);
+    expect(result.body).toMatchObject({ error: { code: ERROR_CODES.invalidCursor } });
+  });
 
   it("pages through every user newest first, with no user repeated or skipped when times are equal", async () => {
     // Twelve users created in one statement share one created_at, so only the id orders them.
@@ -172,6 +178,27 @@ describe("admin.listUsers", () => {
     expect(seen).toEqual(expected.map((row) => row.id));
     expect(new Set(seen).size).toBe(seen.length);
     expect(pages).toBe(Math.ceil(expected.length / 5));
+  });
+
+  it("shows a temporary ban that has ended as not banned", async () => {
+    await sql`
+      insert into ba_user (name, email, email_verified, role, banned, ban_expires, created_at, updated_at)
+      values
+        ('Ban forever', 'ban-forever@example.com', true, 'user', true, null, timestamptz '2019-01-01 00:00:03+00', now()),
+        ('Ban ended', 'ban-ended@example.com', true, 'user', true, now() - interval '1 hour', timestamptz '2019-01-01 00:00:02+00', now()),
+        ('Ban ongoing', 'ban-ongoing@example.com', true, 'user', true, now() + interval '1 hour', timestamptz '2019-01-01 00:00:01+00', now())
+    `.execute(app.schema.db);
+
+    const result = await call(admin, "admin.listUsers", { limit: 100 });
+    const users = (result.body as { data: { users: Array<{ email: string; banned: boolean }> } })
+      .data.users;
+    const banned = (email: string) => users.find((user) => user.email === email)?.banned;
+
+    expect([
+      banned("ban-forever@example.com"),
+      banned("ban-ended@example.com"),
+      banned("ban-ongoing@example.com"),
+    ]).toEqual([true, false, true]);
   });
 
   it("returns each user's fields", async () => {

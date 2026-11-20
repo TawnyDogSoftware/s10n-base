@@ -18,8 +18,9 @@ const noop = () => {};
 
 /** The rows the fake database answers a query with: every committed migration is applied. */
 function rowsFor(text: string, applied: readonly string[]): ReadonlyArray<Record<string, unknown>> {
-  if (text.startsWith("select to_regclass")) return [{ present: true }];
-  if (text.startsWith('select name from "kysely_migration"'))
+  if (text.trim().startsWith("select current_schema()"))
+    return [{ schema: "public", present: true }];
+  if (text.startsWith('select name from "public"."kysely_migration"'))
     return applied.map((name) => ({ name }));
   return [{ "?column?": 1 }];
 }
@@ -271,7 +272,7 @@ describe("startServer", () => {
       pending: ["001_auth"],
     });
     await expect(failure).rejects.toThrow(
-      "The database has not applied 001_auth, which this build needs. Run `migrate up` before starting it.",
+      "The database has not applied 001_auth, which this build needs. Apply the pending migrations before starting the server: `bun run db:migrate` in a checkout, or `node apps/server/dist/migrate.mjs up` from a build or the image.",
     );
     expect(events).toEqual(["pool:end"]);
   });

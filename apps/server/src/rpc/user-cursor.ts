@@ -19,9 +19,13 @@ export function encodeUserCursor(cursor: UserCursor): string {
   return Buffer.from(JSON.stringify({ at: cursor.createdAt, id: cursor.id })).toString("base64url");
 }
 
+/**
+ * Whether `value` is a real instant Postgres can compare with: a calendar date and time in years
+ * 1 to 9999. JavaScript accepts year 0, which Postgres's calendar does not have.
+ */
 function isRealTime(value: string): boolean {
   const parts = TIME.exec(value);
-  if (parts === null) return false;
+  if (parts === null || parts[1] === "0000") return false;
   const date = new Date(`${value.slice(0, 19)}Z`);
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 19) === value.slice(0, 19);
 }
@@ -39,7 +43,11 @@ function readCursorObject(cursor: string): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-/** The position in a cursor this server issued, or `null` when it is not one. */
+/**
+ * The position a cursor holds, or `null` when it is not a well-formed position. The shape is all
+ * that is checked: a cursor is not signed, so one the server did not issue is accepted when it
+ * is well formed, and only says where the next page starts.
+ */
 export function decodeUserCursor(cursor: string): UserCursor | null {
   const record = readCursorObject(cursor);
   if (record === null || Object.keys(record).length !== 2) return null;

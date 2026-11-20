@@ -371,6 +371,25 @@ describe("failures it cannot place", () => {
     });
   });
 
+  it.each(["null", "42", '"text"', "[]"])(
+    "reports a 200 whose JSON body %s is not an object as having no message id",
+    async (body) => {
+      const { ses } = client(() => new Response(body, { status: 200 }));
+
+      expect(await failure(ses.sendEmail(email))).toMatchObject({
+        kind: "unavailable",
+        status: 200,
+        reason: "no_message_id",
+      });
+    },
+  );
+
+  it("classifies an error whose JSON body is null by its status alone", async () => {
+    const { ses } = client(() => new Response("null", { status: 400 }));
+
+    expect(await failure(ses.sendEmail(email))).toMatchObject({ kind: "rejected", status: 400 });
+  });
+
   it("calls MessageRejected without a message a rejection", async () => {
     const { ses } = client(
       () =>

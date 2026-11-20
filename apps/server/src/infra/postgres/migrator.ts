@@ -46,7 +46,7 @@ export class MigrationsPendingError extends Data.TaggedError("MigrationsPendingE
   readonly pending: ReadonlyArray<string>;
 }> {
   override get message(): string {
-    return `The database has not applied ${this.pending.join(", ")}, which this build needs. Run \`migrate up\` before starting it.`;
+    return `The database has not applied ${this.pending.join(", ")}, which this build needs. Apply the pending migrations before starting the server: \`bun run db:migrate\` in a checkout, or \`node apps/server/dist/migrate.mjs up\` from a build or the image.`;
   }
 }
 
@@ -62,6 +62,31 @@ export class MigrationCheckError extends Data.TaggedError("MigrationCheckError")
 /** A migration (or the run around it) failed. `cause` is the error it threw. */
 export class MigrationFailedError extends Error {
   override readonly name = "MigrationFailedError";
+}
+
+/**
+ * The connection would create tables in a schema other than the one the command targets: the
+ * migrations' unqualified names resolve through the search path, while the migrator's own
+ * tables and lock are in the target schema.
+ */
+export class SchemaMismatchError extends Error {
+  override readonly name = "SchemaMismatchError";
+}
+
+/**
+ * @throws {SchemaMismatchError} unless the first schema of `db`'s search path, where its
+ * unqualified names create tables, is `schema`.
+ */
+async function assertConnectionSchema(db: Kysely<unknown>, schema: string): Promise<void> {
+  const result = await sql<{ schema: string | null }>`select current_schema() as schema`.execute(
+    db,
+  );
+  const actual = result.rows[0]?.schema ?? null;
+  if (actual === schema) return;
+  const where = actual === null ? "no schema" : `schema "${actual}"`;
+  throw new SchemaMismatchError(
+    `The connection's search path creates tables in ${where}, not in "${schema}". Make "${schema}" the first schema of the search path.`,
+  );
 }
 
 /** Parses the `migrate` command line. No argument means `up`. */
@@ -133,8 +158,10 @@ export async function withMigrationLock<T>(
  * its tables and to use its sequences, and the same on tables and sequences that later
  * migrations create (default privileges belong to the role running this, the one that migrates).
  * Nothing that changes the schema. The migrator's own tables are read-only to it: the server
- * reads them at startup to refuse a database that misses a migration. Every statement is
- * idempotent, so it runs after every `up`.
+ * reads them at startup to refuse a database that misses a migration, so the grant to write
+ * names every other table rather than granting on all of them and revoking. Every statement runs
+ * in one transaction, so a failure part way grants nothing, and each is idempotent, so it runs
+ * after every `up`.
  */
 async function grantAppRole(
   connection: Kysely<unknown>,
@@ -143,15 +170,33 @@ async function grantAppRole(
 ): Promise<void> {
   const inSchema = sql.id(schema);
   const to = sql.id(role);
-  const statements = [
-    sql`grant usage on schema ${inSchema} to ${to}`,
-    sql`grant select, insert, update, delete on all tables in schema ${inSchema} to ${to}`,
-    sql`grant usage on all sequences in schema ${inSchema} to ${to}`,
-    sql`alter default privileges in schema ${inSchema} grant select, insert, update, delete on tables to ${to}`,
-    sql`alter default privileges in schema ${inSchema} grant usage on sequences to ${to}`,
-    sql`revoke insert, update, delete on ${sql.id(schema, MIGRATION_TABLE)}, ${sql.id(schema, MIGRATION_LOCK_TABLE)} from ${to}`,
-  ];
-  for (const statement of statements) await statement.execute(connection);
+  const bookkeeping = sql.join([
+    sql.id(schema, MIGRATION_TABLE),
+    sql.id(schema, MIGRATION_LOCK_TABLE),
+  ]);
+  await connection.transaction().execute(async (trx) => {
+    // What `all tables in schema` covers: tables, views, materialized views and foreign tables.
+    const tables = await sql<{ name: string }>`
+      select c.relname as name
+      from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = ${schema} and c.relkind in ('r', 'p', 'v', 'm', 'f')
+        and c.relname not in (${MIGRATION_TABLE}, ${MIGRATION_LOCK_TABLE})
+      order by c.relname`.execute(trx);
+    const names = tables.rows.map((row) => sql.id(schema, row.name));
+    const statements = [
+      sql`grant usage on schema ${inSchema} to ${to}`,
+      ...(names.length === 0
+        ? []
+        : [sql`grant select, insert, update, delete on ${sql.join(names)} to ${to}`]),
+      sql`grant select on ${bookkeeping} to ${to}`,
+      // Removes write access a default privilege or an earlier version of this grant gave.
+      sql`revoke insert, update, delete, truncate on ${bookkeeping} from ${to}`,
+      sql`grant usage on all sequences in schema ${inSchema} to ${to}`,
+      sql`alter default privileges in schema ${inSchema} grant select, insert, update, delete on tables to ${to}`,
+      sql`alter default privileges in schema ${inSchema} grant usage on sequences to ${to}`,
+    ];
+    for (const statement of statements) await statement.execute(trx);
+  });
 }
 
 /** Applies every pending migration, then grants the app role. Returns the names applied. */
@@ -220,8 +265,10 @@ export async function migrationStatus(target: MigrationTarget): Promise<Migratio
 
 /**
  * The migrations in `migrations` that the database has not applied, in the order they would run.
- * Reads the migrator's table through the search path, as the server sees the database, and never
- * creates it. Migrations the database has that this build does not know are not counted: an
+ * Reads the migrator's table in the connection's current schema (the first schema of its search
+ * path, where the server's unqualified names resolve), as the server sees the database, and never
+ * creates it. A migrator's table further along the search path describes another schema, so it
+ * is not read. Migrations the database has that this build does not know are not counted: an
  * older build may run against a newer database while a release rolls back.
  */
 export async function pendingMigrations(
@@ -229,11 +276,17 @@ export async function pendingMigrations(
   migrations: Readonly<Record<string, Migration>>,
 ): Promise<ReadonlyArray<string>> {
   const expected = Object.keys(migrations).toSorted(compareCodeUnits);
-  const table = await sql<{
-    present: boolean;
-  }>`select to_regclass(${sql.lit(MIGRATION_TABLE)}) is not null as present`.execute(db);
-  if (table.rows[0]?.present !== true) return expected;
-  const rows = await sql<{ name: string }>`select name from ${sql.id(MIGRATION_TABLE)}`.execute(db);
+  // `schema` is null only when no schema of the search path exists, and then `present` is false.
+  const located = await sql<{ schema: string; present: boolean }>`
+    select current_schema() as schema,
+      to_regclass(quote_ident(current_schema()) || '.' || ${sql.lit(MIGRATION_TABLE)}) is not null as present`.execute(
+    db,
+  );
+  const table = located.rows[0];
+  if (table?.present !== true) return expected;
+  const rows = await sql<{
+    name: string;
+  }>`select name from ${sql.id(table.schema, MIGRATION_TABLE)}`.execute(db);
   const applied = new Set(rows.rows.map((row) => row.name));
   return expected.filter((name) => !applied.has(name));
 }
@@ -262,6 +315,8 @@ function grantedTo(role: string | undefined): { grantedTo?: string } {
  * `down` reverts the latest migration, and `reset` drops the schema and migrates it again.
  *
  * @throws {Error} for `down` or `reset` when `nodeEnv` is production, before touching the database.
+ * @throws {SchemaMismatchError} when the connection would create tables outside `schema`, before
+ * changing anything.
  * @throws {MigrationFailedError} when a migration fails.
  */
 export async function runMigrationCommand(
@@ -269,6 +324,7 @@ export async function runMigrationCommand(
   options: MigrationCommandOptions,
 ): Promise<void> {
   assertCommandAllowed(command, options.nodeEnv);
+  await assertConnectionSchema(options.db, options.schema);
   switch (command) {
     case "up":
       options.log("migrations_applied", {

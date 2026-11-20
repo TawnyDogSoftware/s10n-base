@@ -61,3 +61,18 @@ export function openCliDatabase(
     }),
   );
 }
+
+/**
+ * Closes a database the command opened. A failure to close is logged and not thrown, so it never
+ * replaces the command's own result or error.
+ */
+export async function closeCliDatabase(
+  db: { readonly destroy: () => Promise<void> },
+  logger: Logger,
+): Promise<void> {
+  try {
+    await db.destroy();
+  } catch (error) {
+    logger.warn("database_close_failed", { error });
+  }
+}

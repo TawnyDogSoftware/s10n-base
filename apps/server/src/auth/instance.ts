@@ -146,7 +146,10 @@ export function createAppAuth(options: AuthOptions, now: () => Date = () => new 
     handler: (request) => auth.handler(request),
     guard,
     routes,
-    getSession: async (headers) => signedInOf(await auth.api.getSession({ headers }), now()),
+    // Read-only: the caller of an RPC gets no cookie back, so renewing here would extend the
+    // session in the database while the client keeps the old cookie. The session route renews.
+    getSession: async (headers) =>
+      signedInOf(await auth.api.getSession({ headers, query: { disableRefresh: true } }), now()),
     readSession: async (headers) => {
       const result = await auth.api.getSession({ headers, returnHeaders: true });
       return readSessionOf(result.response, result.headers.getSetCookie(), now());

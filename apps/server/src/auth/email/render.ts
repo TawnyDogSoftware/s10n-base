@@ -4,7 +4,8 @@ const t = createTranslator("email");
 
 /**
  * How long a verification or password reset link works, in seconds. Better Auth is given this
- * expiry, and the email text says "one hour".
+ * expiry. The emails and the screens state it in words ("one hour"); `render.test.ts` fails when
+ * any catalog string states another lifetime than this one.
  */
 export const AUTH_EMAIL_LINK_SECONDS = 60 * 60;
 

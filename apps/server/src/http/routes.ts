@@ -1,7 +1,8 @@
 /**
  * The request handler: a thin router over the modules in this directory. Every response carries
- * an `X-Request-Id` and the security headers, every request gets one access-log line, and an
- * unexpected error is logged with its stack and answered with a fixed 500 body.
+ * an `X-Request-Id` and the security headers, every request gets one access-log line (at `info`,
+ * so a `LOG_LEVEL` of `warn` or `error` leaves it out), and an unexpected error is logged with its
+ * stack and answered with a fixed 500 body.
  */
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -11,6 +12,7 @@ import { Schema } from "effect";
 import { BootstrapConfig, ERROR_CODES, RpcRequest } from "@s10n-base/contracts";
 
 import type { AppAuth } from "../auth/instance";
+import { TOKEN_PAGES } from "../auth/options";
 import type { ServerConfig } from "../config";
 import type { Logger } from "../observability/logger";
 import type { RpcDispatcher } from "../rpc/dispatcher";
@@ -152,6 +154,8 @@ async function serveWebApp(state: RequestState, context: HttpContext): Promise<b
       : null);
   if (file === null) return false;
   if (file.isHtml) response.setHeader("Content-Security-Policy", HTML_CONTENT_SECURITY_POLICY);
+  // The page's URL carries an email link's token: no request it makes names it in a Referer.
+  if (TOKEN_PAGES.has(url.pathname)) response.setHeader("Referrer-Policy", "no-referrer");
   await sendStaticFile(request.method, response, file);
   return true;
 }

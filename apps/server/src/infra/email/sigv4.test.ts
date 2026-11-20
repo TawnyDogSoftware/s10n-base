@@ -315,6 +315,25 @@ describe("verifySignature", () => {
     });
   });
 
+  it.each(["20261119T116000Z", "20261119T240000Z", "20261119T115960Z"])(
+    "rejects a correctly signed request whose X-Amz-Date %s is not a real time",
+    (amzDate) => {
+      const headers: SignableRequest["headers"] = [...request.headers, ["x-amz-date", amzDate]];
+      const { signature } = computeSignature(
+        { ...request, headers },
+        { credentials, region: "us-east-1", service: "ses", amzDate },
+      );
+      const authorization = `AWS4-HMAC-SHA256 Credential=local/20261119/us-east-1/ses/aws4_request, SignedHeaders=content-type;host;x-amz-date, Signature=${signature}`;
+
+      expect(
+        verifySignature(
+          { ...request, headers: [...headers, ["authorization", authorization]] },
+          { credentials, now },
+        ),
+      ).toEqual({ ok: false, reason: "malformed_authorization" });
+    },
+  );
+
   it("matches computeSignature for the same signed headers", () => {
     const signed = signedRequest();
     const header = signed.headers.find(([name]) => name === "authorization")?.[1] ?? "";

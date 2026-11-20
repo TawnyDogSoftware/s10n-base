@@ -6,9 +6,12 @@
 import { expo } from "@better-auth/expo";
 import { passkey } from "@better-auth/passkey";
 import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth";
+import { APIError } from "better-auth/api";
 import { admin } from "better-auth/plugins";
+import { Option, Schema } from "effect";
 import type { Kysely } from "kysely";
 
+import { ProfileName } from "@s10n-base/contracts";
 import { appVariants, type AppVariant } from "@s10n-base/shared/app-variants";
 import { AUTH_COOKIE_PREFIX } from "@s10n-base/shared/auth";
 
@@ -43,6 +46,9 @@ const DISABLED_AUTH_PATHS: readonly string[] = ["/admin/remove-user"];
 /** The web app's pages that email links open. They read `token` and call Better Auth. */
 const VERIFY_EMAIL_PAGE = "/verify-email";
 const RESET_PASSWORD_PAGE = "/reset-password";
+
+/** The web pages whose URL carries a token from an email link. */
+export const TOKEN_PAGES: ReadonlySet<string> = new Set([VERIFY_EMAIL_PAGE, RESET_PASSWORD_PAGE]);
 
 /**
  * A link to one of the web app's pages under `APP_URL`, carrying the token. The page calls Better
@@ -157,6 +163,24 @@ function routeLogs(logger: Logger, level: LogLevel): NonNullable<BetterAuthOptio
   };
 }
 
+const decodeName = Schema.decodeUnknownOption(ProfileName);
+
+/**
+ * The user data with its name, when it has one, held to the contract's `ProfileName` rule and
+ * trimmed, so sign-up, Better Auth's `update-user` and the app's own `profile.update` store names
+ * by one rule.
+ *
+ * @throws {APIError} 400 when the name breaks the rule; nothing is written.
+ */
+export function checkUserName<T extends Record<string, unknown>>(data: T): { data: T } {
+  if (!("name" in data)) return { data };
+  const name = decodeName(data.name);
+  if (Option.isNone(name)) {
+    throw new APIError("BAD_REQUEST", { message: "The name is not valid.", code: "INVALID_NAME" });
+  }
+  return { data: { ...data, name: name.value } };
+}
+
 type Options = BetterAuthOptions;
 type EmailAndPassword = NonNullable<Options["emailAndPassword"]>;
 type EmailVerification = NonNullable<Options["emailVerification"]>;
@@ -213,6 +237,7 @@ export type AuthOptions = Options & {
     readonly disableOriginCheck: false;
     readonly disableCSRFCheck: false;
   };
+  readonly databaseHooks: NonNullable<Options["databaseHooks"]>;
   readonly plugins: BetterAuthPlugin[];
 };
 
@@ -286,6 +311,12 @@ export function buildAuthOptions(
       // server's protection never depends on NODE_ENV, and the live tests exercise them.
       disableOriginCheck: false,
       disableCSRFCheck: false,
+    },
+    databaseHooks: {
+      user: {
+        create: { before: (user) => Promise.resolve(checkUserName(user)) },
+        update: { before: (user) => Promise.resolve(checkUserName(user)) },
+      },
     },
     plugins: [
       expo(),

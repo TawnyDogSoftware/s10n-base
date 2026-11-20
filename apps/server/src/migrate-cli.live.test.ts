@@ -1,6 +1,8 @@
+import type { Kysely } from "kysely";
 import type { Migration } from "kysely/migration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { createDb, createPool } from "./infra/postgres/pool";
 import { runMigrateCli } from "./migrate-cli";
 import { createFixtureSchema, type FixtureSchema } from "./test/live-database";
 
@@ -64,5 +66,41 @@ describe("migrate entry point against Postgres", () => {
       applied: ["001_create_widget"],
       pending: [],
     });
+  });
+
+  it("refuses to run when the connection puts new tables in another schema, and creates nothing", async () => {
+    // The connection's search path names one schema and the command targets another: the
+    // migrations would create their tables in the first and record them in the second.
+    const other = await createFixtureSchema();
+    try {
+      const lines: string[] = [];
+      const code = await runMigrateCli({
+        args: ["up"],
+        env: { DATABASE_URL: fixture.url },
+        write: (line) => {
+          lines.push(line);
+        },
+        migrations,
+        schema: fixture.schema,
+        db: createDb(
+          createPool({
+            connectionString: other.url,
+            max: 1,
+            searchPath: other.schema,
+            onIdleError: () => {},
+          }),
+        ) as Kysely<unknown>,
+      });
+
+      expect(code).toBe(1);
+      expect(lines.join("")).toContain("SchemaMismatchError");
+      const created = await fixture.admin.query(
+        "select table_schema, table_name from information_schema.tables where table_schema = any($1)",
+        [[fixture.schema, other.schema]],
+      );
+      expect(created.rows).toEqual([]);
+    } finally {
+      await other.drop();
+    }
   });
 });

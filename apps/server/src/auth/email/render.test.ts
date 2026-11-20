@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { resources } from "@s10n-base/i18n";
+
 import { AUTH_EMAIL_LINK_SECONDS, renderAuthEmail } from "./render";
 
 const supportEmail = "support@example.com";
@@ -49,5 +51,27 @@ describe("renderAuthEmail", () => {
     "not a url",
   ])("refuses to render a link that is not http or https: %s", (url) => {
     expect(() => renderAuthEmail("resetPassword", url, { supportEmail })).toThrow(/http or https/);
+  });
+});
+
+/** Every string in a catalog, however deeply nested. */
+function strings(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (typeof value !== "object" || value === null) return [];
+  return Object.values(value).flatMap(strings);
+}
+
+describe("the link lifetime the copy states", () => {
+  // The words for each lifetime the copy may state. Change AUTH_EMAIL_LINK_SECONDS and this test
+  // fails until the emails and the screens that mention the lifetime say the new one.
+  const PHRASES: Readonly<Record<number, string>> = { 3600: "one hour" };
+
+  it("is the lifetime Better Auth is given, in every string that states one", () => {
+    const stated = Object.values(resources)
+      .flatMap(strings)
+      .flatMap((text) => [...text.matchAll(/works for ([^.]+)\./g)].map((match) => match[1]));
+
+    expect(stated.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(stated)).toEqual(new Set([PHRASES[AUTH_EMAIL_LINK_SECONDS]]));
   });
 });

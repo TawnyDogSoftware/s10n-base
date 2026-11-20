@@ -13,6 +13,8 @@ export interface RpcHandlerDependencies {
   readonly auth: Pick<AppAuth, "updateUserName">;
   /** For handlers that write on the caller's session's authority (`session-transaction.ts`). */
   readonly sessionTransaction: SessionTransaction;
+  /** The clock handlers judge expiry by; the system clock when absent. */
+  readonly now?: (() => Date) | undefined;
 }
 
 /**

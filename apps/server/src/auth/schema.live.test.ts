@@ -56,6 +56,35 @@ describe("the auth migration against Better Auth's schema", () => {
     expect(authSchemaDifferences(expectedAuthTables(options()), actual)).toEqual([]);
   });
 
+  it("does not count an index left invalid or a foreign key not yet validated", async () => {
+    const broken = await createMigratedSchema();
+    const { admin, schema: name } = broken.fixture;
+    try {
+      // A unique index whose concurrent build failed on duplicates is left invalid: it enforces
+      // nothing. A foreign key added NOT VALID is not checked against the rows already there.
+      await admin.query(`alter table "${name}".ba_user drop constraint ba_user_email_key`);
+      await admin.query(
+        `insert into "${name}".ba_user (name, email) values ('One', 'twin@example.com'), ('Two', 'twin@example.com')`,
+      );
+      await admin
+        .query(`create unique index concurrently ba_user_email_key on "${name}".ba_user (email)`)
+        .catch(() => undefined);
+      await admin.query(
+        `alter table "${name}".ba_session drop constraint ba_session_user_id_fkey,
+           add constraint ba_session_user_id_fkey foreign key (user_id)
+             references "${name}".ba_user (id) on delete cascade not valid`,
+      );
+
+      const actual = await readAuthTables(broken.db as Kysely<unknown>, name);
+      const problems = authSchemaDifferences(expectedAuthTables(options()), actual);
+
+      expect(problems.some((line) => line.startsWith("ba_user.email:"))).toBe(true);
+      expect(problems.some((line) => line.startsWith("ba_session.user_id:"))).toBe(true);
+    } finally {
+      await broken.drop();
+    }
+  });
+
   it("leaves Better Auth's own migration planner nothing to do", async () => {
     const plan = await getMigrations(options(), { throwOnUnsafe: false });
 
