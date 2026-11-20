@@ -72,17 +72,17 @@ export function applyDeclarations(
 ): ManifestFile[] {
   return files.flatMap((file) => {
     const mine = declarations.filter((declaration) => declaration.path === file.path);
-    let changed = false;
+    const changed = new Set<string>();
     const replace = (section: Declaration["section"], record: Record<string, string>) => {
-      const next = { ...record };
+      const next = new Map(Object.entries(record));
       for (const { name, spec } of mine.filter((item) => item.section === section)) {
-        const current = next[name];
+        const current = next.get(name);
         if (current !== undefined && isVersionSpec(current) && current !== spec) {
-          next[name] = spec;
-          changed = true;
+          next.set(name, spec);
+          changed.add(`${section} ${name}`);
         }
       }
-      return next;
+      return Object.fromEntries(next);
     };
 
     let json: Record<string, unknown> = { ...file.json };
@@ -97,7 +97,7 @@ export function applyDeclarations(
       if (section in file.json)
         json[section] = replace(section, asStringRecord(file.json[section]));
     }
-    return changed ? [{ path: file.path, json }] : [];
+    return changed.size > 0 ? [{ path: file.path, json }] : [];
   });
 }
 

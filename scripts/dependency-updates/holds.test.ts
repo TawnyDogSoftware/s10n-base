@@ -61,7 +61,7 @@ describe("parseHolds", () => {
 });
 
 /** Specs declared in the root catalog, the place most holds apply to. */
-function catalog(entries: readonly (readonly [string, string])[]): Declaration[] {
+function declared(entries: readonly (readonly [string, string])[]): Declaration[] {
   return entries.map(([name, spec]) => ({ path: "package.json", section: "catalog", name, spec }));
 }
 
@@ -77,11 +77,11 @@ describe("enforceHolds", () => {
   it("restores a fully held package that moved", () => {
     const restored = enforceHolds(
       holds,
-      catalog([
+      declared([
         ["react", "19.3.0"],
         ["expo-router", "~58.0.32"],
       ]),
-      catalog([
+      declared([
         ["react", "19.3.1"],
         ["expo-router", "~58.0.32"],
       ]),
@@ -101,10 +101,18 @@ describe("enforceHolds", () => {
 
   it("keeps a range-held package that stays in range and restores one that leaves it", () => {
     expect(
-      enforceHolds(holds, catalog([["typescript", "~6.0.2"]]), catalog([["typescript", "~6.0.3"]])),
+      enforceHolds(
+        holds,
+        declared([["typescript", "~6.0.2"]]),
+        declared([["typescript", "~6.0.3"]]),
+      ),
     ).toEqual([]);
     expect(
-      enforceHolds(holds, catalog([["typescript", "~6.0.3"]]), catalog([["typescript", "~7.0.2"]])),
+      enforceHolds(
+        holds,
+        declared([["typescript", "~6.0.3"]]),
+        declared([["typescript", "~7.0.2"]]),
+      ),
     ).toEqual([
       {
         ...inCatalog,
@@ -118,7 +126,7 @@ describe("enforceHolds", () => {
   });
 
   it("moves a group only when every member lands on the same version", () => {
-    const before = catalog([
+    const before = declared([
       ["auth", "1.7.25"],
       ["@auth/expo", "1.7.25"],
     ]);
@@ -127,7 +135,7 @@ describe("enforceHolds", () => {
       enforceHolds(
         holds,
         before,
-        catalog([
+        declared([
           ["auth", "1.7.26"],
           ["@auth/expo", "1.7.26"],
         ]),
@@ -137,7 +145,7 @@ describe("enforceHolds", () => {
       enforceHolds(
         holds,
         before,
-        catalog([
+        declared([
           ["auth", "1.7.26"],
           ["@auth/expo", "1.7.25"],
         ]),
@@ -157,11 +165,11 @@ describe("enforceHolds", () => {
   it("compares a group's members across every place they are declared", () => {
     const inWeb = { path: "apps/web/package.json", section: "dependencies" } as const;
     const before = [
-      ...catalog([["auth", "1.7.25"]]),
+      ...declared([["auth", "1.7.25"]]),
       { ...inWeb, name: "@auth/expo", spec: "1.7.25" },
     ];
     const after = [
-      ...catalog([["auth", "1.7.26"]]),
+      ...declared([["auth", "1.7.26"]]),
       { ...inWeb, name: "@auth/expo", spec: "1.7.25" },
     ];
 
@@ -181,7 +189,7 @@ describe("enforceHolds", () => {
     const ranged: readonly Hold[] = [
       { packages: ["db", "db-cli"], group: "db", range: "0.29.x", reason: "the adapter's range" },
     ];
-    const before = catalog([
+    const before = declared([
       ["db", "^0.29.9"],
       ["db-cli", "^0.29.9"],
     ]);
@@ -190,7 +198,7 @@ describe("enforceHolds", () => {
       enforceHolds(
         ranged,
         before,
-        catalog([
+        declared([
           ["db", "^0.29.10"],
           ["db-cli", "^0.29.10"],
         ]),
@@ -200,7 +208,7 @@ describe("enforceHolds", () => {
       enforceHolds(
         ranged,
         before,
-        catalog([
+        declared([
           ["db", "^0.30.0"],
           ["db-cli", "^0.30.0"],
         ]),
@@ -212,7 +220,7 @@ describe("enforceHolds", () => {
     const ranged: readonly Hold[] = [
       { packages: ["db", "db-cli"], group: "db", range: "0.29.x", reason: "the adapter's range" },
     ];
-    const before = catalog([
+    const before = declared([
       ["db", "^0.29.9"],
       ["db-cli", "^0.29.9"],
     ]);
@@ -221,7 +229,7 @@ describe("enforceHolds", () => {
       enforceHolds(
         ranged,
         before,
-        catalog([
+        declared([
           ["db", "next"],
           ["db-cli", "next"],
         ]),
@@ -232,7 +240,7 @@ describe("enforceHolds", () => {
   it("restores a held package moved to a spec that is not a version", () => {
     const ranged: readonly Hold[] = [{ packages: ["ts"], range: "<6.1.0", reason: "cap" }];
 
-    expect(enforceHolds(ranged, catalog([["ts", "~6.0.3"]]), catalog([["ts", "next"]]))).toEqual([
+    expect(enforceHolds(ranged, declared([["ts", "~6.0.3"]]), declared([["ts", "next"]]))).toEqual([
       {
         ...inCatalog,
         name: "ts",
@@ -250,8 +258,8 @@ describe("enforceHolds", () => {
     expect(
       enforceHolds(
         [...holds, extra],
-        catalog([["@types/node", "^26.6.6"]]),
-        catalog([["@types/node", "^27.0.0"]]),
+        declared([["@types/node", "^26.6.6"]]),
+        declared([["@types/node", "^27.0.0"]]),
       ),
     ).toEqual([
       {
