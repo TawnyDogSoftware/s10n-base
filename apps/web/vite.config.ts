@@ -2,7 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-import { readApiBaseUrl } from "./src/config";
+import { readApiBaseUrl } from "./src/config.ts";
 
 // In development APP_URL is this dev server's origin: the browser talks to Vite, which proxies
 // the API paths to the server. So the dev server listens on APP_URL's host and port.
