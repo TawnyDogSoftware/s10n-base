@@ -174,6 +174,27 @@ describe("admin.listUsers", () => {
     expect(pages).toBe(Math.ceil(expected.length / 5));
   });
 
+  it("shows a temporary ban that has ended as not banned", async () => {
+    await sql`
+      insert into ba_user (name, email, email_verified, role, banned, ban_expires, created_at, updated_at)
+      values
+        ('Ban forever', 'ban-forever@example.com', true, 'user', true, null, timestamptz '2019-01-01 00:00:03+00', now()),
+        ('Ban ended', 'ban-ended@example.com', true, 'user', true, now() - interval '1 hour', timestamptz '2019-01-01 00:00:02+00', now()),
+        ('Ban ongoing', 'ban-ongoing@example.com', true, 'user', true, now() + interval '1 hour', timestamptz '2019-01-01 00:00:01+00', now())
+    `.execute(app.schema.db);
+
+    const result = await call(admin, "admin.listUsers", { limit: 100 });
+    const users = (result.body as { data: { users: Array<{ email: string; banned: boolean }> } })
+      .data.users;
+    const banned = (email: string) => users.find((user) => user.email === email)?.banned;
+
+    expect([
+      banned("ban-forever@example.com"),
+      banned("ban-ended@example.com"),
+      banned("ban-ongoing@example.com"),
+    ]).toEqual([true, false, true]);
+  });
+
   it("returns each user's fields", async () => {
     const result = await call(admin, "admin.listUsers", { limit: 100 });
     const users = (result.body as { data: { users: Array<Record<string, unknown>> } }).data.users;

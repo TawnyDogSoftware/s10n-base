@@ -30,9 +30,9 @@ function userRow(index: number, overrides: Record<string, unknown> = {}) {
   };
 }
 
-function listUsers(rows: ReadonlyArray<Record<string, unknown>>) {
+function listUsers(rows: ReadonlyArray<Record<string, unknown>>, now?: () => Date) {
   const scripted = scriptedDb<DB>(() => rows);
-  const [handler] = adminUserHandlers({ db: scripted.db });
+  const [handler] = adminUserHandlers({ db: scripted.db, now });
   if (handler === undefined) throw new Error("admin.listUsers has no handler.");
   return {
     queries: scripted.queries,
@@ -98,5 +98,35 @@ describe("admin.listUsers", () => {
         createdAt: "2026-11-11T10:00:00.000Z",
       },
     ]);
+  });
+
+  it("shows a ban as in force only until it ends, judged once by the clock it is given", async () => {
+    let reads = 0;
+    const now = () => {
+      reads += 1;
+      return new Date("2026-11-20T12:00:00.000Z");
+    };
+    const { call } = listUsers(
+      [
+        userRow(3, { banned: true, ban_expires: null }),
+        userRow(2, { banned: true, ban_expires: new Date("2026-11-20T11:59:59.000Z") }),
+        userRow(1, { banned: true, ban_expires: new Date("2026-11-20T12:00:01.000Z") }),
+      ],
+      now,
+    );
+
+    const users = (await call({ limit: 10 })).users;
+
+    expect(users.map((user) => user.banned)).toEqual([true, false, true]);
+    expect(reads).toBe(1);
+  });
+
+  it("reads the system clock when given none", async () => {
+    const { call } = listUsers([
+      userRow(2, { banned: true, ban_expires: new Date(Date.now() - 60_000) }),
+      userRow(1, { banned: true, ban_expires: new Date(Date.now() + 60_000) }),
+    ]);
+
+    expect((await call({ limit: 10 })).users.map((user) => user.banned)).toEqual([false, true]);
   });
 });

@@ -2,17 +2,22 @@ import { type Kysely, sql } from "kysely";
 
 import { adminListUsers, ERROR_CODES } from "@s10n-base/contracts";
 
-import { appRoleOf } from "../auth/instance";
+import { appRoleOf, isBanned } from "../auth/instance";
 import type { DB } from "../infra/postgres/generated/db";
 import { defineHandler, RpcFailure, type RpcHandler } from "./dispatcher";
 import { decodeUserCursor, encodeUserCursor } from "./user-cursor";
 
 /**
  * `admin.listUsers`: users newest first, with keyset pagination on `(created_at, id)`. The id
- * breaks ties, so users created at the same instant are neither repeated nor skipped.
+ * breaks ties, so users created at the same instant are neither repeated nor skipped. A user is
+ * shown as banned only while the ban is in force, judged as the session lookup judges it: Better
+ * Auth clears an ended ban only at the user's next sign-in.
  */
-export function adminUserHandlers(dependencies: { readonly db: Kysely<DB> }): RpcHandler[] {
-  const { db } = dependencies;
+export function adminUserHandlers(dependencies: {
+  readonly db: Kysely<DB>;
+  readonly now?: (() => Date) | undefined;
+}): RpcHandler[] {
+  const { db, now = () => new Date() } = dependencies;
   return [
     defineHandler(adminListUsers, async ({ limit, cursor }) => {
       const after = cursor === undefined || cursor === null ? null : decodeUserCursor(cursor);
@@ -28,6 +33,7 @@ export function adminUserHandlers(dependencies: { readonly db: Kysely<DB> }): Rp
           "role",
           "email_verified",
           "banned",
+          "ban_expires",
           "created_at",
           sql<string>`to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as(
             "cursor_at",
@@ -43,6 +49,7 @@ export function adminUserHandlers(dependencies: { readonly db: Kysely<DB> }): Rp
       }
       const rows = await query.execute();
       const page = rows.slice(0, limit);
+      const at = now();
       // The extra row only says there is another page; the cursor is the page's last row.
       const last = rows.length > limit ? page.at(-1) : undefined;
       return {
@@ -52,7 +59,7 @@ export function adminUserHandlers(dependencies: { readonly db: Kysely<DB> }): Rp
           email: row.email,
           role: appRoleOf(row.role),
           emailVerified: row.email_verified,
-          banned: row.banned === true,
+          banned: isBanned({ banned: row.banned, banExpires: row.ban_expires }, at),
           createdAt: new Date(row.created_at).toISOString(),
         })),
         nextCursor:

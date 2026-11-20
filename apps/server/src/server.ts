@@ -290,6 +290,7 @@ const httpServerLayer = (options: ServerLayerOptions) =>
           createRpcHandlers({
             db: database.db,
             auth,
+            now: options.now,
             sessionTransaction: createSessionTransaction({
               transaction: database.transactions.transaction,
               now: options.now,
