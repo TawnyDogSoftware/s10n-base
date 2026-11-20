@@ -1,183 +1,98 @@
 # S10N Base
 
-S10N Base is a Bun + Turbo monorepo scaffold with a typed server boundary, a web client and an Expo mobile client.
+A starter for hosted, multi-user web and mobile apps. It gives a new project a working server, web app and mobile app on day one: people can sign up, confirm their email, sign in, manage their profile, and an admin can list users. Behind that are the parts every project would otherwise build again: Postgres with migrations, auth, email, typed contracts between server and clients, strict quality gates, CI and a container image. It is meant for small teams, and for coding agents working under their review, who want to start on product work instead of scaffolding. A project starts from it as a template and renames it in one command.
 
-> The scaffold is being reworked into a hosted web and mobile starter; see [plans/000-hosted-starter-rework.md](plans/000-hosted-starter-rework.md).
+## What is built in
 
-It was derived from [`t3code`](https://github.com/pingdotgg/t3code), keeping the overall repo shape and developer workflow while removing product-specific coding-agent behavior.
+- **Server** (`apps/server`): Node `node:http` with validated configuration, an ordered startup and graceful shutdown on Effect's core, health and readiness checks, and an RPC endpoint where every method declares who may call it.
+- **Web** (`apps/web`): React 19, Vite, TanStack Router and Query, Tailwind 4: sign-up, sign-in with a password or a passkey, email confirmation, password reset, a profile page and an admin user list.
+- **Mobile** (`apps/mobile`): Expo SDK 58 with expo-router and Uniwind: the same screens except passkeys. Written and tested on Linux; the first boot on a Mac is pending ([docs/mobile-first-boot.md](docs/mobile-first-boot.md)).
+- **Auth**: Better Auth with email and password, passkeys on the web, roles, and the native app's session, behind a route allow-list.
+- **Email**: a small Amazon SES client of our own, and a local capture server with an inbox, so every email flow works on a fresh clone with no account.
+- **Database**: Postgres 18 with Kysely, numbered migrations run by their own command, generated types, and a live-database test lane.
+- **Shared packages**: contracts, an API client with per-user query state, a theme both apps style with, and typed translations.
+- **Gates**: one command runs commit-attribution, lint with no suppressions, type-checked ESLint, format, typecheck, layering, dead-code, 100% coverage and audit checks; browser journeys with an accessibility check run separately.
+- **CI**: five jobs on every pull request, and a daily pull request with every dependency update at least three days old.
+- **Image**: one hosting-neutral container image with the server, the web build and a separate migrate command.
 
-## Current Stack
+## Quick start
 
-- Bun workspaces + Turbo
-- Strict TypeScript across apps and packages
-- `apps/server`: Node HTTP server with a typed RPC endpoint, Better Auth (email and password, passkeys, admin roles), Postgres through Kysely, and Effect layers for startup and shutdown
-- `apps/web`: React 19 + Vite + Tailwind CSS v4 + TanStack Router + TanStack Query: sign-up, sign-in (password or passkey), email verification, password reset, a profile page and an admin user list
-- `apps/mobile`: Expo SDK 58 + expo-router + Uniwind: the same screens as the web app except passkeys, signed in with Better Auth's Expo client ([docs/mobile-dev.md](docs/mobile-dev.md)). Written and tested on Linux; the first boot on a Mac is pending ([docs/mobile-first-boot.md](docs/mobile-first-boot.md))
-- `packages/contracts`: shared Effect schemas and RPC contracts
-- `packages/client`: the RPC client with an explicit base URL, the session client and session-gated query state, for web and mobile ([docs/client.md](docs/client.md))
-- `packages/theme`: the Tailwind 4 design tokens shared by web and mobile
-- `packages/i18n`: i18next catalogs with typed keys, for the apps and the server's emails ([docs/i18n.md](docs/i18n.md))
-- `packages/shared`: small cross-runtime helpers
-- Oxlint, type-checked ESLint, Oxfmt, knip, dependency-cruiser, Vitest with 100% coverage, and Playwright browser journeys ([docs/quality.md](docs/quality.md))
-
-## Monorepo Layout
-
-```text
-apps/
-  mobile/
-  server/
-  web/
-packages/
-  client/
-  contracts/
-  i18n/
-  shared/
-  theme/
-```
-
-## Requirements
-
-- Bun 1.4.4, the version in `packageManager` in `package.json`
-- Node 26.13.1, the version in `.nvmrc` (`nvm use` picks it up)
-- Docker with Compose v2, for the local Postgres
-
-[docs/setup.md](docs/setup.md) covers setup, configuration, the database and the tests in full.
-
-Versions follow a 3-day rule enforced by `bunfig.toml`, and a daily workflow keeps them current. See [docs/dependencies.md](docs/dependencies.md).
-
-## Commands
-
-Install dependencies:
+You need Node (the version in `.nvmrc`), bun (the version in `packageManager` in `package.json`) and Docker with Compose v2.
 
 ```bash
 bun install
-```
-
-Start Postgres, apply migrations, and run the server, the web app and the local email inbox in development (Ctrl-C stops them):
-
-```bash
 bun dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173) and create an account. Emails are captured, not sent: read the verification link at [http://127.0.0.1:8005/](http://127.0.0.1:8005/), the local inbox. The web app calls the API on its own origin; set `VITE_API_BASE_URL` when the API is elsewhere ([docs/setup.md](docs/setup.md#environment-variables)).
+`bun dev` starts Postgres, applies the migrations, and runs the server, the web app and the local email inbox until you press Ctrl-C.
 
-Run individual apps (start the database first with `bun run db:up`):
+- Open the app at [http://localhost:5173](http://localhost:5173) and create an account.
+- Emails are captured, not sent: open the confirmation link from the inbox at [http://127.0.0.1:8005/](http://127.0.0.1:8005/).
+- Make yourself an admin, then open **Users** in the header:
 
-```bash
-bun run dev:server
-bun run dev:web
-bun run ses:local   # the local SES capture server and inbox
+  ```bash
+  bun run auth:set-role you@example.com admin
+  ```
+
+The mobile app runs against the same server: `bun run dev:mobile`, and on a Mac `bun run ios:simulator` for the first build ([docs/mobile-dev.md](docs/mobile-dev.md)).
+
+## Layout
+
+```text
+apps/
+  server/      the API, auth and migrations; serves the web build in production
+  web/         the web app
+  mobile/      the Expo app
+packages/
+  contracts/   schemas shared by server and clients: RPC methods, sessions, error codes
+  client/      the API client, session state and screen logic both apps share
+  shared/      small helpers that import nothing
+  theme/       the design tokens both apps style with
+  i18n/        translations for both apps and the server's emails
+scripts/       development, quality gates, dependency updates, rename, checks
+e2e/           browser journeys
+docker/        the Dockerfile and the local database's init script
+docs/          how-to guides and decision records
+plans/         numbered plans: how the base was built and why
 ```
 
-Run the mobile app against the same server (Metro; on a Mac, `bun run ios:simulator` builds and opens the development build first; see [docs/mobile-dev.md](docs/mobile-dev.md)):
+## Commands
 
-```bash
-bun run dev:mobile
-bun run ios:simulator   # macOS
-bun run android         # needs the Android SDK
-bun run mobile:export   # bundle both platforms and check the bundle
-```
+| Command                                          | What it does                                                               |
+| ------------------------------------------------ | -------------------------------------------------------------------------- |
+| `bun dev`                                        | Database, migrations, server, web app and inbox, in development            |
+| `bun run agent:check`                            | Every gate that needs no database or browser; run it before every push     |
+| `bun run test:live`                              | The server's tests against Postgres (`bun run db:up` first)                |
+| `bun run test:e2e`                               | Builds, then the browser journeys in Chromium                              |
+| `bun run build`, `bun run smoke`                 | Builds everything, then starts the built server, checks it and stops it    |
+| `bun run mobile:export`                          | Bundles the mobile app for both platforms and checks the bundle            |
+| `bun run docker:build`, `bun run docker:smoke`   | Builds the image and runs it in production mode against the local database |
+| `bun run db:migrate`, `db:status`, `db:generate` | Applies migrations, lists them, regenerates the database types             |
+| `bun run auth:set-role <email> <role>`           | Changes a user's role                                                      |
+| `bun run rename`, `bun run rename:proof`         | Gives a new project its names; proves a renamed copy still passes          |
+| `bun run deps:update --dry-run`                  | Previews the daily dependency update                                       |
+| `bun run fmt`, `bun run clean`                   | Formats; removes installed packages and build output                       |
 
-Make a user an admin, then open **Users** in the header (`/admin/users`):
+[docs/setup.md](docs/setup.md) has every command, the environment variables and the database; [docs/quality.md](docs/quality.md) has each gate.
 
-```bash
-bun run auth:set-role you@example.com admin
-```
+## Starting a new project
 
-Database:
+Use the repository as a template, run `bun run rename` with your names, and follow [docs/new-project.md](docs/new-project.md) for what to keep, the secrets to add and the first deployment.
 
-```bash
-bun run db:up            # start Postgres (docker-compose.local.yml)
-bun run db:down          # stop it
-bun run db:migrate       # apply migrations
-bun run db:status        # list applied and pending migrations
-bun run db:reset         # drop and re-migrate (refused in production)
-bun run db:generate      # regenerate the database types
-```
+## Docs
 
-Build everything:
+[docs/README.md](docs/README.md) lists every guide. The main ones: [setup](docs/setup.md), [quality gates](docs/quality.md), [auth](docs/auth.md), [the client package](docs/client.md), [translations](docs/i18n.md), [mobile development](docs/mobile-dev.md), [dependencies](docs/dependencies.md), [deployment](docs/deployment.md), and the [decision records](docs/adr/README.md).
 
-```bash
-bun run build
-```
+## Conventions
 
-Start built apps:
+- Run `bun run agent:check` before every push; fix the code, never the gate.
+- Every RPC method declares its auth level; migrations are numbered and append-only; clients never import the server.
+- A new dependency needs a reason; packages stay at least three days old; Expo's packages move only with `expo install`.
+- Changes start as numbered plans in `plans/`, and every scaffold-level change gets a `CHANGELOG.md` entry.
+- Commit messages say what changed and why, with no tool attribution.
 
-```bash
-bun run start:server
-bun run start:web
-```
+The full rules are in [AGENTS.md](AGENTS.md).
 
-Run checks. `agent:check` runs every gate that needs no database and no browser, stopping at the first failure; [docs/quality.md](docs/quality.md) explains each gate, how to fix a failure and the no-suppression rule:
+## Credit
 
-```bash
-bun run agent:check       # all of the gates below, in order
-bun run lint              # the directive check, oxlint and ESLint
-bun run fmt               # format (fmt:check checks)
-bun run typecheck
-bun run boundaries        # which code may import which
-bun run deadcode          # unused files, exports and dependencies
-bun run test              # unit tests (test:coverage: with the 100% thresholds)
-bun run deps:audit        # bun audit against dependency-audit-triage.json
-bun run test:live         # needs the database
-bun run test:e2e          # builds, then the browser journeys in Chromium; needs Docker
-```
-
-Start the built server, check `/health`, `/ready` and the web app, and stop it with SIGTERM (run `bun run build` first; needs the database):
-
-```bash
-bun run smoke
-```
-
-Build the container image and check it in production mode against the local database ([docs/deployment.md](docs/deployment.md)):
-
-```bash
-bun run docker:build
-bun run docker:smoke
-```
-
-CI (`.github/workflows/ci.yml`) runs all of these on every pull request.
-
-Preview the daily dependency update without pushing anything:
-
-```bash
-bun run deps:update --dry-run
-```
-
-Clean generated output:
-
-```bash
-bun run clean
-```
-
-## Default URLs And Ports
-
-- Web dev server, the app's origin in development (`APP_URL`): `http://localhost:5173`
-- Server: `http://127.0.0.1:4210`
-- Postgres: `127.0.0.1:54320`
-- Local email inbox (SES capture server): `http://127.0.0.1:8005`
-
-In development, the Vite app proxies `/rpc`, `/api`, `/config`, `/health` and `/ready` to the server.
-
-## Environment Variables
-
-The server needs `APP_URL`, `DATABASE_URL`, `BETTER_AUTH_SECRET`, the email addresses and the SES settings, and validates every variable at startup. `.env.example` lists them all with development values; `bun dev` and the `db:*` scripts use it unless you create a `.env`. The full table is in [docs/setup.md](docs/setup.md#environment-variables), and every variable of each command, for a deployment, in [docs/deployment.md](docs/deployment.md#environment).
-
-## Server Surface
-
-The server currently exposes:
-
-- `GET /health` (liveness)
-- `GET /ready` (readiness: checks the database)
-- `GET /config`
-- `POST /rpc`
-- `/api/auth/*` (Better Auth, behind a route allow-list)
-- `GET /api/app-auth/session`
-
-How auth works is in [docs/auth.md](docs/auth.md).
-
-When `apps/web/dist` exists, the server also serves the built web app.
-
-## Customizing
-
-If you are turning this into a new product, start with `CUSTOMIZATION_GUIDE.md`.
+Derived from [T3 Code](https://github.com/pingdotgg/t3code), keeping its repository shape and developer workflow while removing its product-specific behaviour.
