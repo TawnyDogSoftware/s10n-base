@@ -202,6 +202,10 @@ describe("isRuntimeFile", () => {
     ["src/module.ts", false],
     ["dist/index.js.map", false],
     ["node_modules", false],
+    ["dist/inbound-parser.test.js", false],
+    ["lib/thing.spec.mjs", false],
+    ["dist/latest.js", true],
+    ["testing.js", true],
   ])("%s: %s", (file, kept) => {
     expect(isRuntimeFile(file)).toBe(kept);
   });

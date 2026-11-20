@@ -13,12 +13,14 @@ function postgresImages(file: string): string[] {
 }
 
 describe("Postgres image", () => {
-  it("is the same pinned 18.x tag locally and in CI", () => {
+  it("is the same pinned 18.x tag locally and in every CI job", () => {
     const local = postgresImages("docker-compose.local.yml");
     const ci = postgresImages(".github/workflows/ci.yml");
 
     expect(local).toHaveLength(1);
     expect(local[0]).toMatch(/^postgres:18\.\d+$/);
-    expect(ci).toEqual(local);
+    // One service container per job that needs a database.
+    expect(ci.length).toBeGreaterThan(0);
+    for (const image of ci) expect(image).toBe(local[0]);
   });
 });

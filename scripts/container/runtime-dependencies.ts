@@ -13,9 +13,8 @@
  * Optional peers are not followed: bun links one whenever the workspace happens to install it
  * (`better-auth` gets React and Vitest that way), and a package is meant to work without them.
  * Their links are kept when the package is copied anyway, since a package may still import one
- * (`better-call` imports `zod`, an optional peer). TypeScript
- * sources and declarations and source maps are left out: Node never loads them from
- * `node_modules`.
+ * (`better-call` imports `zod`, an optional peer). TypeScript sources and declarations, source
+ * maps and packages' own tests are left out: Node never loads them from `node_modules`.
  */
 import { cp, lstat, mkdir, readFile, realpath, symlink } from "node:fs/promises";
 import path from "node:path";
@@ -168,9 +167,17 @@ export async function collectRuntimeClosure(
   };
 }
 
-/** Whether a file is worth copying: Node never loads TypeScript or source maps from a package. */
+/**
+ * Whether a file is worth copying: Node never loads TypeScript or source maps from a package,
+ * and a package's own tests are not part of it at run time (pg-protocol ships some in `dist`).
+ */
 export function isRuntimeFile(file: string): boolean {
-  return !/\.(?:[cm]?ts|map)$/.test(file) && path.basename(file) !== "node_modules";
+  const name = path.basename(file);
+  return (
+    !/\.(?:[cm]?ts|map)$/.test(name) &&
+    !/\.(?:test|spec)\.[^.]+$/.test(name) &&
+    name !== "node_modules"
+  );
 }
 
 /** Copies the closure into `out`, in the same layout, and returns its packages. */

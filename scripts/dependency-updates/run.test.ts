@@ -138,7 +138,7 @@ describe("ProcessIo", () => {
 
 describe("ProcessIo.fetchHeaders", () => {
   it("sends a HEAD request with the given headers, returns the response headers, and fails on an error status", async () => {
-    const seen: Array<{ method?: string; accept?: string }> = [];
+    const seen: Array<{ method: string | undefined; accept: string | undefined }> = [];
     const server = http.createServer((request, response) => {
       seen.push({ method: request.method, accept: request.headers.accept });
       response.statusCode = request.url === "/ok" ? 200 : 401;

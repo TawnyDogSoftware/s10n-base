@@ -51,6 +51,19 @@ describe("the CI workflow", () => {
     );
   });
 
+  it("builds the image from docker/Dockerfile in a job of its own, then runs docker:smoke", () => {
+    const container = jobs(workflow).find((job) => job.runs.includes("bun run docker:smoke"));
+    const section = workflow.slice(workflow.indexOf("\n  container:\n"));
+
+    expect(container?.id).toBe("container");
+    expect(section).toMatch(/uses: docker\/build-push-action@[0-9a-f]{40} /);
+    expect(section).toContain("file: docker/Dockerfile");
+    expect(section).toContain("push: false");
+    expect(section.indexOf("docker/build-push-action")).toBeLessThan(
+      section.indexOf("bun run docker:smoke"),
+    );
+  });
+
   it("uploads no artifact, so no trace, video or snapshot of a journey leaves the runner", () => {
     expect(workflow).not.toMatch(/actions\/upload-artifact/);
   });

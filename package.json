@@ -82,6 +82,8 @@
     "fmt:check": "oxfmt --check .",
     "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules apps/*/dist packages/*/dist .turbo apps/mobile/.expo apps/mobile/ios apps/mobile/android",
     "smoke": "bun scripts/with-env.main.ts bun scripts/smoke-built-server.main.ts",
+    "docker:build": "docker build -f docker/Dockerfile --build-arg APP_VERSION=$(git rev-parse --short HEAD) -t s10n-base:local .",
+    "docker:smoke": "bun scripts/with-env.main.ts bun scripts/container/smoke.main.ts",
     "ses:local": "bun scripts/with-env.main.ts bun scripts/ses-local/run.main.ts",
     "deps:update": "bun scripts/dependency-updates/run.main.ts",
     "deps:audit": "bun scripts/quality/dependency-audit.main.ts",

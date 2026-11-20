@@ -129,6 +129,13 @@ Start the built server, check `/health`, `/ready` and the web app, and stop it w
 bun run smoke
 ```
 
+Build the container image and check it in production mode against the local database ([docs/deployment.md](docs/deployment.md)):
+
+```bash
+bun run docker:build
+bun run docker:smoke
+```
+
 CI (`.github/workflows/ci.yml`) runs all of these on every pull request.
 
 Preview the daily dependency update without pushing anything:
@@ -154,7 +161,7 @@ In development, the Vite app proxies `/rpc`, `/api`, `/config`, `/health` and `/
 
 ## Environment Variables
 
-The server needs `APP_URL`, `DATABASE_URL`, `BETTER_AUTH_SECRET`, the email addresses and the SES settings, and validates every variable at startup. `.env.example` lists them all with development values; `bun dev` and the `db:*` scripts use it unless you create a `.env`. The full table is in [docs/setup.md](docs/setup.md#environment-variables).
+The server needs `APP_URL`, `DATABASE_URL`, `BETTER_AUTH_SECRET`, the email addresses and the SES settings, and validates every variable at startup. `.env.example` lists them all with development values; `bun dev` and the `db:*` scripts use it unless you create a `.env`. The full table is in [docs/setup.md](docs/setup.md#environment-variables), and every variable of each command, for a deployment, in [docs/deployment.md](docs/deployment.md#environment).
 
 ## Server Surface
 
