@@ -217,4 +217,4 @@ Codex reviewed the PR's head after each push. Each finding was reproduced with a
 
 ### Verification on the final commit (section 11)
 
-Filled in on the final commit; see below and the PR description.
+Recorded in the pull request description (PR #1, section "Phase 6", "Tests and verification (plan 006 section 11)"), not in this file. (Corrected by phase 9: this line used to say "see below", and nothing followed.)

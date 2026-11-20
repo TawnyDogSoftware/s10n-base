@@ -1,6 +1,6 @@
 # 009: Conventions and docs
 
-> Status: in progress since 2026-11-20, on branch `feature/001-strip-desktop-and-local-first` (the rework's single pull request).
+> Status: implemented on 2026-11-20, on branch `feature/001-strip-desktop-and-local-first` (the rework's single pull request). Section 10 records how.
 
 Phase 9 of [000](000-hosted-starter-rework.md), the last phase that changes this repo. Builds on phases 1 to 8.
 
@@ -117,4 +117,94 @@ Done when sections 3 to 8 are in and the above passes, and section 10 records th
 
 ## 10. How it was built
 
-Filled in by the implementor.
+Implemented on 2026-11-20 on Linux, Node 26.13.1 and bun 1.4.4, with Docker for the local Postgres and the image. No dependency was added.
+
+### The commit-attribution check (section 4)
+
+`scripts/quality/commit-attribution.ts`, run by `bun run commits:attribution`, first in `agent:check`. It reads the messages from the merge base of `HEAD` with the default branch to `HEAD`, plus `PR_TITLE` and `PR_BODY` when CI sets them, and fails naming the commit (or "pull request description") and the line. The rules, one list, each with an example that its test must catch, a line reported under the first it breaks:
+
+| Rule | Catches |
+| --- | --- |
+| An AI vendor's address | an address at `anthropic.com`, `openai.com`, `cursor.com`, `cursor.sh` or `devin.ai`, and Copilot's two addresses |
+| A trailer naming an AI tool | a `*-by:` trailer (co-authored, assisted, generated, signed off, ...) naming Claude Code or a Claude model, Anthropic, OpenAI, ChatGPT, GPT-n, Codex, Copilot, Gemini, Cursor, Devin, Aider, Windsurf, Codeium, Tabnine, CodeWhisperer or Amazon Q |
+| A generated-with footer | "generated with/by/using/via" followed by one of those names or "AI" |
+| A link to a tool's session or product page | `claude.ai/code`, `claude.com/claude-code`, `chatgpt.com/codex` |
+| A robot-emoji footer | a line starting with the robot emoji |
+
+Tool names count only in trailers, because this branch's own history uses "cursor" in prose (cursor pagination); those lines are test cases that must pass, as are a person's `Co-authored-by:` and a person named Claude. The patterns live in the check, AGENTS.md and `.claude/implement-plan.md` name the rule, and no commit message or pull request text here does.
+
+- **CI** checks out the first job with `fetch-depth: 0` and passes the pull request's title and description through `env`, never into a shell command. CI does not run on a description edit, so an edited description is checked at the next push.
+- **The base branch:** `origin/main`, then `origin/HEAD`, then `main`; `ATTRIBUTION_BASE` overrides. `origin/HEAD` came first at first, and a planted commit in a local clone showed why that was wrong: a clone of a feature checkout points `origin/HEAD` at the feature branch, so the range was empty and the check passed without reading anything. A checkout with no default branch exits 2 saying what git could not find.
+- **The hook:** `.githooks/commit-msg` runs the check with `--message-file`, dropping git's `#` comment lines; `bun run hooks:install` sets `core.hooksPath`.
+- **Shown failing** in a throwaway clone: a planted empty commit with a vendor-address co-author trailer gave `commit 44133ac line 3: an AI vendor's address: ...` and exit 1, and with the hook installed, `git commit` of a message ending "Generated with Codex" was refused (`this commit message line 3: a generated-with footer: ...`, exit 1). Removing the planted commit, the check passed. **On this branch** it passes: every commit since `main` checked, none credits a tool, and CI's first job has run it with this pull request's title and description.
+
+### Plans index and decision records (section 5)
+
+`plans/README.md` states the convention (number from the index, never reused, a withdrawn plan keeps its file and row, the heading and status lines, How it was built) and indexes plans 000 to 009. `docs/adr/` has its README (format, numbering, superseding) and one record per decision D1 to D10, numbered like the plans (`NNN-slug.md`). `scripts/numbered-index.ts` checks both indexes: every `NNN-*.md` listed once, its title equal to the file's `# NNN: Title`, a status, no number used twice, no listed file missing. Plan 000's status is final (above section 1).
+
+### The rename script (section 6)
+
+`scripts/rename/`: `rules.ts` (the names, the rules, the kept files, the leftover search, the lockfile's versions), `arguments.ts` (flags and validation), `rename.ts` (the command) and `proof.ts` (the proof), each with a one-line `*.main.ts`.
+
+**What it covers.** Seven rules, applied in this order to every tracked text file outside the kept ones (the scope and the cookie prefix are spelled like the slug, and the bundle identifier contains the scheme, so the narrower rule runs first):
+
+| Rule | Base value | Where it occurs |
+| --- | --- | --- |
+| Package scope | `@s10n-base/` | every workspace manifest's name and dependencies; imports and stylesheet imports in all apps, packages and scripts; the server bundler's pattern in `tsdown.config.ts` (`/^@s10n-base\//`); turbo filters in the root scripts; `knip.jsonc`; the bundle check's message; docs; and `bun.lock`'s workspace entries |
+| Bundle identifier | `com.example.s10nbase` | the variant table (`.dev`, `.preview` and production), `docs/mobile-dev.md` |
+| Display name | `S10N Base` | the server's config (also the passkey relying party's name), the i18n catalog's `appName`, the web page title, the variants' names (`(Dev)`, `(Preview)`), the README's title, docs and tests |
+| Cookie prefix | `s10n-base` before `.` or `\.`, and `AUTH_COOKIE_PREFIX = "s10n-base"` | the constant in `packages/shared/src/auth.ts`, a comment in the server's options, cookie strings and a cookie pattern in tests, `docs/auth.md` |
+| URL scheme | `s10nbase` | the variant table (`-dev`, `-preview` and production), trusted-origin tests, `docs/mobile-dev.md` |
+| Database name | `s10n_base` | the compose file's user, password and database, the init script's test database, `.env.example`, CI's two Postgres services and URLs, the e2e environment, docs |
+| Slug | `s10n-base` | the root package's name, the lockfile's root workspace, the Expo slug and the dev client's scheme made from it (`exp+s10n-base`), the compose project (`s10n-base-local`), the image tag (`s10n-base:local`) in `package.json`, CI and the container smoke check, the image's title label, the internal client-IP header (`x-s10n-base-client-ip`), the server's Effect service keys, a test's temporary directory, docs |
+
+No environment variable carries the base's name any more: phase 3 removed the last (`S10N_BASE_PORT`), and the only mention left, a line in `docs/setup.md`, went to the changelog. Among tool configs only `tsdown.config.ts` and `knip.jsonc` name the scope; tsconfig, Vitest, dependency-cruiser, ESLint, Metro and the Dockerfile do not, so section 6's list overstated it. The generated iOS project name follows the display name through the variant table; it is not a tracked file.
+
+**What it leaves alone:** `plans/`, `CHANGELOG.md`, `docs/adr/`, `docs/new-project.md` (a guide to the base, which names it on purpose and is deleted once a project is set up), `scripts/rename/` (its rules and fixtures are the base's names), binary files, third-party names, the README's credit (which names only the upstream project), and every third-party entry in `bun.lock`.
+
+**How it runs:** values checked first, every problem at once (exit 2); refuses a working tree with changes (a dry run is allowed, since it writes nothing) and a repository whose `package.json` is no longer named `s10n-base` (exit 1); rewrites the files; runs `bun install`, then `bun run fmt`; compares the lockfile's third-party `name@version` set before and after, failing on any difference; searches every tracked file outside the kept ones for `s10n` or `app-scaffold` in any case, failing on any hit; then prints the steps that remain (section 7's list). `--dry-run` prints every file with its replacements per rule and writes nothing.
+
+**What the proof found,** each fixed before it passed: the renamed copy failed `fmt:check` in ten files, because names of another length re-flow Markdown tables and wrapped lines and re-sort `package.json` keys (the rename now runs the formatter), and failed one test that required bundle identifiers under `com.example.` (it now checks the variant table's shape, which holds before and after a rename). One more run failed on a lint error in the rename's own new test, which the proof caught as it should.
+
+**The rename proof, run locally** with the sample names `Acme Notes`, `@acme`, `acme-notes`, `com.acme.notes`, `acmenotes` and cookie prefix `acme` (every form different, so a rule that used the wrong one shows): see "Verification on the final commit" below.
+
+### Departures from this plan, with reasons
+
+- **The lockfile's root workspace name is corrected in the base,** not left for the rename: `bun.lock` named it `app-scaffold`, the scaffold's name before publication, while `package.json` says `s10n-base`. bun accepts either with a frozen install and never rewrites the field. With the base consistent, one slug rule covers it.
+- **The rename rewrites `bun.lock`'s workspace names itself before `bun install`,** rather than leaving the lockfile wholly to bun. Tried in a clone: after renaming only the manifests, `bun install` rewrote the workspace packages' names but kept the root workspace's old name. Third-party entries are never touched, and the version comparison proves it.
+- **The rename also runs the formatter,** which section 6 did not list; without it no renamed copy passes `fmt:check`.
+- **The kept files include `docs/new-project.md` and `scripts/rename/`,** which section 6's list could not name before they existed.
+- **"Refuses to run twice"** is decided by the root `package.json`'s name, the one name every rename changes.
+- **Four test temporary directories named with a bare `s10n-`** (a fifth spelling of the base's name) now use neutral prefixes, rather than adding a rule for them.
+- **The docs check** (section 9, item 5) covers more than the three files: every `bun run` name, relative link and anchor in the README, `AGENTS.md`, every doc, the plans index, the project notes and the changelog must exist (a root script in the files that tell someone what to run at the root, a root or workspace script elsewhere). Repository paths in code spans are checked in the README, `AGENTS.md`, `docs/new-project.md` and the project notes. Each kind was seen to fail on a planted error.
+- **Decision records are numbered `NNN`,** like the plans, so one tested module checks both indexes.
+- **The changelog's dependency detail is condensed** to what a port needs (what was added, the overrides); the exact versions stay in each plan's "How it was built".
+
+### Docs corrected (section 7)
+
+- `docs/i18n.md`: said the mobile app was "phase 6" and that the hard-coded-string rule would come in phase 7 ("until then"); named `apps/web/src/lib/errors.ts`, which does not exist (the message keys come from `errorMessageKey` in `@s10n-base/client/messages`); said the mobile app "will pass" the device's locales, which it does.
+- `docs/auth.md`: said mobile screens "arrive in phase 6" and native passkeys were "an open item for phase 6"; described the lost-response handling as the web app's only, though the mobile app runs its security actions the same way. Now also links the decision records.
+- `docs/quality.md`: counted four CI jobs; listed the checks outside `agent:check` without the mobile export; said `bun run lint` runs "the first three" of a table whose first row is now the attribution gate.
+- `docs/setup.md`: still mentioned `S10N_BASE_PORT`, removed in phase 3; its description of `agent:check` left out the attribution gate.
+- `docs/mobile-dev.md`: told Linux developers to run four checks by hand rather than `agent:check`; called the variant names placeholders without saying the rename replaces them.
+- `docs/dependencies.md` and `docs/deployment.md`: pointed at plan 000's decision table; now at the records.
+- `docs/mobile-first-boot.md`: its last step now also updates the plans index.
+- `plans/004-auth.md`, `005-web-blank-slate.md`, `006-mobile-blank-slate.md`: each said its final verification was "below", and nothing followed; it is in the pull request description.
+- Checked and still true: `docs/client.md` (every export and function it names), `docs/deployment.md`'s tables (tested against the code), the coverage exclusion table in `docs/quality.md`, the hold list in `docs/dependencies.md`, and the health check and image details.
+- `README.md` rewritten; `CUSTOMIZATION_GUIDE.md` deleted; `docs/README.md` and `docs/new-project.md` new; `CHANGELOG.md` organised by area.
+
+### The two leftovers (section 2)
+
+- **The dry run's empty temporary directory:** the directory was made before `git worktree add`, outside the `try`. It is now removed when git refuses, with a test that the path is gone.
+- **The Vite warning:** `apps/web/vite.config.ts` imports `./src/config.ts` with its extension, and the web tsconfig allows `.ts` extensions (with `noEmit`, which its `typecheck` already passed), as the mobile app's does. No behaviour change; the build also passes with Vite's native config loader (`--configLoader native`).
+
+### Claims in plans 000 to 009 that did not hold
+
+- Plan 000, phase 9: the rename covers far more than "package scope, env var prefix, cookie prefix, URL schemes, bundle ids, page title", and there was no env var prefix left to rename.
+- Plan 009, section 6: tsconfig, Vitest, dependency-cruiser, ESLint, Metro and Docker do not name the scope.
+- Plans 004 to 006: "see below" for their verification (above).
+- Plan 002 noted `bun install` does not rewrite the root workspace's name; still true, which is why the rename rewrites it.
+
+### Verification on the final commit (section 9)
+
+Filled in below once the last runs finish.

@@ -189,4 +189,4 @@ Observed: **no Content-Security-Policy violation** (a `securitypolicyviolation` 
 
 ### Verification on the final commit (section 10)
 
-Filled in on the final commit; see below and the PR description.
+Recorded in the pull request description (PR #1, section "Phase 5", "Tests and verification (plan 005 section 10)"), not in this file. (Corrected by phase 9: this line used to say "see below", and nothing followed.)

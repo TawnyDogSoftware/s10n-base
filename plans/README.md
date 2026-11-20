@@ -28,4 +28,4 @@ Decisions that outlive a plan are also written up as decision records in [docs/a
 | 006 | [Mobile blank slate](006-mobile-blank-slate.md) | Implemented; first boot on a Mac pending |
 | 007 | [Quality gates](007-quality-gates.md) | Implemented |
 | 008 | [Deployment kit](008-deployment-kit.md) | Implemented |
-| 009 | [Conventions and docs](009-conventions-and-docs.md) | In progress |
+| 009 | [Conventions and docs](009-conventions-and-docs.md) | Implemented |

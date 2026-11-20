@@ -1,6 +1,19 @@
 # 000: Rework s10n-base into a hosted web and mobile starter
 
-> Status: approved by the owner on 2026-11-18. Phase 1 implemented on 2026-11-19 ([001](001-strip-desktop-and-local-first.md)). Phase 2 implemented on 2026-11-19 ([002](002-toolchain-upgrade-and-ci.md)). Phase 3 implemented on 2026-11-19 ([003](003-hosted-server-core.md)). Phase 4 implemented on 2026-11-19 ([004](004-auth.md)). Phase 5 implemented on 2026-11-19 ([005](005-web-blank-slate.md)). Phase 6 implemented on 2026-11-19 ([006](006-mobile-blank-slate.md)), first boot on a Mac pending. Phase 7 implemented on 2026-11-19 ([007](007-quality-gates.md)). Phase 8 implemented on 2026-11-20 ([008](008-deployment-kit.md)).
+> Status: approved by the owner on 2026-11-18. **Phases 1 to 9 are implemented** on one pull request (PR #1), each recorded in its own plan:
+>
+> - Phase 1 implemented on 2026-11-19 ([001](001-strip-desktop-and-local-first.md)).
+> - Phase 2 implemented on 2026-11-19 ([002](002-toolchain-upgrade-and-ci.md)).
+> - Phase 3 implemented on 2026-11-19 ([003](003-hosted-server-core.md)).
+> - Phase 4 implemented on 2026-11-19 ([004](004-auth.md)).
+> - Phase 5 implemented on 2026-11-19 ([005](005-web-blank-slate.md)).
+> - Phase 6 implemented on 2026-11-19 ([006](006-mobile-blank-slate.md)); **first boot on a Mac pending** ([docs/mobile-first-boot.md](../docs/mobile-first-boot.md)), so not done.
+> - Phase 7 implemented on 2026-11-19 ([007](007-quality-gates.md)).
+> - Phase 8 implemented on 2026-11-20 ([008](008-deployment-kit.md)).
+> - Phase 9 implemented on 2026-11-20 ([009](009-conventions-and-docs.md)).
+> - Phase 10 **not started**: its backport plans are written in each existing project's own repository, not here.
+>
+> What remains is the owner's: boot the mobile app on a Mac from a fresh clone; create the dependency-update GitHub App, install it, add its two secrets and run the workflow once by hand ([docs/dependencies.md](../docs/dependencies.md#setting-up-the-github-app)); turn on the repository's "Template repository" setting; look at the web screens in light and dark mode; merge the pull request; and phase 10.
 
 Written 2026-11-18 from a review of three private projects built on this base (called Project A, B and C here), of s10n-base itself, of T3 Code upstream, and of the npm registry.
 
@@ -62,7 +75,7 @@ These are bugs, separate from the desktop assumptions. The first one was found b
 5. **SQLite tables are created on every boot** with no migrations and no owner column. **Fixed in phases 1 and 3:** SQLite went in phase 1; Postgres has numbered migrations run by a separate entry point, and the server never migrates on startup. Owner columns arrive with the first tables (phase 4 onwards).
 6. **The web client uses relative URLs**, which a mobile app can't use. **Fixed in phase 5:** `packages/client` takes an explicit base URL (`VITE_API_BASE_URL` on the web, the page's origin by default), and the relative-URL client is gone.
 7. **Lockfile versions carry known advisories:** `ws` 8.20.0, vite 7.3.2, vitest 4.1.4, turbo 2.9.6, effect beta.45 and electron 40.6.0. **Fixed in phases 1 and 2:** electron went in phase 1; `ws` left the lockfile with jsdom 31; the rest moved past their advisories. Phase 2 also cleared a `source-map-js` advisory the old lockfile kept, and `bun audit` reports nothing.
-8. **Docs are wrong.** `EXTRACTION_REPORT.md` describes path helpers and log rotation that don't exist, and the rename checklist misses the `S10N_BASE_*` env vars, the localStorage key, the page title and the bin name.
+8. **Docs are wrong.** `EXTRACTION_REPORT.md` describes path helpers and log rotation that don't exist, and the rename checklist misses the `S10N_BASE_*` env vars, the localStorage key, the page title and the bin name. **Fixed in phases 1, 3 and 9:** the report, the bin entry, the persisted web store and two of the env vars went in phase 1, and `S10N_BASE_PORT` in phase 3; phase 9 replaced the checklist with `bun run rename`, which a CI job proves on a renamed copy, rewrote the README, and corrected the docs that had gone stale.
 9. **Uses the deprecated `vitest.workspace` file** and leaves `packages/shared` out of it. **Fixed in phase 2:** a root `vitest.config.ts` with `test.projects`, and `packages/shared` has tests.
 10. **`fmt:check` fails on the default branch** (found 2026-11-19). oxfmt also checks Markdown, and this plan's tables are not in its format. Fixed the same day: `plans/` is excluded from formatting in `.oxfmtrc.json` (owner decision), so plan files are never reformatted by the tool.
 
@@ -288,6 +301,8 @@ Copy from Project B `[S7]`; it is the only one of our projects with verified nat
 - Project notes for the `implement-plan` skill.
 - `CHANGELOG.md` recording each scaffold-level change, starting with this rework (D9).
 - A new README, and a rename script replacing the manual checklist: package scope, env var prefix, cookie prefix, URL schemes, bundle ids, page title.
+
+- **Phase 9 outcome (2026-11-20):** done as planned, with the departures recorded in plan 009, section 10. `AGENTS.md` (imported by `CLAUDE.md`) and project notes for implementing plans; a commit-attribution gate in `agent:check` and CI, with an optional `commit-msg` hook; `plans/README.md` and ten decision records in `docs/adr/`, with a test on both indexes; `bun run rename`, proved by a fifth CI job that renames a copy and runs the install, `agent:check`, the build and the mobile export in it; a new README, `docs/new-project.md` and `docs/README.md`; the changelog organised by area; and the stale docs corrected, with a test on the docs' commands, links and paths. Corrections to this section: the rename covers far more than the six names listed (the slug alone names the root package, the Expo slug and dev client scheme, the image, the compose project, the database, the client-IP header and the Effect service keys); there were no `S10N_BASE_*` env vars left to rename, phase 3 having removed the last.
 
 ### Phase 10: backport plans for existing projects
 
