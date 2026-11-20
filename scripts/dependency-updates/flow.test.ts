@@ -705,6 +705,26 @@ describe("runDependencyUpdate", () => {
     });
   });
 
+  it("says so when no bun release on the page GitHub returns is old enough", async () => {
+    const io = new FakeIo({
+      latest: viteMajor,
+      bunReleases: [
+        {
+          tag_name: "bun-v1.4.6",
+          published_at: "2026-11-18T00:00:00Z",
+          prerelease: false,
+          draft: false,
+        },
+      ],
+    });
+
+    const outcome = await runDependencyUpdate(io, options);
+
+    expect(outcome.kind === "unchanged" ? "" : outcome.body).toContain(
+      "bun is not checked: none of the newest 30 bun releases on GitHub is a stable release at least 3 days old.",
+    );
+  });
+
   it("moves Node alone when bun has no newer release", async () => {
     const io = new FakeIo({
       nodeIndex: [{ version: "v26.13.2", date: "2026-11-12", lts: "Lithium" }],

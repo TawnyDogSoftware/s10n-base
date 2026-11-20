@@ -85,7 +85,8 @@ interface OpenPr {
   readonly url: string;
 }
 
-const BUN_RELEASES_URL = "https://api.github.com/repos/oven-sh/bun/releases?per_page=30";
+const BUN_RELEASES_PAGE = 30;
+const BUN_RELEASES_URL = `https://api.github.com/repos/oven-sh/bun/releases?per_page=${String(BUN_RELEASES_PAGE)}`;
 const NODE_INDEX_URL = "https://nodejs.org/dist/index.json";
 const DRY_RUN_URL = "(dry run: no PR opened)";
 
@@ -365,6 +366,11 @@ async function updateRuntimes(io: Io, now: Date): Promise<string[]> {
   const notApplied: string[] = [];
 
   const bun = pickBunRelease((await io.fetchJson(BUN_RELEASES_URL)) as GitHubRelease[], now);
+  if (bun === undefined) {
+    notApplied.push(
+      `bun is not checked: none of the newest ${String(BUN_RELEASES_PAGE)} bun releases on GitHub is a stable release at least 3 days old.`,
+    );
+  }
   const nodeMajor = Number(currentNode.split(".")[0]);
   const node = pickNodeRelease(
     (await io.fetchJson(NODE_INDEX_URL)) as NodeIndexEntry[],
