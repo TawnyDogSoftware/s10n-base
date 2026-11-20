@@ -1,7 +1,8 @@
 /**
  * `bun run auth:set-role <email> <role>` (or `node dist/set-role.mjs <email> <role>` in a
  * deployment): sets a user's role, which is how a project creates its first admin. It refuses a
- * role the app does not know and an email no user has. The change applies to the user's next
+ * role the app does not know, an email no user has, and an email several users have in
+ * different case. The change applies to the user's next
  * request: the role is read from the database on every session lookup.
  */
 import { type Kysely, sql } from "kysely";
@@ -35,21 +36,41 @@ export function parseSetRoleArgs(args: ReadonlyArray<string>): { email: string; 
   return { email: email.trim(), role: role as Role };
 }
 
+class AmbiguousUserError extends Error {
+  override readonly name = "AmbiguousUserError";
+}
+
 /**
  * Sets the role of the user with `email` (case does not matter; Better Auth stores addresses in
- * lower case). Returns the user's id.
+ * lower case). Returns the user's id. The match and the change are one transaction, and the
+ * change is made by id, so it touches exactly the user it found.
  *
  * @throws {UnknownUserError} when no user has that email.
+ * @throws {AmbiguousUserError} when several users have it in different case (an import of
+ * existing users can create them); nothing is changed.
  */
 export async function setUserRole(db: Kysely<DB>, email: string, role: Role): Promise<string> {
-  const updated = await db
-    .updateTable("ba_user")
-    .set({ role, updated_at: sql`now()` })
-    .where(sql<boolean>`lower(email) = lower(${email})`)
-    .returning("id")
-    .executeTakeFirst();
-  if (updated === undefined) throw new UnknownUserError("No user has that email address.");
-  return updated.id;
+  return db.transaction().execute(async (trx) => {
+    const matches = await trx
+      .selectFrom("ba_user")
+      .select("id")
+      .where(sql<boolean>`lower(email) = lower(${email})`)
+      .forUpdate()
+      .execute();
+    const [user, ...others] = matches;
+    if (user === undefined) throw new UnknownUserError("No user has that email address.");
+    if (others.length > 0) {
+      throw new AmbiguousUserError(
+        `${String(matches.length)} users have that email address in different case; none was changed.`,
+      );
+    }
+    await trx
+      .updateTable("ba_user")
+      .set({ role, updated_at: sql`now()` })
+      .where("id", "=", user.id)
+      .execute();
+    return user.id;
+  });
 }
 
 export interface SetRoleCliOptions {

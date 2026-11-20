@@ -79,6 +79,8 @@ describe("runSetRoleCli with a database", () => {
     expect(output.lines).toMatchObject([{ message: "role_set", userId: "u1", role: "admin" }]);
     expect(queries[0]?.sql).toContain("lower(email) = lower($");
     expect(queries[0]?.parameters).toContain("Sam@Example.com");
+    expect(queries[1]?.sql).toMatch(/^update "ba_user" .* where "id" = \$/);
+    expect(queries[1]?.parameters).toContain("u1");
   });
 
   it("follows LOG_LEVEL: at error it prints no role_set line, but still prints a failure", async () => {
@@ -119,6 +121,24 @@ describe("runSetRoleCli with a database", () => {
     expect(output.lines).toMatchObject([
       { message: "set_role_failed", error: { message: "No user has that email address." } },
     ]);
+  });
+
+  it("exits 1 and changes nothing when several users have the email in different case", async () => {
+    const { db, queries } = scriptedDb<DB>(() => [{ id: "u1" }, { id: "u2" }]);
+    const output = capture();
+
+    const code = await runSetRoleCli({
+      args: ["sam@example.com", "admin"],
+      env,
+      write: output.write,
+      db,
+    });
+
+    expect(code).toBe(1);
+    expect(output.lines).toMatchObject([
+      { message: "set_role_failed", error: { name: "AmbiguousUserError" } },
+    ]);
+    expect(queries.some((query) => query.sql.startsWith("update"))).toBe(false);
   });
 
   it("exits 1 when the database cannot be reached", async () => {

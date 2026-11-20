@@ -135,7 +135,7 @@ docker run --rm -e NODE_ENV=production -e MIGRATION_DATABASE_URL=... -e DATABASE
 - `GET /health` is liveness: 200 while the process is serving. It does not touch the database.
 - `GET /ready` is readiness: 200 when the database answers `select 1` within two seconds, 503 while it does not or once shutdown has started. Send traffic only to a ready instance.
 - On `SIGTERM` (or `SIGINT`) the server stops accepting connections, lets requests in flight finish for up to `SHUTDOWN_TIMEOUT_MS`, cuts off what is left, then closes the database pool, which may take up to `SHUTDOWN_TIMEOUT_MS` again. Set the platform's termination grace period above twice `SHUTDOWN_TIMEOUT_MS` plus a few seconds: 25 seconds for the default of 10.
-- Exit codes. The server: 0 after a clean stop; 1 after a forced stop, a failed stop, or a failed start (invalid configuration, no database, a pending migration). `migrate`: 0, or 1 for any failure. `set-role`: 0, 1 for an unknown user, 2 for bad arguments.
+- Exit codes. The server: 0 after a clean stop; 1 after a forced stop, a failed stop, or a failed start (invalid configuration, no database, a pending migration). `migrate`: 0, or 1 for any failure. `set-role`: 0, 1 for an unknown user, an address several users have in different case, or any other failure, 2 for bad arguments.
 
 ## Behind a proxy
 

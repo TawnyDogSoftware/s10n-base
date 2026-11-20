@@ -70,7 +70,7 @@ Sign up and verify the account, then:
 bun run auth:set-role you@example.com admin
 ```
 
-In a deployment, run `node apps/server/dist/set-role.mjs you@example.com admin` with `DATABASE_URL` set. It refuses unknown roles and addresses no user has. The role applies to the user's next request. After that, admins can change roles through `POST /api/auth/admin/set-role`.
+In a deployment, run `node apps/server/dist/set-role.mjs you@example.com admin` with `DATABASE_URL` set. It refuses unknown roles, addresses no user has, and an address several users have in different case (which an import of existing users can create), changing none of them. The role applies to the user's next request. After that, admins can change roles through `POST /api/auth/admin/set-role`.
 
 ## Passkeys
 

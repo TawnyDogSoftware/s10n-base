@@ -50,4 +50,22 @@ describe("auth:set-role against Postgres", () => {
     expect(result.code).toBe(1);
     expect(result.output).toContain("UnknownUserError");
   });
+
+  it("refuses an email several users share in different case, and changes none of them", async () => {
+    // Better Auth stores addresses in lower case, but an import of existing users may not.
+    await schema.db
+      .insertInto("ba_user")
+      .values([
+        { name: "Lower", email: "sam@example.com", role: "user" },
+        { name: "Upper", email: "Sam@Example.com", role: "user" },
+      ])
+      .execute();
+
+    const result = await run(["sam@example.com", "admin"]);
+
+    expect(result.code).toBe(1);
+    expect(result.output).toContain("AmbiguousUserError");
+    const roles = await schema.db.selectFrom("ba_user").select("role").execute();
+    expect(roles.map((row) => row.role)).toEqual(["user", "user"]);
+  });
 });
