@@ -53,8 +53,8 @@ function email(name: string) {
   return `${name}-${String(nextIp)}@example.com`;
 }
 
-async function signUp(browser: TestClient, address: string, password = PASSWORD) {
-  return browser.post("/api/auth/sign-up/email", { name: "Test User", email: address, password });
+async function signUp(browser: TestClient, address: string, name = "Test User") {
+  return browser.post("/api/auth/sign-up/email", { name, email: address, password: PASSWORD });
 }
 
 async function verify(browser: TestClient, address: string) {
@@ -63,9 +63,9 @@ async function verify(browser: TestClient, address: string) {
 }
 
 /** Signs up, verifies and signs in; returns the signed-in client. */
-async function signedInUser(address: string) {
+async function signedInUser(address: string, name?: string) {
   const browser = client();
-  expect((await signUp(browser, address)).status).toBe(200);
+  expect((await signUp(browser, address, name)).status).toBe(200);
   await verify(browser, address);
   expect(
     (await browser.post("/api/auth/sign-in/email", { email: address, password: PASSWORD })).status,
@@ -156,6 +156,37 @@ describe("sign-up, verification, sign-in and sign-out", () => {
     const cookies = signedOut.headers.getSetCookie();
     expect(cookies.length).toBeGreaterThan(1);
     for (const cookie of cookies) expect(cookie).toMatch(/^s10n-base\.[a-z_]+=/);
+  });
+});
+
+describe("the display-name rule", () => {
+  it.each([
+    ["longer than 100 characters", "a".repeat(200)],
+    ["with a NUL character", "Sam\u0000"],
+    ["of whitespace only", "   "],
+  ])("refuses a sign-up with a name %s", async (_case, name) => {
+    const address = email("bad-name");
+    const response = await signUp(client(), address, name);
+
+    expect(response.status).toBe(400);
+    const stored = await app.schema.db
+      .selectFrom("ba_user")
+      .select("id")
+      .where("email", "=", address)
+      .execute();
+    expect(stored).toEqual([]);
+  });
+
+  it("trims a sign-up's name, and applies the same rule to update-user", async () => {
+    const address = email("named");
+    const browser = await signedInUser(address, "  Padded Name  ");
+    expect(await browser.session()).toMatchObject({ name: "Padded Name" });
+
+    for (const name of ["a".repeat(200), "Sam\u0000", ""]) {
+      expect((await browser.post("/api/auth/update-user", { name })).status).toBe(400);
+    }
+    expect((await browser.post("/api/auth/update-user", { name: "  Renamed  " })).status).toBe(200);
+    expect(await browser.session()).toMatchObject({ name: "Renamed" });
   });
 });
 

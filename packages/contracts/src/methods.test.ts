@@ -66,6 +66,10 @@ describe("profile.update and ProfileName", () => {
     expect(decodeName(42)._tag).toBe("Failure");
   });
 
+  it("refuses a NUL character, which Postgres cannot store in text", () => {
+    expect(decodeName("Sam\u0000")._tag).toBe("Failure");
+  });
+
   it("returns the updated profile", () => {
     expect(Schema.decodeUnknownSync(profileUpdate.success)(profile)).toEqual(profile);
   });

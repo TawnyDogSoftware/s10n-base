@@ -7,12 +7,14 @@ export const PROFILE_NAME_MAX = 100;
 
 /**
  * A display name as the user typed it: surrounding whitespace is trimmed, then it must have 1 to
- * {@link PROFILE_NAME_MAX} characters. Clients validate with it before sending, and the server
- * decodes with it, so both apply the same rule.
+ * {@link PROFILE_NAME_MAX} characters and no NUL character (Postgres cannot store one in text).
+ * Clients validate with it before sending, and the server applies it to every write of a user's
+ * name, so both apply the same rule.
  */
 export const ProfileName = Schema.Trim.check(
   Schema.isMinLength(1),
   Schema.isMaxLength(PROFILE_NAME_MAX),
+  Schema.isPattern(/^[^\0]*$/),
 );
 export type ProfileName = typeof ProfileName.Type;
 

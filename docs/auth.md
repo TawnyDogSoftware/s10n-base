@@ -26,6 +26,8 @@ Exposed: email sign-up, sign-in and sign-out, the session, email verification an
 
 Not exposed: social sign-in and every OAuth route, Better Auth's own reset link (`GET /reset-password/:token`, since reset emails open the web page), account deletion, email change, `update-session`, `verify-password`, Better Auth's `/ok` and `/error`, and the admin routes that create users, change arbitrary user fields, set a user's password or impersonate. `/admin/remove-user` is turned off in Better Auth itself (`disabledPaths`), because removing a user needs cleanup only a product knows about.
 
+Every write of a user's name, through sign-up, `update-user`, the admin routes or the `profile.update` RPC, goes through one rule: the contract's `ProfileName` (trimmed, 1 to 100 characters, no NUL), applied by a Better Auth database hook (`checkUserName` in `apps/server/src/auth/options.ts`). A name that breaks it gets a 400 and nothing is written.
+
 To expose a route, move it to `EXPOSED_AUTH_ROUTES` with the reason a client needs it. To add your own guarded user removal, add an RPC method with `auth: { role: "admin" }` that does the product's cleanup and then deletes the `ba_user` row (sessions, accounts and passkeys cascade).
 
 ## Cookies and cross-site rules

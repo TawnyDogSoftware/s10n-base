@@ -8,6 +8,7 @@ import type { AuthEmailSender } from "./email/sender";
 import {
   authEmailLink,
   AUTH_COOKIE_PREFIX,
+  checkUserName,
   CLIENT_IP_HEADER,
   buildAuthOptions,
   trustedOrigins,
@@ -217,5 +218,41 @@ describe("Better Auth's log lines", () => {
 
     expect(lines).toMatchObject([{ level: "warn", authMessage: "something odd" }]);
     expect(lines[0]).not.toHaveProperty("error");
+  });
+});
+
+describe("the user hooks", () => {
+  it("hold a created and an updated user's name to the rule", async () => {
+    const hooks = setup().options.databaseHooks.user;
+
+    expect(await hooks?.create?.before?.({ ...user, name: "  Created  " }, null)).toEqual({
+      data: { ...user, name: "Created" },
+    });
+    expect(await hooks?.update?.before?.({ name: "  Updated  " }, null)).toEqual({
+      data: { name: "Updated" },
+    });
+  });
+});
+
+describe("checkUserName", () => {
+  it("trims a valid name and leaves the other fields alone", () => {
+    expect(checkUserName({ name: "  Sam  ", email: "sam@example.com" })).toEqual({
+      data: { name: "Sam", email: "sam@example.com" },
+    });
+  });
+
+  it("passes data without a name through unchanged", () => {
+    expect(checkUserName({ image: null })).toEqual({ data: { image: null } });
+  });
+
+  it.each([["a".repeat(101)], ["Sam\u0000"], ["   "], [42]])("refuses %j with a 400", (name) => {
+    const failure: unknown = (() => {
+      try {
+        return checkUserName({ name });
+      } catch (error) {
+        return error;
+      }
+    })();
+    expect(failure).toMatchObject({ statusCode: 400, message: "The name is not valid." });
   });
 });
