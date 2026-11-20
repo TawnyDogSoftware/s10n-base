@@ -401,6 +401,25 @@ describe("/admin/users", () => {
     expect(await screen.findByRole("cell", { name: "Sam Renamed" })).toBeInTheDocument();
   });
 
+  it("drops the rows and the Users link when a demoted admin's next page is refused", async () => {
+    const backend = withUsers(ADMIN_USERS_PAGE_SIZE + 5);
+    renderApp("/admin/users", backend);
+    await screen.findByRole("table");
+    const admin = backend.users.get("admin@example.com");
+    if (admin === undefined) throw new Error("no user");
+
+    admin.role = "user";
+    click("Load more");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "You do not have access to this page" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole("navigation")).queryByRole("link", { name: "Users" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows a signed-in non-admin a not-allowed page, not a redirect, and asks for nothing", async () => {
     const app = renderApp("/admin/users", signedIn());
 

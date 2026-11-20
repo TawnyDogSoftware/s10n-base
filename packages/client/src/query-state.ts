@@ -10,8 +10,8 @@
  *    removed, synchronously, before React hears of the new session.
  * 3. A response that started under one user and finishes under another is discarded
  *    ({@link StaleSessionError}).
- * 4. `auth.unauthenticated` from a protected call re-reads the session; a session that is gone is
- *    a sign-out, so rule 2 applies.
+ * 4. `auth.unauthenticated` or `auth.forbidden` from a protected call re-reads the session; a
+ *    session that is gone is a sign-out, and a changed role a change of user, so rule 2 applies.
  * 5. A security action (sign in or out, sign up, password reset, passkey added or removed) is run
  *    through {@link SessionGate.settle}, which re-reads the session afterwards. A `NetworkError`
  *    is an unknown outcome, settled by that read rather than reported as a failure. The read runs
@@ -148,6 +148,12 @@ export function browserSessionChannel(name: string): SessionChannel | undefined 
 
 const NOT_SEEN = Symbol("not seen");
 
+/** Refusals that may mean the session changed: its end, or a change of role. */
+const SESSION_REFUSALS: ReadonlySet<string> = new Set([
+  ERROR_CODES.unauthenticated,
+  ERROR_CODES.forbidden,
+]);
+
 function identityOf(session: AppSession | null): string | null {
   return session === null ? null : `${session.userId}\u0000${session.role}`;
 }
@@ -222,7 +228,9 @@ export function createSessionGate(options: {
       value = await run();
     } catch (error) {
       if (epoch !== started) throw new StaleSessionError();
-      if (error instanceof RpcError && error.code === ERROR_CODES.unauthenticated) void refresh();
+      // A refusal for the session (gone) or the role (demoted): the session read decides, and a
+      // change of user or role purges (rule 2). A 403 alone never signs anyone out.
+      if (error instanceof RpcError && SESSION_REFUSALS.has(error.code)) void refresh();
       throw error;
     }
     if (epoch !== started) throw new StaleSessionError();

@@ -290,13 +290,26 @@ describe("an auth.unauthenticated error from a protected call", () => {
     expect(server.fetchSession).toHaveBeenCalledTimes(1);
   });
 
+  it("re-reads the session after auth.forbidden too, without signing out", async () => {
+    const { gate, server } = setup();
+    accept(gate, alice);
+    server.set(user("alice", "user"));
+    const refused = new RpcError("auth.forbidden", "no", 403);
+
+    await expect(gate.guard(() => Promise.reject(refused))).rejects.toBe(refused);
+
+    await waitFor(() => {
+      expect(server.fetchSession).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("does not re-read the session for other errors", async () => {
     const { gate, server } = setup();
     accept(gate, alice);
     server.fetchSession.mockClear();
 
     await expect(
-      gate.guard(() => Promise.reject(new RpcError("auth.forbidden", "No.", 403))),
+      gate.guard(() => Promise.reject(new RpcError("rpc.invalid_payload", "No.", 400))),
     ).rejects.toBeInstanceOf(RpcError);
 
     expect(server.fetchSession).not.toHaveBeenCalled();
