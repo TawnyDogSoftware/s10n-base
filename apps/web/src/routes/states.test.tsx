@@ -123,7 +123,7 @@ describe("/profile, when things go wrong", () => {
       body: { code: "PASSKEY_NOT_FOUND", message: "x" },
     });
 
-    click("Remove passkey Laptop");
+    click(/^Remove passkey Laptop, added /);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("That passkey no longer exists.");
   });

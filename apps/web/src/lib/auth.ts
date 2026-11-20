@@ -29,7 +29,8 @@ export interface WebAuth extends PasswordAuth {
   readonly verifyEmail: (token: string) => Promise<AuthResult>;
   readonly resetPassword: (token: string, newPassword: string) => Promise<AuthResult>;
   readonly listPasskeys: () => Promise<AuthResult<Passkey[]>>;
-  readonly addPasskey: () => Promise<AuthResult>;
+  /** Adds a passkey under `name`, so the user can tell it from their others. */
+  readonly addPasskey: (name: string) => Promise<AuthResult>;
   readonly deletePasskey: (id: string) => Promise<AuthResult>;
 }
 function toPasskeys(data: unknown): Passkey[] {
@@ -72,7 +73,7 @@ export function createWebAuth(options: {
       const result = await run((fetchOptions) => client.passkey.listUserPasskeys({ fetchOptions }));
       return result.ok ? { ok: true, data: toPasskeys(result.data) } : result;
     },
-    addPasskey: () => run((fetchOptions) => client.passkey.addPasskey({ fetchOptions })),
+    addPasskey: (name) => run((fetchOptions) => client.passkey.addPasskey({ name, fetchOptions })),
     deletePasskey: (id) =>
       run((fetchOptions) => client.passkey.deletePasskey({ id, fetchOptions })),
   };

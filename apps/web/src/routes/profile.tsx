@@ -22,6 +22,13 @@ function formatDate(value: string, language: string): string {
   return new Intl.DateTimeFormat(language, { dateStyle: "medium" }).format(new Date(value));
 }
 
+/** Date and time: two passkeys added the same day must not look the same. */
+function formatDateTime(value: Date | string, language: string): string {
+  return new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(
+    new Date(value),
+  );
+}
+
 function NameForm(props: { readonly profile: Profile }) {
   const { t } = useTranslation("profile");
   const { t: tAuth } = useTranslation("auth");
@@ -71,41 +78,53 @@ function QueryFallback(props: { readonly failed: boolean; readonly message: stri
   return props.failed ? <Notice tone="danger">{props.message}</Notice> : <Loading />;
 }
 
+/** Each passkey's shown name and its remove button's name, numbered where two would match. */
+function usePasskeyLabels(passkeys: readonly Passkey[]) {
+  const { t, i18n } = useTranslation("profile");
+  const seen = new Map<string, number>();
+  return passkeys.map((passkey) => {
+    const name = passkey.name ?? t("passkeys.unnamed");
+    const date = formatDateTime(passkey.createdAt, i18n.language);
+    const base = t("passkeys.removeLabel", { name, date });
+    const number = (seen.get(base) ?? 0) + 1;
+    seen.set(base, number);
+    const removeLabel =
+      number === 1 ? base : t("passkeys.removeLabelNumbered", { name, date, number });
+    return { passkey, name, date, removeLabel };
+  });
+}
+
 function PasskeyList(props: {
   readonly passkeys: readonly Passkey[];
   readonly pending: boolean;
   readonly onRemove: (passkey: Passkey) => void;
 }) {
-  const { t, i18n } = useTranslation("profile");
+  const { t } = useTranslation("profile");
+  const labels = usePasskeyLabels(props.passkeys);
   if (props.passkeys.length === 0) return <p>{t("passkeys.empty")}</p>;
   return (
     <ul className="flex flex-col gap-3">
-      {props.passkeys.map((passkey) => {
-        const name = passkey.name ?? t("passkeys.unnamed");
-        return (
-          <li
-            key={passkey.id}
-            className="border-border flex items-center justify-between gap-4 rounded-md border px-4 py-3"
+      {labels.map(({ passkey, name, date, removeLabel }) => (
+        <li
+          key={passkey.id}
+          className="border-border flex items-center justify-between gap-4 rounded-md border px-4 py-3"
+        >
+          <div>
+            <p className="font-medium">{name}</p>
+            <p className="text-muted text-sm">{t("passkeys.addedOn", { date })}</p>
+          </div>
+          <Button
+            variant="secondary"
+            disabled={props.pending}
+            aria-label={removeLabel}
+            onClick={() => {
+              props.onRemove(passkey);
+            }}
           >
-            <div>
-              <p className="font-medium">{name}</p>
-              <p className="text-muted text-sm">
-                {t("passkeys.addedOn", { date: formatDate(passkey.createdAt, i18n.language) })}
-              </p>
-            </div>
-            <Button
-              variant="secondary"
-              disabled={props.pending}
-              aria-label={t("passkeys.removeLabel", { name })}
-              onClick={() => {
-                props.onRemove(passkey);
-              }}
-            >
-              {t("passkeys.remove")}
-            </Button>
-          </li>
-        );
-      })}
+            {t("passkeys.remove")}
+          </Button>
+        </li>
+      ))}
     </ul>
   );
 }
@@ -126,7 +145,7 @@ function PasskeyNotice(props: { readonly message: PasskeyMessage | null }) {
 }
 
 function Passkeys() {
-  const { t } = useTranslation("profile");
+  const { t, i18n } = useTranslation("profile");
   const { t: tError } = useTranslation("errors");
   const { auth, gate } = useServices();
   const { query } = useProtectedQuery(["passkeys"], async () => {
@@ -168,7 +187,17 @@ function Passkeys() {
           <Button
             pending={pending}
             pendingLabel={t("passkeys.adding")}
-            onClick={() => void change(() => auth.addPasskey(), t("passkeys.added"))}
+            onClick={() =>
+              void change(
+                () =>
+                  auth.addPasskey(
+                    t("passkeys.defaultName", {
+                      date: formatDateTime(new Date(), i18n.language),
+                    }),
+                  ),
+                t("passkeys.added"),
+              )
+            }
           >
             {t("passkeys.add")}
           </Button>

@@ -194,11 +194,45 @@ describe("/profile", () => {
 
     expect(await screen.findByText("Laptop")).toBeInTheDocument();
     expect(screen.getByText("Passkey")).toBeInTheDocument();
-    click("Remove passkey Laptop");
+    click(/^Remove passkey Laptop, added /);
 
     expect(await screen.findByText("Passkey removed.")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText("Laptop")).not.toBeInTheDocument());
     expect(backend.calls("/api/auth/passkey/list-user-passkeys").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("tells apart two passkeys added the same day, on screen and to a screen reader", async () => {
+    const backend = signedIn();
+    const sam = backend.users.get("sam@example.com");
+    if (sam === undefined) throw new Error("no user");
+    sam.passkeys = [
+      { id: "pk1", name: null, createdAt: "2026-11-20T09:05:00.000Z" },
+      { id: "pk2", name: null, createdAt: "2026-11-20T14:40:00.000Z" },
+      { id: "pk3", name: null, createdAt: "2026-11-20T14:40:00.000Z" },
+    ];
+    renderApp("/profile", backend);
+
+    const buttons = await screen.findAllByRole("button", { name: /^Remove passkey/ });
+    const rows = buttons.map((button) => button.closest("li")?.textContent);
+    expect(new Set(rows.slice(0, 2)).size).toBe(2);
+    expect(new Set(buttons.map((button) => button.getAttribute("aria-label"))).size).toBe(3);
+  });
+
+  it("names a new passkey when it is added", async () => {
+    vi.stubGlobal("PublicKeyCredential", function PublicKeyCredential() {});
+    const app = renderApp("/profile", signedIn());
+
+    await screen.findByRole("button", { name: "Add a passkey" });
+    click("Add a passkey");
+
+    await waitFor(() => {
+      expect(app.backend.calls("/api/auth/passkey/generate-register-options")).toHaveLength(1);
+    });
+    expect(
+      new URLSearchParams(
+        app.backend.calls("/api/auth/passkey/generate-register-options")[0]?.search,
+      ).get("name"),
+    ).toMatch(/^Passkey added /);
   });
 
   it("says when the browser cannot use passkeys", async () => {
@@ -225,7 +259,7 @@ describe("/profile", () => {
     await screen.findByText("Laptop");
     backend.failNext("/api/auth/passkey/delete-passkey", { kind: "network", afterHandling: true });
 
-    click("Remove passkey Laptop");
+    click(/^Remove passkey Laptop, added /);
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("We could not confirm whether that worked");
