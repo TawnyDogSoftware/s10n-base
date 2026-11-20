@@ -179,6 +179,37 @@ describe("createRpcClient", () => {
     expect(signal?.aborted).toBe(true);
   });
 
+  it.each([502, 503, 504])(
+    "treats a proxy's %i as a lost answer even with a well-formed error envelope",
+    async (status) => {
+      const client = createRpcClient({
+        baseUrl: "https://api.example.com",
+        fetch: () =>
+          Promise.resolve(
+            json({ ok: false, error: { code: "rpc.internal", message: "upstream" } }, status),
+          ),
+      });
+
+      await expect(client.call(count, { n: 1 })).rejects.toBeInstanceOf(NetworkError);
+    },
+  );
+
+  it.each([
+    ["a success envelope with an error status", { ok: true, data: { total: "1" } }, 500],
+    [
+      "an error envelope with a success status",
+      { ok: false, error: { code: "x", message: "m" } },
+      200,
+    ],
+  ])("does not trust %s", async (_name, body, status) => {
+    const client = createRpcClient({
+      baseUrl: "https://api.example.com",
+      fetch: () => Promise.resolve(json(body, status)),
+    });
+
+    await expect(client.call(count, { n: 1 })).rejects.toBeInstanceOf(DecodeError);
+  });
+
   it("refuses to send a payload the contract cannot encode, without a request", async () => {
     const { fetch, requests } = fakeFetch(() => json({ ok: true, data: { total: "1" } }));
     const client = createRpcClient({ baseUrl: "https://api.example.com", fetch });

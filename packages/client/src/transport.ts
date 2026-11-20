@@ -150,13 +150,18 @@ function parseJson(text: string): unknown {
   }
 }
 
-/** The data of a success envelope; any other answer becomes the error it means. */
+/**
+ * The data of a success envelope; any other answer becomes the error it means. A proxy's 502 to
+ * 504 is a lost answer whatever its body says, since the server never sends one; and the status
+ * and the envelope must agree (a success with 2xx, a refusal without), or the answer is not ours.
+ */
 function unwrap(status: number, text: string): unknown {
+  if (LOST_ANSWER.has(status)) {
+    throw new NetworkError(`The server's answer was lost (HTTP ${String(status)}).`);
+  }
   const envelope = decodeEnvelope(parseJson(text));
-  if (envelope._tag === "None") {
-    if (LOST_ANSWER.has(status)) {
-      throw new NetworkError(`The server's answer was lost (HTTP ${String(status)}).`);
-    }
+  const success = status >= 200 && status < 300;
+  if (envelope._tag === "None" || envelope.value.ok !== success) {
     throw new DecodeError(`Unexpected answer from the server (HTTP ${String(status)}).`);
   }
   if (!envelope.value.ok) {
