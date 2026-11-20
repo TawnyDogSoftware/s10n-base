@@ -76,6 +76,14 @@ describe("the CI workflow", () => {
     );
   });
 
+  it("proves the rename in a job of its own, with the whole history for the attribution gate", () => {
+    const rename = jobs(workflow).find((job) => job.runs.includes("bun run rename:proof"));
+    const section = workflow.slice(workflow.indexOf("\n  rename:\n"));
+
+    expect(rename?.id).toBe("rename");
+    expect(section).toContain("fetch-depth: 0");
+  });
+
   it("uploads no artifact, so no trace, video or snapshot of a journey leaves the runner", () => {
     expect(workflow).not.toMatch(/actions\/upload-artifact/);
   });

@@ -176,3 +176,26 @@ jobs:
         run: bun run docker:smoke
       - name: Print the image size
         run: docker image ls s10n-base:local --format "{{.Repository}}:{{.Tag}} {{.Size}}"
+
+  rename:
+    name: Rename proof
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The whole history: the renamed copy runs agent:check, whose attribution gate needs main.
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      # Clones this commit into a temporary directory, renames the clone with sample names, and
+      # there runs a frozen install, agent:check, the build and the mobile export, then searches
+      # the clone for any spelling of the base's name (scripts/rename/proof.ts). It needs no
+      # install here: the proof script imports only Node's modules.
+      - name: Rename a copy of the repository and check it still works (bun run rename:proof)
+        run: bun run rename:proof
