@@ -207,6 +207,8 @@ No environment variable carries the base's name any more: phase 3 removed the la
 
 ### Open item found in review
 
+**Done:** fixed by [plan 010](010-recheck-session-in-profile-update.md) on the same pull request, which also removed the exception from `AGENTS.md`.
+
 Codex's automatic pass on `b4f1c44` found that `profile.update` (phase 5) breaks a rule `AGENTS.md` now states: it writes the name through Better Auth's internal adapter with only the user id, after the dispatcher's one session lookup, so a session revoked while the request runs (for example while the update waits on a row lock) can still change the name. The finding is right. It is **not fixed here**: a fix carries the session into the RPC actor and rechecks it under a row lock inside the same transaction as Better Auth's write, keeping its hooks, which changes auth behaviour across the dispatcher, the actor, the handler and the live tests; section 2 rules out behaviour changes in this phase, and it is the owner's decision whether and how to make it. `AGENTS.md` says that this handler does not meet the rule yet, so the rule is not weakened and the document stays true of the code. Proposed as a small follow-up plan.
 
 ### Verification on the final commit (section 9)

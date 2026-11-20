@@ -71,6 +71,7 @@ What changed under existing names, so a port does not miss it:
 - **Email:** our own Amazon SES v2 client (a SigV4 signer verified against the AWS test suite, retries only when SES certainly did not accept the email, typed errors without secrets) behind `AuthEmailSender`. No AWS SDK.
 - **Local inbox:** `bun run ses:local`, our own capture server, which `bun dev` starts: it checks each request's signature, keeps the last 200 emails, and serves an inbox at `http://127.0.0.1:8005/` and the emails as JSON at `/store`.
 - **`bun run auth:set-role <email> <role>`** (and `dist/set-role.mjs` in the image) makes the first admin.
+- **Session recheck** ([plans/010-recheck-session-in-profile-update.md](plans/010-recheck-session-in-profile-update.md)): an RPC handler that writes on the caller's authority runs its writes in `sessionTransaction`, which locks the caller's session row, then reads the clock, and refuses with `auth.unauthenticated` when the session was revoked, expired or its user banned while the request ran. `profile.update` uses it. Better Auth is given a joinable database, so its writes join that transaction and keep their hooks. The RPC actor carries `sessionId`, and `AppAuth.getSession` returns the session with its row id. Write handlers a project adds should use it ([docs/auth.md](docs/auth.md#pitfalls-our-projects-reviews-found)).
 
 ### Added: the web blank slate and the shared client, theme and i18n packages
 

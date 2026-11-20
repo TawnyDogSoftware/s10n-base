@@ -75,7 +75,7 @@ Enforced by `bun run boundaries` (`.dependency-cruiser.cjs`), type-only imports 
 ## Auth rules
 
 - A Better Auth upgrade or a new plugin that adds an endpoint fails a test until the endpoint is decided in `apps/server/src/auth/allowed-routes.ts`, as exposed or not, with a reason. Clients read `AppSession`, not Better Auth's objects.
-- The pitfalls from [docs/auth.md](docs/auth.md#pitfalls-our-projects-reviews-found): **read the clock after taking row locks**, not before; **recheck the session inside a transaction** that acts on its authority; **treat a lost response to a security action as an unknown outcome**, re-read the state, and never report it as a failure. One handler does not meet the second rule yet: `profile.update` (`apps/server/src/rpc/profile.ts`) writes through Better Auth with the user id only, so a session revoked during the request can still change the name. Plan 009 records it as an open item; follow the rule in new code.
+- The pitfalls from [docs/auth.md](docs/auth.md#pitfalls-our-projects-reviews-found): **read the clock after taking row locks**, not before; **recheck the session inside a transaction** that acts on its authority (an RPC handler that writes on the caller's authority runs its writes in `sessionTransaction`, `apps/server/src/rpc/session-transaction.ts`); **treat a lost response to a security action as an unknown outcome**, re-read the state, and never report it as a failure.
 
 ## Plans and decisions
 
