@@ -15,8 +15,9 @@ describe("GATES", () => {
     for (const gate of GATES) expect(manifest.scripts[gate], gate).toBeDefined();
   });
 
-  it("include everything plan 007 lists, without a database or a browser", () => {
+  it("include everything plans 007 and 009 list, without a database or a browser", () => {
     expect(GATES).toEqual([
+      "commits:attribution",
       "lint:directives",
       "lint:oxlint",
       "lint:eslint",

@@ -72,6 +72,8 @@
     "coverage:exclusions": "bun scripts/quality/coverage-exclusions.main.ts",
     "test:live": "bun scripts/with-env.main.ts vitest run --config apps/server/vitest.live.config.ts",
     "test:e2e": "bun run build && playwright test",
+    "commits:attribution": "bun scripts/quality/commit-attribution.main.ts",
+    "hooks:install": "git config core.hooksPath .githooks",
     "lint": "bun run lint:directives && bun run lint:oxlint && bun run lint:eslint",
     "lint:directives": "bun scripts/quality/lint-directives.main.ts",
     "lint:oxlint": "oxlint . --deny-warnings --report-unused-disable-directives",

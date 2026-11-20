@@ -40,6 +40,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The whole history, so the commit-attribution gate finds the merge base with main.
+          fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
@@ -47,10 +49,15 @@ jobs:
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
-      # Every gate that needs no database and no browser, the same command as locally: lint with
-      # no suppressions, format, typecheck, boundaries, dead code, 100% coverage and the audit.
-      # scripts/ci-workflow.test.ts fails if this job stops running it.
+      # Every gate that needs no database and no browser, the same command as locally: commit
+      # attribution, lint with no suppressions, format, typecheck, boundaries, dead code, 100%
+      # coverage and the audit. scripts/ci-workflow.test.ts fails if this job stops running it.
+      # The pull request's title and description reach the attribution gate through the
+      # environment, never through the shell command, so their text cannot run as a command.
       - name: Run every gate that needs no database (bun run agent:check)
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: bun run agent:check
       - run: bun run build
       # Against the installed Expo SDK's own version map, so the result depends only on the

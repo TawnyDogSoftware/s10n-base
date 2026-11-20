@@ -31,6 +31,18 @@ describe("the CI workflow", () => {
     }
   });
 
+  it("checks out the whole history and passes the pull request's text to the attribution gate", () => {
+    const first = workflow.slice(
+      workflow.indexOf("\n  check:\n"),
+      workflow.indexOf("\n  mobile:\n"),
+    );
+
+    expect(first).toContain("fetch-depth: 0");
+    expect(first).toContain("PR_TITLE: ${{ github.event.pull_request.title }}");
+    expect(first).toContain("PR_BODY: ${{ github.event.pull_request.body }}");
+    expect(first).not.toMatch(/run: .*github\.event\.pull_request/);
+  });
+
   it("then builds, migrates, runs the live tests and the smoke test", () => {
     const [first] = jobs(workflow);
     const runs = first?.runs ?? [];

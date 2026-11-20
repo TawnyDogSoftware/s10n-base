@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 
 /** Each gate is a package.json script, run with `bun run`. */
 export const GATES = [
+  "commits:attribution",
   "lint:directives",
   "lint:oxlint",
   "lint:eslint",

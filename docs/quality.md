@@ -10,6 +10,7 @@ It runs the gates below in this order and stops at the first failure, naming it 
 
 | Gate                | Run it alone                  | What it checks                                                        |
 | ------------------- | ----------------------------- | --------------------------------------------------------------------- |
+| Commit attribution  | `bun run commits:attribution` | No commit message or pull request credits an AI tool                  |
 | Directives          | `bun run lint:directives`     | No comment switches off a lint rule, a type error or coverage         |
 | oxlint              | `bun run lint:oxlint`         | Correctness, suspicious code, performance, React hooks, accessibility |
 | ESLint              | `bun run lint:eslint`         | Type-aware rules, sonarjs, the size limits, no hard-coded text in JSX |
@@ -21,7 +22,13 @@ It runs the gates below in this order and stops at the first failure, naming it 
 | Coverage            | `bun run test:coverage`       | 100% of lines, branches, functions and statements                     |
 | Audit               | `bun run deps:audit`          | No advisory against an installed package that nobody has triaged      |
 
-`bun run lint` runs the first three. Outside `agent:check`: `bun run test:live` (needs the database), `bun run smoke` (needs a build and the database), `bun run test:e2e` (the browser journeys), and `bun run docker:build` then `bun run docker:smoke` (Docker and the database).
+`bun run lint` runs the directive check, oxlint and ESLint. Outside `agent:check`: `bun run test:live` (needs the database), `bun run smoke` (needs a build and the database), `bun run test:e2e` (the browser journeys), and `bun run docker:build` then `bun run docker:smoke` (Docker and the database).
+
+## Commit attribution
+
+`bun run commits:attribution` (`scripts/quality/commit-attribution.ts`) reads the messages of the commits a branch proposes, from its merge base with the default branch (`origin/HEAD`, `origin/main` or `main`; `ATTRIBUTION_BASE` overrides it) to `HEAD`, and in CI the pull request's title and description (`PR_TITLE`, `PR_BODY`). It fails on a trailer that names an AI tool, an AI vendor's address, a "generated with" footer, a link to a tool's session, or a robot-emoji footer, naming the commit and the line. The rules are one list in that file, each with a test case; a person's `Co-authored-by:` passes. CI checks out the whole history so the merge base can be found; a shallow clone fails with a message saying so.
+
+To fix a failure, reword the commit (`git commit --amend`, or an interactive rebase for an older one) and push again; edit the pull request's text, which is checked again at the next push. To catch it before the commit exists, `bun run hooks:install` sets `core.hooksPath` to `.githooks`, whose `commit-msg` runs the same check on the message. It is optional, and there is no hook manager.
 
 ## The rule: fix the code, never the gate
 

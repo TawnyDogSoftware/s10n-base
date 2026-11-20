@@ -1,0 +1,4 @@
+#!/bin/sh
+# The commit-attribution check on the message being committed, before the commit exists.
+# Turn it on with `bun run hooks:install` (it sets core.hooksPath); see AGENTS.md.
+exec bun scripts/quality/commit-attribution.main.ts --message-file "$1"
