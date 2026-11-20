@@ -1,6 +1,6 @@
 # 009: Conventions and docs
 
-> Status: not started.
+> Status: in progress since 2026-11-20, on branch `feature/001-strip-desktop-and-local-first` (the rework's single pull request).
 
 Phase 9 of [000](000-hosted-starter-rework.md), the last phase that changes this repo. Builds on phases 1 to 8.
 
