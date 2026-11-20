@@ -6,6 +6,7 @@ import { createLogger } from "../observability/logger";
 import { scriptedDb } from "../test/scripted-db";
 import type { Actor, RpcHandlerContext } from "./dispatcher";
 import { profileHandlers } from "./profile";
+import type { SessionTransaction } from "./session-transaction";
 
 const USER_ID = "00000000-0000-4000-8000-000000000001";
 
@@ -17,7 +18,7 @@ function contextFor(actor: Actor): RpcHandlerContext {
   };
 }
 
-const signedIn = contextFor({ kind: "user", userId: USER_ID, role: "user" });
+const signedIn = contextFor({ kind: "user", userId: USER_ID, role: "user", sessionId: "s1" });
 
 const row = {
   id: USER_ID,
@@ -34,10 +35,26 @@ function handlers(rows: ReadonlyArray<Record<string, unknown>>) {
   const updateUserName = vi.fn<AppAuth["updateUserName"]>((id, name) =>
     Promise.resolve({ ...row, id, name, emailVerified: true, createdAt: row.created_at }),
   );
-  const [get, update] = profileHandlers({ db: scripted.db, auth: { updateUserName } });
+  // Stands in for the recheck: it records that the work ran inside it, for the signed-in caller.
+  const transactions: string[] = [];
+  const sessionTransaction: SessionTransaction = async (context, work) => {
+    const actor = await context.getActor();
+    if (actor.kind !== "user") throw new Error("Expected a signed-in caller.");
+    return scripted.db.transaction().execute(async (trx) => {
+      transactions.push("begin");
+      const result = await work(trx, actor);
+      transactions.push("commit");
+      return result;
+    });
+  };
+  const [get, update] = profileHandlers({
+    db: scripted.db,
+    auth: { updateUserName },
+    sessionTransaction,
+  });
   if (get === undefined || update === undefined)
     throw new Error("The profile handlers are missing.");
-  return { get, update, updateUserName, queries: scripted.queries };
+  return { get, update, updateUserName, transactions, queries: scripted.queries };
 }
 
 describe("profile.get", () => {
@@ -54,6 +71,15 @@ describe("profile.get", () => {
       createdAt: "2026-11-19T10:00:00.000Z",
     });
     expect(queries[0]?.parameters).toEqual([USER_ID]);
+  });
+
+  it("reads without a session transaction or a lock", async () => {
+    const { get, transactions, queries } = handlers([row]);
+
+    await get.handle({}, signedIn);
+
+    expect(transactions).toEqual([]);
+    expect(queries.map((query) => query.sql).join("\n")).not.toMatch(/for update/);
   });
 
   it("fails when the caller's row is gone", async () => {
@@ -73,13 +99,18 @@ describe("profile.get", () => {
 });
 
 describe("profile.update", () => {
-  it("renames the caller through Better Auth and returns the new profile", async () => {
-    const { update, updateUserName } = handlers([]);
+  it("renames the caller through Better Auth, in a session transaction, and returns the new profile", async () => {
+    const { update, updateUserName, transactions } = handlers([]);
+    updateUserName.mockImplementationOnce((id, name) => {
+      expect(transactions).toEqual(["begin"]);
+      return Promise.resolve({ ...row, id, name, emailVerified: true, createdAt: row.created_at });
+    });
 
     expect(await update.handle({ name: "Sam" }, signedIn)).toMatchObject({
       userId: USER_ID,
       name: "Sam",
     });
     expect(updateUserName).toHaveBeenCalledWith(USER_ID, "Sam");
+    expect(transactions).toEqual(["begin", "commit"]);
   });
 });

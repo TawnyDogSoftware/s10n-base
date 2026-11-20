@@ -22,13 +22,15 @@ function requestWith(headers: IncomingMessage["headers"]): IncomingMessage {
 }
 
 describe("createSessionActorResolver", () => {
-  it("is the signed-in user with their role, looked up from the request's cookie", async () => {
-    const getSession = vi.fn<AppAuth["getSession"]>(() => Promise.resolve(session));
+  it("is the signed-in user with their role and session, looked up from the request's cookie", async () => {
+    const getSession = vi.fn<AppAuth["getSession"]>(() =>
+      Promise.resolve({ session, sessionId: "s1" }),
+    );
     const resolve = createSessionActorResolver({ getSession });
 
     const actor = await resolve(requestWith({ cookie: "s10n-base.session_token=t" }));
 
-    expect(actor).toEqual({ kind: "user", userId: "u1", role: "admin" });
+    expect(actor).toEqual({ kind: "user", userId: "u1", role: "admin", sessionId: "s1" });
     expect(getSession.mock.calls[0]?.[0].get("cookie")).toBe("s10n-base.session_token=t");
   });
 

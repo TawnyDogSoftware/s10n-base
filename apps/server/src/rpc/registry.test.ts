@@ -34,6 +34,7 @@ describe("RPC registry", () => {
     const handlers = createRpcHandlers({
       db: unusedDb(),
       auth: { updateUserName: () => Promise.reject(new Error("unused")) },
+      sessionTransaction: () => Promise.reject(new Error("unused")),
     });
 
     expect(rpcContracts.length).toBeGreaterThan(0);

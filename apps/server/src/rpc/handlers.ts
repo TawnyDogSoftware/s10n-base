@@ -5,11 +5,14 @@ import type { DB } from "../infra/postgres/generated/db";
 import { adminUserHandlers } from "./admin-users";
 import type { RpcHandler } from "./dispatcher";
 import { profileHandlers } from "./profile";
+import type { SessionTransaction } from "./session-transaction";
 
 /** What the handlers need from the server. */
 export interface RpcHandlerDependencies {
   readonly db: Kysely<DB>;
   readonly auth: Pick<AppAuth, "updateUserName">;
+  /** For handlers that write on the caller's session's authority (`session-transaction.ts`). */
+  readonly sessionTransaction: SessionTransaction;
 }
 
 /**

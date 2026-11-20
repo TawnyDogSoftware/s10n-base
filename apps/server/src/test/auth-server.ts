@@ -51,6 +51,8 @@ export async function startAuthServer(
      * new migrated fixture schema, as the test database's own role.
      */
     readonly createSchema?: () => Promise<MigratedSchema>;
+    /** The clock a session transaction reads; the system clock by default. */
+    readonly now?: () => Date;
   } = {},
 ): Promise<AuthServer> {
   const schema = await (options.createSchema ?? createMigratedSchema)();
@@ -84,6 +86,7 @@ export async function startAuthServer(
           },
         }),
       ...(options.handlers ? { handlers: options.handlers } : {}),
+      now: options.now,
     });
   } catch (error) {
     await ses.stop();

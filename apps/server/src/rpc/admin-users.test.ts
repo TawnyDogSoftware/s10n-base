@@ -12,7 +12,8 @@ import { encodeUserCursor } from "./user-cursor";
 const context: RpcHandlerContext = {
   requestId: "r1",
   logger: createLogger({ level: "error", write: () => {} }),
-  getActor: () => Promise.resolve({ kind: "user", userId: "admin", role: "admin" }),
+  getActor: () =>
+    Promise.resolve({ kind: "user", userId: "admin", role: "admin", sessionId: "s1" }),
 };
 
 function userRow(index: number, overrides: Record<string, unknown> = {}) {

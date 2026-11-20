@@ -25,10 +25,10 @@ export interface AppAuth {
   /** Every route Better Auth serves over HTTP, exposed or not. */
   readonly routes: readonly AuthRoute[];
   /**
-   * The signed-in user for a request's cookies, or `null` when there is no valid session, the
-   * session expired, or the user is banned.
+   * The signed-in user for a request's cookies, with the id of their session row, or `null` when
+   * there is no valid session, the session expired, or the user is banned.
    */
-  readonly getSession: (headers: Headers) => Promise<AppSession | null>;
+  readonly getSession: (headers: Headers) => Promise<SignedInSession | null>;
   /**
    * The same, plus the cookies Better Auth set while reading it: a renewed session cookie once
    * the session is a day old (`session.updateAge`), or a deletion for one that is gone. The
@@ -49,6 +49,12 @@ export interface AppAuth {
     userId: string,
     name: string,
   ) => Promise<AuthUser & { createdAt: Date }>;
+}
+
+/** A signed-in caller: their session as clients see it, and the id of the session row behind it. */
+export interface SignedInSession {
+  readonly session: AppSession;
+  readonly sessionId: string;
 }
 
 /** The user fields {@link toAppSession} reads, as Better Auth and its admin plugin return them. */
@@ -98,6 +104,15 @@ export function sessionOf(result: { readonly user: unknown } | null, now: Date):
   return isBanned(user, now) ? null : toAppSession(user);
 }
 
+/** The signed-in caller of Better Auth's lookup result: none when there is none, or banned. */
+export function signedInOf(
+  result: { readonly user: unknown; readonly session: { readonly id: string } } | null,
+  now: Date,
+): SignedInSession | null {
+  const session = sessionOf(result, now);
+  return result === null || session === null ? null : { session, sessionId: result.session.id };
+}
+
 /**
  * The session route's answer for Better Auth's lookup result and the cookies it set. A banned
  * user's session is not renewed for them, so their cookies are dropped.
@@ -131,7 +146,7 @@ export function createAppAuth(options: AuthOptions, now: () => Date = () => new 
     handler: (request) => auth.handler(request),
     guard,
     routes,
-    getSession: async (headers) => sessionOf(await auth.api.getSession({ headers }), now()),
+    getSession: async (headers) => signedInOf(await auth.api.getSession({ headers }), now()),
     readSession: async (headers) => {
       const result = await auth.api.getSession({ headers, returnHeaders: true });
       return readSessionOf(result.response, result.headers.getSetCookie(), now());

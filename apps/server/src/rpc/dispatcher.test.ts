@@ -37,8 +37,8 @@ const adminEcho = defineRpc({
 });
 
 const anonymous: Actor = { kind: "anonymous" };
-const user: Actor = { kind: "user", userId: "u1", role: "user" };
-const admin: Actor = { kind: "user", userId: "a1", role: "admin" };
+const user: Actor = { kind: "user", userId: "u1", role: "user", sessionId: "s1" };
+const admin: Actor = { kind: "user", userId: "a1", role: "admin", sessionId: "s2" };
 
 function double(contract: typeof publicEcho) {
   return defineHandler(contract, ({ count }) => Promise.resolve({ doubled: count * 2 }));

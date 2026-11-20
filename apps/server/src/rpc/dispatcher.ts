@@ -18,10 +18,18 @@ import {
 
 import type { Logger } from "../observability/logger";
 
-/** Who is calling: nobody signed in, or a signed-in user with a role. */
+/**
+ * Who is calling: nobody signed in, or a signed-in user with a role and the id of the session
+ * row they called with (which a session transaction rechecks: `rpc/session-transaction.ts`).
+ */
 export type Actor =
   | { readonly kind: "anonymous" }
-  | { readonly kind: "user"; readonly userId: string; readonly role: Role };
+  | {
+      readonly kind: "user";
+      readonly userId: string;
+      readonly role: Role;
+      readonly sessionId: string;
+    };
 
 /** Finds the caller of a request: in the server, a session lookup (`auth/session-actor.ts`). */
 export type ActorResolver = (request: IncomingMessage | undefined) => Promise<Actor>;

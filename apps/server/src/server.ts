@@ -44,10 +44,12 @@ import {
 } from "./infra/postgres/migrator";
 import { migrations as committedMigrations } from "./infra/postgres/migrations";
 import { createDb, createPool, warnOnIdleError } from "./infra/postgres/pool";
+import { joinableTransactions, type JoinableTransactions } from "./infra/postgres/transactions";
 import { createRequestHandler } from "./http/routes";
 import { createLogger, type Logger, type LogWriter } from "./observability/logger";
 import { type ActorResolver, createRpcDispatcher, type RpcHandler } from "./rpc/dispatcher";
 import { createRpcHandlers } from "./rpc/handlers";
+import { createSessionTransaction } from "./rpc/session-transaction";
 
 /** How long `/ready` waits for `select 1`. */
 const READINESS_TIMEOUT = Duration.seconds(2);
@@ -62,6 +64,8 @@ class AppLogger extends Context.Service<AppLogger, Logger>()("s10n-base/server/A
 
 interface DatabaseService {
   readonly db: Kysely<DB>;
+  /** Transactions Better Auth's queries join; Better Auth is given `joinable`, not `db`. */
+  readonly transactions: JoinableTransactions<DB>;
   /** `select 1` within two seconds. Never throws. */
   readonly checkReadiness: () => Promise<boolean>;
   /** Whether the last release gave up waiting for the pool to close. */
@@ -97,6 +101,8 @@ export interface ServerLayerOptions {
   readonly emailSender?: AuthEmailSender;
   /** The migrations the database must have applied before the server starts: this build's. */
   readonly migrations?: Readonly<Record<string, Migration>>;
+  /** The clock a session transaction reads under its lock. Defaults to the system clock. */
+  readonly now?: (() => Date) | undefined;
 }
 
 function defaultPool(config: ServerConfig, logger: Logger): PostgresPool {
@@ -165,7 +171,12 @@ const databaseLayer = (options: ServerLayerOptions) =>
             Effect.orElseSucceed(() => false),
           ),
         );
-      return { db, checkReadiness, closeTimedOut: () => closeTimedOut };
+      return {
+        db,
+        transactions: joinableTransactions(db),
+        checkReadiness,
+        closeTimedOut: () => closeTimedOut,
+      };
     }),
   );
 
@@ -211,7 +222,7 @@ const authLayer = (options: ServerLayerOptions) =>
             logLevel: config.logLevel,
           },
           {
-            db: database.db,
+            db: database.transactions.joinable,
             emailSender: options.emailSender ?? sesEmailSender(config, logger),
             logger,
           },
@@ -274,7 +285,16 @@ const httpServerLayer = (options: ServerLayerOptions) =>
       let forced = false;
 
       const dispatcher = createRpcDispatcher({
-        handlers: options.handlers ?? createRpcHandlers({ db: database.db, auth }),
+        handlers:
+          options.handlers ??
+          createRpcHandlers({
+            db: database.db,
+            auth,
+            sessionTransaction: createSessionTransaction({
+              transaction: database.transactions.transaction,
+              now: options.now,
+            }),
+          }),
         resolveActor: options.resolveActor ?? createSessionActorResolver(auth),
       });
       const server = http.createServer(

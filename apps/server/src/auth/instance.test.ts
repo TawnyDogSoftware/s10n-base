@@ -9,6 +9,7 @@ import {
   isBanned,
   readSessionOf,
   sessionOf,
+  signedInOf,
   toAppSession,
 } from "./instance";
 
@@ -77,6 +78,19 @@ describe("sessionOf", () => {
     expect(sessionOf({ user }, now)).toMatchObject({ userId: "u1", role: "user" });
     expect(sessionOf(null, now)).toBeNull();
     expect(sessionOf({ user: { ...user, banned: true } }, now)).toBeNull();
+  });
+});
+
+describe("signedInOf", () => {
+  it("is the user's session with its row id, or none for no lookup result or a banned user", () => {
+    const session = { id: "s1" };
+
+    expect(signedInOf({ user, session }, now)).toEqual({
+      session: toAppSession(user),
+      sessionId: "s1",
+    });
+    expect(signedInOf(null, now)).toBeNull();
+    expect(signedInOf({ user: { ...user, banned: true }, session }, now)).toBeNull();
   });
 });
 
