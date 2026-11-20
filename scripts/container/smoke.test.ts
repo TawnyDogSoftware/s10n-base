@@ -122,17 +122,27 @@ class FakeSmoke implements SmokeIo {
   }
 
   private answer(args: readonly string[]): CommandResult {
-    const [verb = "", second = ""] = args;
-    if (verb === "image") return ok(JSON.stringify(this.scene.image));
-    if (verb === "run" && args.includes("none")) return ok(JSON.stringify(this.scene.listing));
-    if (verb === "run" && args.includes("psql")) return ok();
-    if (verb === "run" && second === "-d") return this.start(args);
-    if (verb === "inspect") return ok(`${this.inspect(args[2] ?? "", args[3] ?? "")}\n`);
-    if (verb === "logs") return { code: 0, stdout: this.container(second).logs, stderr: "" };
-    if (verb === "exec") return this.exec(args);
-    if (verb === "kill") return this.kill(args[3] ?? "");
-    if (verb === "rm") this.removed.push(args[2] ?? "");
-    return ok();
+    const handler = this.handlers[args[0] ?? ""];
+    return handler === undefined ? ok() : handler(args);
+  }
+
+  private readonly handlers: Record<string, (args: readonly string[]) => CommandResult> = {
+    image: () => ok(JSON.stringify(this.scene.image)),
+    run: (args) => this.runContainer(args),
+    inspect: (args) => ok(`${this.inspect(args[2] ?? "", args[3] ?? "")}\n`),
+    logs: (args) => ok(this.container(args[1] ?? "").logs),
+    exec: (args) => this.exec(args),
+    kill: (args) => this.kill(args[3] ?? ""),
+    rm: (args) => {
+      this.removed.push(args[2] ?? "");
+      return ok();
+    },
+  };
+
+  private runContainer(args: readonly string[]): CommandResult {
+    if (args.includes("none")) return ok(JSON.stringify(this.scene.listing));
+    if (args.includes("psql")) return ok();
+    return this.start(args);
   }
 
   private container(name: string): Container {
@@ -259,7 +269,9 @@ describe("runContainerSmoke", () => {
       "ok: SIGTERM, exit code 0 after 0 ms",
     ]);
     expect(io.logs).toContain("  pg@8.23.1");
-    expect(io.removed.toSorted()).toEqual([...io.containers.keys()].toSorted());
+    expect(io.removed.toSorted((left, right) => left.localeCompare(right))).toEqual(
+      [...io.containers.keys()].toSorted((left, right) => left.localeCompare(right)),
+    );
     expect(io.inputs.at(-1)).toBe(
       [
         'drop database if exists "smoke_05ababababab" with (force);',
@@ -611,22 +623,22 @@ describe("postgresImageOf", () => {
   });
 });
 
-describe("containerSmokeCommand", () => {
-  function commandIo(env: Record<string, string | undefined>) {
-    const errors: string[] = [];
-    const smoke = new FakeSmoke();
-    return {
-      io: {
-        smoke,
-        env,
-        compose: "    image: postgres:18.7\n",
-        error: (line: string) => errors.push(line),
-      },
+function commandIo(env: Record<string, string | undefined>) {
+  const errors: string[] = [];
+  const smoke = new FakeSmoke();
+  return {
+    io: {
       smoke,
-      errors,
-    };
-  }
+      env,
+      compose: "    image: postgres:18.7\n",
+      error: (line: string) => errors.push(line),
+    },
+    smoke,
+    errors,
+  };
+}
 
+describe("containerSmokeCommand", () => {
   it("smokes s10n-base:local by default, with DATABASE_URL as the admin, exit 0", async () => {
     const { io, smoke, errors } = commandIo({ DATABASE_URL: ADMIN_URL });
     (smoke.scene.image as Array<{ Config: { Env: string[] } }>)[0]?.Config.Env.push("X=1");

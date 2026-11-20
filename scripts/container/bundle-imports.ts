@@ -47,8 +47,12 @@ export function compareImports(
   imported: ReadonlySet<string>,
   declared: ReadonlySet<string>,
 ): string[] {
-  const missing = [...imported].filter((name) => !declared.has(name)).toSorted();
-  const unused = [...declared].filter((name) => !imported.has(name)).toSorted();
+  const missing = [...imported]
+    .filter((name) => !declared.has(name))
+    .toSorted((left, right) => left.localeCompare(right));
+  const unused = [...declared]
+    .filter((name) => !imported.has(name))
+    .toSorted((left, right) => left.localeCompare(right));
   return [
     ...missing.map(
       (name) =>

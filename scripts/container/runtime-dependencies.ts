@@ -72,7 +72,7 @@ export function runtimeStarts(manifest: Manifest): string[] {
   return Object.entries(manifest.dependencies ?? {})
     .filter(([, spec]) => !spec.startsWith("workspace:"))
     .map(([name]) => name)
-    .toSorted();
+    .toSorted((left, right) => left.localeCompare(right));
 }
 
 interface Need {

@@ -18,18 +18,46 @@ export interface BaseImage {
   readonly digest: string | undefined;
 }
 
-const FROM_LINE =
-  /^FROM[ \t]+(?:--platform=\S+[ \t]+)?([^\s:@]+)(?::([^\s@]+))?(?:@(\S+))?(?:[ \t]+AS[ \t]+(\S+))?[ \t]*$/gim;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const VERSION_TAG = /^(\d+\.\d+\.\d+)(-[a-z0-9.-]+)?$/;
+
+interface FromLine {
+  /** The image reference as written, such as `node:26.13.1-slim@sha256:...`. */
+  readonly reference: string;
+  readonly image: BaseImage;
+  readonly alias: string | undefined;
+}
+
+/** `name[:tag][@digest]`. */
+function parseReference(reference: string): BaseImage {
+  const [nameAndTag = "", digest] = reference.split("@");
+  const colon = nameAndTag.lastIndexOf(":");
+  return colon === -1
+    ? { image: nameAndTag, tag: undefined, digest }
+    : { image: nameAndTag.slice(0, colon), tag: nameAndTag.slice(colon + 1), digest };
+}
+
+/** A `FROM` line's reference and stage name, or undefined for any other line. */
+function parseFromLine(line: string): FromLine | undefined {
+  const words = line.trim().split(/\s+/);
+  if (words[0]?.toUpperCase() !== "FROM") return undefined;
+  const [reference = "", as, alias] = words.slice(1).filter((word) => !word.startsWith("--"));
+  return {
+    reference,
+    image: parseReference(reference),
+    alias: as?.toUpperCase() === "AS" ? alias : undefined,
+  };
+}
 
 /** The images the Dockerfile builds from, without references to its own stages. */
 export function baseImages(text: string): BaseImage[] {
   const stages = new Set<string>();
   const images: BaseImage[] = [];
-  for (const [, image = "", tag, digest, alias] of text.matchAll(FROM_LINE)) {
-    if (!stages.has(image)) images.push({ image, tag, digest });
-    if (alias !== undefined) stages.add(alias);
+  for (const line of text.split("\n")) {
+    const from = parseFromLine(line);
+    if (from === undefined) continue;
+    if (!stages.has(from.image.image)) images.push(from.image);
+    if (from.alias !== undefined) stages.add(from.alias);
   }
   return images;
 }
@@ -93,15 +121,15 @@ export interface ImageChange {
 /** The Dockerfile with a runtime moved from one version to another, its digest included. */
 export function moveRuntime(text: string, runtime: Runtime, change: ImageChange): string {
   const image = RUNTIME_IMAGES[runtime];
-  const tag = tagFor(text, runtime, change.to);
-  const moved = (line: string, name: string, oldTag = "", oldDigest = ""): string =>
-    name === image && VERSION_TAG.exec(oldTag)?.[1] === change.from
-      ? line.replace(
-          `${name}:${oldTag}${oldDigest === "" ? "" : `@${oldDigest}`}`,
-          `${image}:${tag}@${change.digest}`,
-        )
-      : line;
+  const moved = `${image}:${tagFor(text, runtime, change.to)}@${change.digest}`;
   return text
-    .replaceAll(FROM_LINE, moved)
+    .split("\n")
+    .map((line) => {
+      const from = parseFromLine(line);
+      const matches =
+        from?.image.image === image && VERSION_TAG.exec(from.image.tag ?? "")?.[1] === change.from;
+      return matches ? line.replace(from.reference, moved) : line;
+    })
+    .join("\n")
     .replaceAll(versionCheck(runtime, change.from), versionCheck(runtime, change.to));
 }

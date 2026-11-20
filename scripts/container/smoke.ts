@@ -356,7 +356,10 @@ async function checkBadConfig(
     lines.length === 1 && line.includes("Invalid configuration") && line.includes(variable),
     `with ${label}, the server did not print one config error naming ${variable}:\n${result.output}`,
   );
-  const leaked = Object.values(context.secrets).filter((secret) => result.output.includes(secret));
+  const { authSecret, awsSecretKey, ownerPassword, appPassword } = context.secrets;
+  const leaked = [authSecret, awsSecretKey, ownerPassword, appPassword].filter((secret) =>
+    result.output.includes(secret),
+  );
   check(leaked.length === 0, `with ${label}, the server printed a secret`);
   context.io.log(
     `ok: ${label} stops the server with one config error line and exit 1, no secret printed`,
@@ -364,7 +367,9 @@ async function checkBadConfig(
 }
 
 async function checkBadConfigs(context: Context): Promise<void> {
-  const { BETTER_AUTH_SECRET: _omitted, ...withoutSecret } = serverEnv(context, 1);
+  const withoutSecret = Object.fromEntries(
+    Object.entries(serverEnv(context, 1)).filter(([name]) => name !== "BETTER_AUTH_SECRET"),
+  );
   await checkBadConfig(context, "missing_secret", withoutSecret, "BETTER_AUTH_SECRET");
   await checkBadConfig(
     context,
@@ -505,9 +510,13 @@ export async function runContainerSmoke(io: SmokeIo, options: SmokeOptions): Pro
   }
 }
 
-/** The tag in `image:` of the compose file's Postgres service. */
+/** The image of the compose file's Postgres service, from its `image: postgres:...` line. */
 export function postgresImageOf(compose: string): string {
-  const image = /^\s*image:\s*(postgres:\S+)\s*$/m.exec(compose)?.[1];
+  const image = compose
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("image: postgres:"))
+    ?.slice("image: ".length);
   check(image !== undefined, "docker-compose.local.yml names no postgres image");
   return image;
 }

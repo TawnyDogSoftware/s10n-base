@@ -510,12 +510,10 @@ describe("migration config", () => {
   it.each(["App", "app-role", "1app", 'app"; drop table x; --', "a".repeat(64), "app role"])(
     "refuses the role name %j",
     (role) => {
-      expect(migrationProblems({ DATABASE_URL, DATABASE_APP_ROLE: role })).toEqual([
-        expect.objectContaining({
-          variable: "DATABASE_APP_ROLE",
-          problem: expect.stringMatching(/^must be a role name/),
-        }),
-      ]);
+      const found = migrationProblems({ DATABASE_URL, DATABASE_APP_ROLE: role });
+
+      expect(found.map((problem) => problem.variable)).toEqual(["DATABASE_APP_ROLE"]);
+      expect(found[0]?.problem).toMatch(/^must be a role name/);
     },
   );
 
@@ -526,43 +524,55 @@ describe("migration config", () => {
   });
 
   it("reports every problem together, in variable order, and never a URL", () => {
-    const problems = migrationProblems({
+    const found = migrationProblems({
       NODE_ENV: "staging",
       MIGRATION_DATABASE_URL: "mysql://owner:owner-password@db/app",
       DATABASE_APP_ROLE: "Bad",
     });
 
-    expect(problems.map((problem) => problem.variable)).toEqual([
+    expect(found.map((problem) => problem.variable)).toEqual([
       "NODE_ENV",
       "MIGRATION_DATABASE_URL",
       "DATABASE_APP_ROLE",
     ]);
-    expect(JSON.stringify(problems)).not.toContain("owner-password");
+    expect(JSON.stringify(found)).not.toContain("owner-password");
   });
 });
 
+interface Documented {
+  readonly name: string;
+  readonly config: Config.Config<unknown>;
+  readonly defaultText?: string;
+  readonly optional?: true;
+}
+
+/** What the docs say about a variable left unset. */
+function documented(entry: Documented): string {
+  // Any default of an optional variable (APP_VARIANT's) is applied by the config, and tested
+  // with it ("defaults APP_VARIANT to development").
+  if (entry.optional === true) return "unset";
+  if (entry.defaultText !== undefined) return `default ${entry.defaultText}`;
+  return "required";
+}
+
+/** What the variable's Config does when it is unset. */
+function parsedWhenUnset(entry: Documented): string {
+  const result = Effect.runSync(
+    Effect.result(entry.config.parse(ConfigProvider.fromEnvRecord({}))),
+  );
+  if (result._tag === "Failure") return "required";
+  const value = result.success;
+  return Option.isOption(value) && Option.isNone(value) ? "unset" : `default ${String(value)}`;
+}
+
 describe("the documented requirement and default of every variable", () => {
-  const empty = ConfigProvider.fromEnvRecord({});
-  const all: ReadonlyArray<{
-    readonly name: string;
-    readonly config: Config.Config<unknown>;
-    readonly defaultText?: string;
-    readonly optional?: true;
-  }> = [...serverVariables, ...migrationVariables, ...databaseVariables];
+  const all: ReadonlyArray<Documented> = [
+    ...serverVariables,
+    ...migrationVariables,
+    ...databaseVariables,
+  ];
 
   it.each(all.map((entry) => [entry.name, entry] as const))("%s", (_name, entry) => {
-    const result = Effect.runSync(Effect.result(entry.config.parse(empty)));
-    if (entry.optional === true) {
-      // Any default (APP_VARIANT's) is applied by the config; "defaults APP_VARIANT" checks it.
-      expect(
-        result._tag === "Success" &&
-          Option.isOption(result.success) &&
-          Option.isNone(result.success),
-      ).toBe(true);
-    } else if (entry.defaultText !== undefined) {
-      expect(result._tag === "Success" && String(result.success)).toBe(entry.defaultText);
-    } else {
-      expect(result._tag).toBe("Failure");
-    }
+    expect(parsedWhenUnset(entry)).toBe(documented(entry));
   });
 });

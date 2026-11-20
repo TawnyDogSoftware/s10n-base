@@ -120,6 +120,14 @@ describe("moveRuntime", () => {
     });
   });
 
+  it("leaves an untagged image of the runtime alone", () => {
+    const text = `FROM node@${NODE_DIGEST}\n`;
+
+    expect(moveRuntime(text, "node", { from: "26.13.1", to: "26.14.0", digest: NEW_DIGEST })).toBe(
+      text,
+    );
+  });
+
   it("pins an image that had no digest, and leaves other versions alone", () => {
     const text = `FROM node:26.13.1-slim\nFROM node:24.1.0-slim@${NODE_DIGEST}\n`;
 

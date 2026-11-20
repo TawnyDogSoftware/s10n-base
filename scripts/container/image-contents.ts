@@ -46,7 +46,7 @@ export function runtimePackages(paths: readonly string[]): string[] {
     const match = /^\/app\/node_modules\/\.bun\/([^/]+)$/.exec(path);
     return match?.[1] === undefined ? [] : [match[1]];
   });
-  return entries.toSorted();
+  return entries.toSorted((left, right) => left.localeCompare(right));
 }
 
 function devPackageProblems(paths: readonly string[]): string[] {

@@ -186,12 +186,12 @@ describe("migrationStatus order", () => {
   });
 });
 
-describe("granting the app role", () => {
-  const grants = (queries: ReadonlyArray<{ sql: string }>) =>
-    queries
-      .map((query) => query.sql.trim())
-      .filter((text) => /^(grant|revoke|alter default) /.test(text));
+const grants = (queries: ReadonlyArray<{ sql: string }>) =>
+  queries
+    .map((query) => query.sql.trim())
+    .filter((text) => /^(grant|revoke|alter default) /.test(text));
 
+describe("granting the app role", () => {
   const EXPECTED_GRANTS = [
     'grant usage on schema "app" to "app_runtime"',
     'grant select, insert, update, delete on all tables in schema "app" to "app_runtime"',

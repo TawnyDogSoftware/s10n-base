@@ -64,13 +64,12 @@ beforeAll(async () => {
   appRole = await createRole(connected.target.url, `${schema}_app`);
   await admin.query(`create schema "${schema}" authorization "${owner.name}"`);
 
-  expect(
-    await migrate({
-      MIGRATION_DATABASE_URL: owner.url,
-      DATABASE_URL: appRole.url,
-      DATABASE_APP_ROLE: appRole.name,
-    }),
-  ).toBe(0);
+  const code = await migrate({
+    MIGRATION_DATABASE_URL: owner.url,
+    DATABASE_URL: appRole.url,
+    DATABASE_APP_ROLE: appRole.name,
+  });
+  if (code !== 0) throw new Error(`migrate up as the owner exited ${String(code)}`);
 
   app = await startAuthServer({
     createSchema: () => {

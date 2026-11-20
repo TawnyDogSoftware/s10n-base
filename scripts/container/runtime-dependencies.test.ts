@@ -120,7 +120,7 @@ async function listFiles(dir: string, base: string = dir): Promise<string[]> {
     if (entry.isDirectory()) found.push(...(await listFiles(full, base)));
     else found.push(path.relative(base, full));
   }
-  return found.toSorted();
+  return found.toSorted((left, right) => left.localeCompare(right));
 }
 
 describe("runtimeStarts", () => {
@@ -186,7 +186,7 @@ describe("optional peers", () => {
       name: "gamma",
       entry: "gamma@1.0.0",
     });
-    expect(closure.links.map((link) => link.name)).not.toContain("react");
+    expect(closure.links.map((edge) => edge.name)).not.toContain("react");
   });
 });
 
@@ -253,17 +253,17 @@ describe("exportRuntimeDependencies", () => {
   });
 });
 
-describe("runtimeDependenciesCommand", () => {
-  function capture() {
-    const lines: string[] = [];
-    const errors: string[] = [];
-    return {
-      io: { log: (line: string) => lines.push(line), error: (line: string) => errors.push(line) },
-      lines,
-      errors,
-    };
-  }
+function capture() {
+  const lines: string[] = [];
+  const errors: string[] = [];
+  return {
+    io: { log: (line: string) => lines.push(line), error: (line: string) => errors.push(line) },
+    lines,
+    errors,
+  };
+}
 
+describe("runtimeDependenciesCommand", () => {
   it("prints each package and the count, exit 0", async () => {
     const { io, lines, errors } = capture();
 

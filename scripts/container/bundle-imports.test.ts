@@ -57,6 +57,15 @@ describe("compareImports", () => {
     expect(compareImports(new Set(["a", "b"]), new Set(["b", "a"]))).toEqual([]);
   });
 
+  it("lists several differences in name order", () => {
+    expect(compareImports(new Set(["z", "y"]), new Set(["c", "b"]))).toEqual([
+      "The bundle imports y, which the server does not declare as a dependency, so the image would not have it.",
+      "The bundle imports z, which the server does not declare as a dependency, so the image would not have it.",
+      "The server declares b, which the bundle never imports: remove it from dependencies, or bundle it.",
+      "The server declares c, which the bundle never imports: remove it from dependencies, or bundle it.",
+    ]);
+  });
+
   it("names a package imported but not declared, and one declared but not imported", () => {
     expect(compareImports(new Set(["a", "b"]), new Set(["a", "c"]))).toEqual([
       "The bundle imports b, which the server does not declare as a dependency, so the image would not have it.",
