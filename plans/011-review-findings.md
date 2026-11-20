@@ -505,6 +505,11 @@ Both are in `.oxlintrc.json` with their reasons, and listed in `docs/quality.md`
 - `unicorn/require-post-message-target-origin` is off for `packages/client/src/query-state.ts`: the rule reads a `BroadcastChannel`'s one-argument `postMessage` as `window.postMessage`.
 - `jsx-a11y/no-noninteractive-tabindex` allows `tabIndex` on a `<section>`, so the user table's scroll region can take keyboard focus.
 
+### Found after the merge
+
+- **A gap in F11's fix**, found in review of the pushed result: the mobile cookie store checked the generation before its storage read but not after, so a renewal whose read was pending when a sign-in or sign-out began was still written. It now checks again after the read. Test: "does not write a renewal when a sign-out starts while its storage read is pending".
+- **The user-list browser journey** expected a full second page, which held only on a local test database other runs had filled. On a fresh database, as in CI, the second page has four users. It now expects more rows than the first page held.
+
 ### Verified on the merged result
 
 - `bun run agent:check`: all eleven gates; 1,951 tests; 100% of statements (5,024), branches (2,607), functions (1,388) and lines (4,480). No suppression, no new coverage exclusion, no new dependency.

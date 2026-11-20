@@ -1,5 +1,6 @@
 import { waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import * as SecureStore from "expo-secure-store";
+import { describe, expect, it, vi } from "vitest";
 
 import { NetworkError } from "@s10n-base/client/rpc";
 import { createFakeBackend, SESSION_COOKIE } from "@s10n-base/client/testing/fake-backend";
@@ -164,6 +165,39 @@ describe("session renewal", () => {
     deliver();
     await read;
 
+    await expect(services.auth.cookie()).resolves.toBe("");
+  });
+
+  it("does not write a renewal when a sign-out starts while its storage read is pending", async () => {
+    const backend = createFakeBackend({ origin: API, cookies: true });
+    backend.addUser({ email: "sam@example.com", password: "correct horse" });
+    const services = createServices({ apiBaseUrl: API, scheme: SCHEME, fetch: backend.fetch });
+    await services.auth.signIn({ email: "sam@example.com", password: "correct horse" });
+    // The renewal's read of the stored cookie starts, and answers only once the sign-out has begun.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const read = vi.spyOn(SecureStore, "getItemAsync").mockImplementationOnce(async (key) => {
+      const value = secureStore.get(key) ?? null;
+      await held;
+      return value;
+    });
+    const write = vi.spyOn(SecureStore, "setItemAsync");
+
+    const storing = services.auth.storeCookies(
+      `${SESSION_COOKIE}=renewed; Path=/`,
+      services.auth.generation(),
+    );
+    const signedOut = services.auth.signOut();
+    release();
+    await storing;
+    await signedOut;
+    const written = write.mock.calls.map(([, value]) => value);
+    read.mockRestore();
+    write.mockRestore();
+
+    expect(written.filter((value) => value.includes("renewed"))).toEqual([]);
     await expect(services.auth.cookie()).resolves.toBe("");
   });
 

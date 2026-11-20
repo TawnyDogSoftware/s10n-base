@@ -108,6 +108,8 @@ export function createMobileAuth(options: {
     storeCookies: async (setCookie, sentAt) => {
       if (sentAt !== generation || !hasBetterAuthCookies(setCookie, AUTH_COOKIE_PREFIX)) return;
       const current = await storage.getItemAsync(cookieKey);
+      // A sign-in or sign-out may have started while the read was pending.
+      if (sentAt !== generation) return;
       await storage.setItemAsync(cookieKey, getSetCookie(setCookie, current ?? undefined));
     },
   };
