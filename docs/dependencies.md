@@ -11,6 +11,7 @@ Where the rule is enforced:
 - **bun packages:** `bunfig.toml` sets `[install] minimumReleaseAge = 259200` (seconds). bun 1.4.4 applies it to `bun install`, `bun add`, `bun update` and `bun update --latest`, and to indirect dependencies as well as direct ones. A version that is too young is skipped in favour of the newest one that is old enough.
 - **bun and Node:** the daily update workflow takes the newest release at least 3 days old (below).
 - **GitHub Actions:** Dependabot, with `cooldown.default-days: 3` in `.github/dependabot.yml`.
+- **Container base images:** the daily update moves the Node and bun images' tags with Node and bun; Dependabot (same cooldown) refreshes the digest a pinned tag points to when the image is rebuilt, for example for a security fix in the base.
 
 Two packages are deliberately behind the newest release: TypeScript and React. The reasons are in `dependency-holds.json` and in plan 000 (decisions D4 and D6).
 
@@ -23,6 +24,8 @@ Two packages are deliberately behind the newest release: TypeScript and React. T
 | Packages | the `catalog` in the root `package.json`    | workspace manifests, through `catalog:`                                                                   |
 
 `@types/node` stays on Node's major version. `scripts/version-sources.test.ts` fails if `.nvmrc`, `engines`, `packageManager` and `@types/node` disagree. No workflow file names a version, so the update workflow never edits a workflow.
+
+`docker/Dockerfile` is the one exception: a `FROM` line cannot read a file, so it names both versions itself, in the Node and bun images' tags (each pinned by digest) and in the build step that checks them. The same test fails when those disagree with `.nvmrc` and `packageManager`, or a base image has no digest (`scripts/dockerfile-versions.ts`). The daily update moves them together: when Node or bun moves, it rewrites the Dockerfile's tag, digest and check in the same PR, looking each new tag's digest up in the image registry's public API. If a new tag cannot be found yet, that runtime does not move that day, and the PR body says why. Dependabot's `docker` entry ignores version updates of the two images and only refreshes digests.
 
 ## Taking a bug-fix release early
 

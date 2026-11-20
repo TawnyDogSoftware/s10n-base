@@ -1,6 +1,6 @@
 # 008: Deployment kit
 
-> Status: not started.
+> Status: implemented on 2026-11-20, on branch `feature/001-strip-desktop-and-local-first` (the rework's single pull request). Section 9 records how.
 
 Phase 8 of [000](000-hosted-starter-rework.md). Builds on phases 1 to 7. Source labels such as `[S8]` are resolved in the private companion's README; nothing from that directory is copied into this repo.
 
@@ -101,4 +101,64 @@ Done when sections 3 to 7 are in, the above passes, nothing in section 2 was tou
 
 ## 9. How it was built
 
-Filled in by the implementor.
+Implemented on 2026-11-19 and 2026-11-20 on Linux, Node 26.12.1 locally (26.13.1 in the image and CI) and bun 1.4.4, with Docker 29.9 for the local Postgres and the image. Registry data was read the same day. No dependency was added; CI uses Docker's own actions.
+
+### The image
+
+| | |
+|---|---|
+| Bun base | `oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4` (Debian 13), used only for its binary |
+| Node base | `node:26.13.1-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc` (Debian 13), build and runtime |
+| Size | 394 MB on disk, 91 MB compressed; the Node base is 353 MB of it, `/app` 34 MB |
+| Build time | cold (`--no-cache`, bases already pulled, empty bun cache): 34 s; warm, nothing changed: 1 s; after a source change, the install layers stay cached |
+| Context | 743 kB, through the deny-by-default `.dockerignore` |
+
+The `-trixie-slim` variant is named explicitly so a Debian release change is a visible tag change, not a silent rebuild. The daily update keeps the variant suffix when it moves the version.
+
+**The runtime dependency list.** The bundle's external imports, read from the build output (`scripts/container/bundle-imports.ts`, which also runs in the image build and fails if they differ from the server's declared dependencies): `better-auth`, `@better-auth/expo`, `@better-auth/passkey`, `better-call`, `effect`, `i18next`, `kysely`, `pg`. Plan 003 named `pg`, `kysely` and `effect`, plan 004 Better Auth and its plugins, plan 005 `i18next`; `better-call` was the one no earlier plan named. With what they need at run time, 63 packages are in the image: `@better-auth/core`, `drizzle-adapter`, `expo`, `kysely-adapter`, `memory-adapter`, `mongo-adapter`, `passkey`, `prisma-adapter`, `telemetry` and `utils` (1.7.25, utils 0.5.1), `@better-fetch/fetch` 1.3.3, `@hexagon/base64` 1.1.28, `@levischuck/tiny-cbor` 0.2.11, `@noble/ciphers` and `@noble/hashes` 2.4.0, twelve `@peculiar/*` packages, `@simplewebauthn/browser` 13.3.0 and `server` 13.3.3, `@standard-schema/spec` 1.1.0, `asn1js` 3.1.0, `better-auth` 1.7.25, `better-call` 1.4.5, `defu` 6.1.7, `effect` 4.1.4, `i18next` 27.1.3, `jose` 6.2.17, `kysely` 0.29.9, `nanostores` 1.5.5, `pg` 8.23.1 with `pg-cloudflare`, `pg-connection-string`, `pg-int8`, `pg-pool`, `pg-protocol`, `pg-types`, `pgpass`, `postgres-array`, `postgres-bytea`, `postgres-date`, `postgres-interval` and `split2`, `pvtsutils` 1.3.6, `pvutils` 1.2.0, `reflect-metadata` 0.2.2, `rou3` 0.9.2, `set-cookie-parser` 3.2.3, `tslib` 1.14.1 and 2.9.1, `tsyringe` 4.10.0, `xtend` 4.0.2 and `zod` 4.6.7. `bun run docker:smoke` prints the list from the image itself. Better Auth's database adapters it does not use (Drizzle, Mongo, Prisma, memory) are its own dependencies, so they come along.
+
+**How the production install was made to work under bun's default linker.** Found by running it, not assumed:
+
+- A frozen production install of this workspace (`bun install --production --frozen-lockfile`) under the default isolated linker holds 628 packages and 625 MB: every workspace's production dependencies, Expo and React Native included, and bun links optional peers into each package's directory whenever the workspace installs them (`better-auth` gets React, react-dom and Vitest that way). `--filter @s10n-base/server` does not shrink the store. So copying the install was out.
+- bun 1.4.4 accepts a **pruned checkout**: a frozen install with some workspaces' manifests missing works, with a note ("skipped 1 workspace listed in bun.lock but not on disk"), as long as every workspace present has the workspaces it depends on. The image build copies every manifest except the mobile app's.
+- `scripts/container/runtime-dependencies.ts` walks from the server's declared dependencies through each package's dependencies and required peers (optional dependencies when installed), using the links bun put next to each package in `node_modules/.bun/<entry>/node_modules`, and copies those store entries with the same relative links into a fresh directory. bun's layout is kept rather than flattened, because the closure has two versions of `tslib`. TypeScript files, declarations, source maps and packages' own tests are left out (73 MB of files became 34 MB with the links). Node resolves through the links unchanged, from any directory: the unit test moves the copy and runs Node from it.
+- **What running the image found:** the first image started and died with `ERR_MODULE_NOT_FOUND: Cannot find package 'zod' imported from .../better-call/dist/openapi.mjs`. `better-call` imports `zod` statically but declares it only as an optional peer, so the walk had skipped that link. The rule now keeps an optional peer's link whenever its package is in the image for another reason (it adds links, never packages); following every installed optional peer would have brought React and Vitest. The second finding was `pg-protocol` shipping two `*.test.js` files in `dist`, which the image check refused.
+- The workspace's `node_modules/.bun/node_modules` fallback (bun's hoisted links, which let a package find an undeclared dependency) is not copied, so an undeclared dependency fails loudly in the image instead of working by accident.
+
+### Departures from this plan, with reasons
+
+- **The server refuses to start on an unmigrated database.** Section 7 says the API "with Better Auth's startup schema check, will refuse to start against an unmigrated database". It did not: Better Auth 1.7.25 checks the schema on the first request to `/api/auth`, not at startup, so a server started on an empty database came up and `/ready` answered 200, and Better Auth keeps a schema mismatch until the process restarts ("rethrown on every later call ... until a migration invalidates it", meaning its own migrations), so a server that answered an auth request before `migrate up` kept failing after it. The server now reads the migrator's table through its search path at startup and refuses to start, naming what is missing (`MigrationsPendingError`, exit 1), when any migration in its build is pending. Migrations the database has and the build does not are allowed, so an older version keeps running while a release rolls out or back. Unit tests answer the check from the fake pool; `server.live.test.ts` shows the refusal on an unmigrated schema.
+- **The app role can read the migrator's two tables** (insert, update and delete are revoked), which the startup check needs. Section 5 said nothing about them; the first version revoked everything.
+- **Item 4 is automated:** `docker:smoke` starts the image once without `BETTER_AUTH_SECRET` and once with `SES_ENDPOINT` set, and requires exit 1, exactly one log line saying "Invalid configuration" and naming the variable, and none of the run's secrets in the output.
+- **The production run uses a region that does not exist** (`SES_REGION=zz-smoke-1`, which the config's pattern accepts), so even an email sent by mistake could reach nothing real. No check sends one. Better Auth's telemetry is off in the options.
+- **Image contents are listed inside the image** with its own Node (`LIST_FILES_SCRIPT` in `image-contents.ts`), since there is nothing else to list with that works without a shell. Dev packages checked for: Vitest, ESLint, oxlint, tsdown, TypeScript and Vite.
+- **`docker:smoke` uses Docker's host networking**, so the containers reach the local Postgres on 127.0.0.1 and the check reaches the server. That works on Linux and in CI; on a Mac it needs Docker Desktop's host networking turned on (docs/setup.md says so). It creates its own database and two roles with random names and passwords and removes them, and its containers, even when a check fails.
+- **The Dockerfile names each version in a third place,** the build step that checks `node --version` and `bun --version`. `scripts/dockerfile-versions.ts` checks it with the tags, and the daily update rewrites it with them.
+- **The daily update resolves digests from the image registry's public pull API** (an anonymous token, then a `HEAD` request for the tag's manifest, which returns the multi-platform index digest). This names the registry's API hosts in `scripts/dependency-updates/image-digests.ts`, as section 4 requires a lookup; the Dockerfile, docs and workflow name none. A runtime whose new tag cannot be resolved does not move that day, and the PR body says why, so the update never breaks the version test.
+- **The environment tables are tested, not generated:** `apps/server/src/config/environment-table.test.ts` builds the rows from the config module's variables and compares them cell by cell with `docs/deployment.md`, printing the table to paste when they differ. Each variable now records its default or that it is optional, and a test checks that against how it actually parses. `APP_VARIANT` shows `development` as its default, which is what unset means outside production.
+- **`set-role` has its own table:** it reads `DATABASE_URL`, `NODE_ENV` and `LOG_LEVEL` only and connects as the app role, which may update users.
+- **CI builds with `docker/build-push-action`** (7.4.0) on `docker/setup-buildx-action` (4.4.1), both pinned by commit, with `type=gha` cache in the workflow's own cache; the image is loaded, never pushed. The job needs no `bun install`: the smoke script imports only Node's modules.
+- **`.dockerignore`** re-allows build inputs with patterns such as `!packages/*/src/**`; BuildKit applies them under an excluded parent, so the parents need no entries of their own.
+
+### Claims in plans 000 to 008 that did not hold
+
+- Plan 008 section 7 and plan 007: Better Auth does not check the schema at startup (above).
+- Plan 003, "`pg`, `kysely` and `effect` stay external": so do Better Auth, its plugins, `better-call` and `i18next`, as plans 004 and 005 noted.
+- Plan 000, "Dependabot handles Docker image digests": it can only refresh the digest of a tag the daily update set, since a version move must also change `.nvmrc` or `packageManager`.
+
+### Not verified here
+
+- Dependabot's digest-only updates: configured as its documentation describes (version updates of `node` and `oven/bun` ignored, so only a rebuilt tag's digest is proposed), but no Dependabot run has happened yet.
+- The workflow file was not checked with actionlint (not installed); CI parsed and ran it.
+
+### For phase 9
+
+- **The rename script** must also cover: the image tag `s10n-base:local` in `package.json`'s `docker:build` and in `scripts/container/smoke.ts`, the `org.opencontainers.image.title` label in `docker/Dockerfile`, and the `s10n_base` role and database names, already in the compose file and CI, which `docker:smoke` uses as its admin.
+- **`AGENTS.md`** should list `bun run docker:build` and `bun run docker:smoke` (Docker and the database needed) with the other checks outside `agent:check`, and say that a new run-time dependency of the server must be declared in `apps/server/package.json` (the image build fails otherwise).
+- **The README** gained the two commands; its rewrite should keep a pointer to `docs/deployment.md`.
+- `scripts/container/*.main.ts` follow phase 7's one-line rule; `docker:smoke` runs through `scripts/with-env.main.ts` for `DATABASE_URL`.
+- The Vite build prints a warning about its future native config loader (`import "./src/config"` without an extension in `apps/web/vite.config.ts`). It predates this phase and changes nothing today.
+
+### Verification on the final commit (section 8)
+
+Filled in on the final commit; see below and the PR description.

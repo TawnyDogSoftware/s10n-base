@@ -4,6 +4,19 @@ Scaffold-level changes to S10N Base, newest first. Projects created from an earl
 
 ## Unreleased
 
+### Added: the deployment kit (one container image, two database roles, a deployment guide)
+
+A project can build one image and run it anywhere that runs containers. Details and reasons are in `plans/008-deployment-kit.md`; how to deploy is in `docs/deployment.md`, which names no host.
+
+- **The image:** `docker/Dockerfile`, built from the repository root (`bun run docker:build`). Bases pinned by tag and digest: the official bun image for building and the Node slim image to run on, at the versions in `packageManager` and `.nvmrc`, checked during the build. It holds the bundled server, the built web app and only the server's run-time packages (63, copied out of a frozen production install in bun's own layout by `scripts/container/runtime-dependencies.ts`), and no sources, tests, `.env` files, development tools, mobile app, docs or package manager. It runs as `node`, needs no writable filesystem, stops on `SIGTERM`, has a Node `HEALTHCHECK` on `/health`, and takes `APP_VERSION` as a build argument. `.dockerignore` lets in only the build's inputs. Three commands: the server, `apps/server/dist/migrate.mjs up` and `apps/server/dist/set-role.mjs`.
+- **Two database roles:** `migrate` connects with `MIGRATION_DATABASE_URL` when set (the server never reads it), and with `DATABASE_APP_ROLE` set it grants that role row access on the schema's tables, now and for tables later migrations create, and nothing that changes the schema. Development and CI keep one role.
+- **Changed: the server refuses to start on a database that misses a migration** in its build (`MigrationsPendingError`, exit 1). Better Auth checks its schema only on the first auth request, and kept failing after a later migration until a restart.
+- **`APP_VERSION`:** `/config` reports it when set, and the package version otherwise.
+- **Checks:** `bun run docker:smoke` runs the image in production mode against the local Postgres: migrate as the owner, the server as the app role with a read-only root filesystem, the health check, security headers, version, a bad config refused without printing a secret, the image's files, and exit 0 on `SIGTERM`. CI runs it in a fourth job, "Container image", with the build cached in the workflow's own cache.
+- **Versions stay single-sourced:** `scripts/version-sources.test.ts` also fails when the Dockerfile's Node or bun tag disagrees with `.nvmrc` or `packageManager`; the daily dependency update moves the tags and their digests with the versions; Dependabot's new `docker` entry refreshes digests only.
+- **Docs:** `docs/deployment.md` (environment tables tested against the config module, the two roles, migrating before a rollout, health and shutdown, proxies, several instances, email, the first admin, what is not included); README and `docs/setup.md` gain the two commands; `.env.example` lists the three new optional variables.
+- No dependency was added.
+
 ### Added: quality gates (`bun run agent:check`), 100% coverage and browser journeys
 
 Every change now passes the same gates locally and in CI, with no way to switch one off from a comment. Details and reasons are in `plans/007-quality-gates.md`; each gate, how to run it alone and how to fix a failure are in `docs/quality.md`.

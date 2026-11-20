@@ -1,6 +1,6 @@
 # 000: Rework s10n-base into a hosted web and mobile starter
 
-> Status: approved by the owner on 2026-11-18. Phase 1 implemented on 2026-11-19 ([001](001-strip-desktop-and-local-first.md)). Phase 2 implemented on 2026-11-19 ([002](002-toolchain-upgrade-and-ci.md)). Phase 3 implemented on 2026-11-19 ([003](003-hosted-server-core.md)). Phase 4 implemented on 2026-11-19 ([004](004-auth.md)). Phase 5 implemented on 2026-11-19 ([005](005-web-blank-slate.md)). Phase 6 implemented on 2026-11-19 ([006](006-mobile-blank-slate.md)), first boot on a Mac pending. Phase 7 implemented on 2026-11-19 ([007](007-quality-gates.md)).
+> Status: approved by the owner on 2026-11-18. Phase 1 implemented on 2026-11-19 ([001](001-strip-desktop-and-local-first.md)). Phase 2 implemented on 2026-11-19 ([002](002-toolchain-upgrade-and-ci.md)). Phase 3 implemented on 2026-11-19 ([003](003-hosted-server-core.md)). Phase 4 implemented on 2026-11-19 ([004](004-auth.md)). Phase 5 implemented on 2026-11-19 ([005](005-web-blank-slate.md)). Phase 6 implemented on 2026-11-19 ([006](006-mobile-blank-slate.md)), first boot on a Mac pending. Phase 7 implemented on 2026-11-19 ([007](007-quality-gates.md)). Phase 8 implemented on 2026-11-20 ([008](008-deployment-kit.md)).
 
 Written 2026-11-18 from a review of three private projects built on this base (called Project A, B and C here), of s10n-base itself, of T3 Code upstream, and of the npm registry.
 
@@ -204,7 +204,7 @@ Design (`.github/workflows/dependency-updates.yml`), revised with the owner on 2
 - **PR body:** version changes grouped as major, minor and patch; bun and Node changes; anything flagged but not applied; and the packages `bun outdated` shows as held back by the age gate. That last list is where a person applies the patch exception by hand with `--minimum-release-age-excludes`; judging whether a patch "fixes an actual bug" is not automated.
 - **Token:** a GitHub App installation token from `actions/create-github-app-token`. A PR opened with the default `GITHUB_TOKEN` does not trigger CI. App permissions: Contents read and write, Pull requests read and write, nothing else. Secrets: `DEPS_UPDATE_APP_CLIENT_ID` and `DEPS_UPDATE_APP_PRIVATE_KEY` (phase 2 renamed the first from `DEPS_UPDATE_APP_ID`, because `app-id` is deprecated in `actions/create-github-app-token` 3.3.0 in favour of `client-id`).
 - **Hardening:** SHA-pinned actions, job `permissions: contents: read` (the app token does the writing), `bun install --ignore-scripts` during the update, a concurrency group.
-- **Not covered:** GitHub Actions versions and Docker image digests, which Dependabot handles.
+- **Not covered:** GitHub Actions versions, which Dependabot handles, and the digests of the container image's pinned base tags, which Dependabot refreshes. (Phase 8: the workflow moves the Dockerfile's Node and bun tags, with their digests, together with `.nvmrc` and `packageManager`, since a test requires them to agree; Dependabot ignores version moves of those two images.)
 - **Public-repo caveat:** s10n-base is a public repo, and GitHub disables scheduled workflows in public repos after 60 days without repository activity. Merging the update PRs counts as activity; a long quiet spell would need the workflow re-enabled.
 
 To re-check on the day: `expo` 58.0.26 (eligible from 2026-11-20), oxlint 1.94.0, oxfmt 0.79.0, react-query 5.108.0, knip 6.46.0, dependency-cruiser 18.8.0, typescript-eslint 8.73.0.
@@ -279,6 +279,7 @@ Copy from Project B `[S7]`; it is the only one of our projects with verified nat
 - `.dockerignore`, and a CI step that builds the image and smoke-tests it.
 - `docs/deployment.md`: env matrix, migrations, health checks, proxy headers. Hosting-neutral, since the existing projects do not share a host.
 - No infrastructure code in the base. Projects that need it use Terraform (D10). The Alchemy evaluation is in the companion `[S10]`.
+- **Phase 8 outcome (2026-11-20):** done as planned, with the departures recorded in plan 008, section 9. Corrections to this plan and to plan 008: Better Auth 1.7.25 does not check the schema at startup but on the first auth request, and keeps a mismatch until the process restarts, so a server started on an unmigrated database came up and reported ready; the server now refuses to start when any migration in its build has not been applied. A production install of this workspace under bun's default linker holds 628 packages; the image copies only the server's 63 run-time packages out of it, in bun's own layout. The image is 394 MB on disk (91 MB compressed).
 
 ### Phase 9: conventions and docs
 
