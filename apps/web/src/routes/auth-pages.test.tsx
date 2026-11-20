@@ -352,6 +352,32 @@ describe("/verify-email", () => {
     });
   });
 
+  it.each([
+    [429, { code: "RATE_LIMITED" }, "Too many attempts. Wait a minute and try again."],
+    [500, { code: "INTERNAL_SERVER_ERROR" }, "Something went wrong. Try again."],
+  ])(
+    "does not call the link dead when the server answers %i, and its retry uses the same token",
+    async (status, body, message) => {
+      const backend = createFakeBackend();
+      backend.addUser({ email: "new@example.com", verified: false });
+      const token = backend.issueToken("new@example.com", "verify");
+      backend.failNext("/api/auth/verify-email", { kind: "response", status, body });
+      renderApp(`/verify-email?token=${token}`, backend);
+
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "This link does not work" })).toBeNull();
+      click("Try again");
+
+      expect(
+        await screen.findByRole("heading", { name: "Email address confirmed" }),
+      ).toBeInTheDocument();
+      expect(backend.calls("/api/auth/verify-email").map((call) => call.search)).toEqual([
+        `?token=${token}`,
+        `?token=${token}`,
+      ]);
+    },
+  );
+
   it("explains a link with no token, without calling the server", async () => {
     const backend = createFakeBackend();
     renderApp("/verify-email", backend);

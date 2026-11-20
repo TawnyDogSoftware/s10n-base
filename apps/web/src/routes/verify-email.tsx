@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { errorMessageKey } from "@s10n-base/client/messages";
+import type { ErrorMessageKey } from "@s10n-base/i18n";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 
@@ -19,8 +20,20 @@ type State =
   | { readonly kind: "verified" }
   | { readonly kind: "invalid" }
   | { readonly kind: "missing" }
-  | { readonly kind: "failed" }
+  /** Not an answer about the link (a rate limit, a server error, an exception): retry it. */
+  | { readonly kind: "failed"; readonly message: ErrorMessageKey }
   | { readonly kind: "unknown"; readonly outcome: SettledAction<AuthResult> };
+
+/** Refusals that say the link itself is dead: used, expired or never valid. */
+const DEAD_LINK = new Set(["INVALID_TOKEN", "TOKEN_EXPIRED"]);
+
+/** What the page shows after the verification settled. */
+function stateAfter(result: SettledAction<AuthResult>): State {
+  if (result.kind === "unknown") return { kind: "unknown", outcome: result };
+  if (result.value.ok) return { kind: "verified" };
+  if (DEAD_LINK.has(result.value.code)) return { kind: "invalid" };
+  return { kind: "failed", message: errorMessageKey(result.value) };
+}
 
 /** Asks for a new verification link, answering the same way whether or not the address exists. */
 function Resend() {
@@ -77,11 +90,10 @@ function VerifyEmailPage() {
       } catch (error) {
         // Something the page did not expect: say so and offer a retry, never wait forever.
         console.error(error);
-        setState({ kind: "failed" });
+        setState({ kind: "failed", message: "generic" });
         return;
       }
-      if (result.kind === "unknown") setState({ kind: "unknown", outcome: result });
-      else setState(result.value.ok ? { kind: "verified" } : { kind: "invalid" });
+      setState(stateAfter(result));
     },
     [auth, gate],
   );
@@ -125,7 +137,7 @@ function VerifyEmailPage() {
     case "failed":
       return (
         <PageShell title={tCommon("routeError.title")}>
-          <Notice tone="danger">{tError("generic")}</Notice>
+          <Notice tone="danger">{tError(state.message)}</Notice>
           <div>
             <Button onClick={() => token !== undefined && void verify(token)}>
               {tCommon("routeError.retry")}
