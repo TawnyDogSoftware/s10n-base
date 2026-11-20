@@ -3,6 +3,11 @@
  * tables, columns, column types, nullability, unique columns, indexed columns and foreign keys.
  * The migration is written by hand, so this is what catches a Better Auth upgrade that adds or
  * changes a column, and a migration that drifts from the options.
+ *
+ * Only an index that is valid and a foreign key that is validated count: an index whose
+ * concurrent build failed, or a key added `NOT VALID`, does not enforce what it describes.
+ * Column defaults, check constraints, multi-column keys and partial indexes are not compared:
+ * Better Auth sets its own values in code, and declares none of the others.
  */
 import type { BetterAuthOptions } from "better-auth";
 import { getSchema } from "better-auth/db";
@@ -170,6 +175,7 @@ export async function readAuthTables(db: Kysely<unknown>, schema: string): Promi
     join pg_namespace n on n.oid = t.relnamespace
     join pg_attribute a on a.attrelid = t.oid and a.attnum = i.indkey[0]
     where n.nspname = ${schema} and t.relname like 'ba\\_%' and i.indpred is null
+      and i.indisvalid
   `.execute(db);
   const foreignKeys = await sql<{ table: string; column: string; target: string; rule: string }>`
     select t.relname as "table", a.attname as "column",
@@ -181,7 +187,7 @@ export async function readAuthTables(db: Kysely<unknown>, schema: string): Promi
     join pg_class ft on ft.oid = c.confrelid
     join pg_attribute fa on fa.attrelid = ft.oid and fa.attnum = c.confkey[1]
     where c.contype = 'f' and n.nspname = ${schema} and t.relname like 'ba\\_%'
-      and cardinality(c.conkey) = 1
+      and cardinality(c.conkey) = 1 and c.convalidated
   `.execute(db);
 
   const tables: Record<string, Record<string, ColumnShape>> = {};
