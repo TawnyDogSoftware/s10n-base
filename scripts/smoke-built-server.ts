@@ -123,14 +123,14 @@ async function checkWebApp(url: string): Promise<string | undefined> {
 async function checkServer(
   base: string,
   options: SmokeOptions,
-  exitCode: () => number | null | undefined,
+  /** Why the server is no longer running, or undefined while it runs. */
+  ended: () => string | undefined,
 ): Promise<string | undefined> {
   const deadline = Date.now() + options.deadlineMs;
   let reason: string | undefined = `/health did not answer within ${String(options.deadlineMs)} ms`;
   while (Date.now() < deadline) {
-    const code = exitCode();
-    if (code !== undefined)
-      return `the server exited with code ${String(code)} before /health answered`;
+    const gone = ended();
+    if (gone !== undefined) return gone;
     const probe = await probeHealth(`${base}/health`);
     if (probe.done) {
       reason = probe.reason;
@@ -180,18 +180,33 @@ export async function runSmoke(options: SmokeOptions): Promise<SmokeResult> {
   child.stdout.setEncoding("utf8").on("data", (chunk: string) => (output += chunk));
   child.stderr.setEncoding("utf8").on("data", (chunk: string) => (output += chunk));
 
+  // Both handlers from the start: a server that cannot be spawned emits `error`, never `exit`.
   let exitCode: number | null | undefined;
-  const exited = once(child, "exit").then(([code]) => {
-    exitCode = code as number | null;
+  let spawnError: Error | undefined;
+  const exited = new Promise<void>((resolve) => {
+    child.once("exit", (code) => {
+      exitCode = code;
+      resolve();
+    });
+    child.once("error", (error) => {
+      spawnError = error;
+      resolve();
+    });
   });
+  const ended = (): string | undefined => {
+    if (spawnError !== undefined) return `the server could not start: ${spawnError.message}`;
+    if (exitCode === undefined) return undefined;
+    return `the server exited with code ${String(exitCode)} before /health answered`;
+  };
 
   const base = `http://127.0.0.1:${String(port)}`;
   let reason: string | undefined;
   try {
-    reason = await checkServer(base, options, () => exitCode);
+    reason = await checkServer(base, options, ended);
   } finally {
     // Whatever happened above, never leave the server running.
-    if (exitCode === undefined && !(await stopServer(child, exited, shutdownDeadlineMs))) {
+    const running = exitCode === undefined && spawnError === undefined;
+    if (running && !(await stopServer(child, exited, shutdownDeadlineMs))) {
       reason ??= `the server did not exit within ${String(shutdownDeadlineMs)} ms of SIGTERM`;
     }
     await exited;

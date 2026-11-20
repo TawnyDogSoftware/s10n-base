@@ -67,6 +67,23 @@ process.exit(1);
     expect(result.output).toContain("ERR_MODULE_NOT_FOUND");
   });
 
+  it("fails at once, naming the error, when node cannot be spawned", async () => {
+    const started = Date.now();
+
+    const result = await runSmoke({
+      serverEntry: healthyServer,
+      deadlineMs: 10_000,
+      env: { PATH: path.join(fixtureDir, "no-such-dir") },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "the server could not start: spawn node ENOENT",
+      output: "",
+    });
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
   it("fails when /health answers with the wrong body", async () => {
     const wrongBody = fixture(
       "wrong-body",

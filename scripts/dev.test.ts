@@ -15,10 +15,11 @@ import {
   runDev,
   supervise,
   type Supervised,
+  watch,
 } from "./dev";
 
 function node(name: string, source: string): Supervised {
-  return { name, child: spawn("node", ["-e", source], { stdio: "ignore" }) };
+  return watch(name, spawn("node", ["-e", source], { stdio: "ignore" }));
 }
 
 const RUN_UNTIL_SIGTERM =
@@ -49,6 +50,21 @@ describe("supervise", () => {
 
     expect(code).toBe(3);
     expect(web.child.exitCode ?? web.child.signalCode).not.toBeNull();
+  });
+
+  it("stops the others when a child cannot be spawned, and names the missing command", async () => {
+    const server = node("server", RUN_UNTIL_SIGTERM);
+    const web = watch("web", spawn("/nonexistent/bin/vite", [], { stdio: "ignore" }));
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const code = await supervise([server, web], new Promise(() => {}));
+
+    expect(code).toBe(1);
+    expect(server.child.exitCode ?? server.child.signalCode).not.toBeNull();
+    expect(errors).toHaveBeenCalledWith(
+      "web could not start (spawn /nonexistent/bin/vite ENOENT); stopped the others.",
+    );
+    errors.mockRestore();
   });
 
   it("sees a child that exited before supervision began, and calls a clean exit a failure", async () => {
@@ -230,6 +246,9 @@ describe("runCommand", () => {
     await expect(runCommand("node", ["-e", "process.exit(0)"], options)).resolves.toBeUndefined();
     await expect(runCommand("node", ["-e", "process.exit(4)"], options)).rejects.toThrow(
       "node -e process.exit(4) exited with code 4",
+    );
+    await expect(runCommand("/nonexistent/bin/docker", [], options)).rejects.toThrow(
+      "spawn /nonexistent/bin/docker ENOENT",
     );
   });
 });

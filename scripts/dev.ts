@@ -7,53 +7,81 @@
  * Environment: `.env` if present, otherwise `.env.example` (see local-env.ts).
  */
 import { type ChildProcess, spawn } from "node:child_process";
-import { once } from "node:events";
 import path from "node:path";
 
 import { loadLocalEnv } from "./local-env";
 
 const STOP_GRACE_MS = 15_000;
 
+/** How a child ended: its exit code (1 when a signal ended it), or the error that kept it from starting. */
+export interface Ending {
+  readonly code: number;
+  readonly error?: Error;
+}
+
 export interface Supervised {
   readonly name: string;
   readonly child: ChildProcess;
+  /** Settles when the child exits or fails to spawn; never rejects. */
+  readonly ended: Promise<Ending>;
 }
 
-function exitOf(child: ChildProcess): Promise<number> {
-  if (child.exitCode !== null) return Promise.resolve(child.exitCode);
-  if (child.signalCode !== null) return Promise.resolve(1);
-  return once(child, "exit").then(([code]) => (typeof code === "number" ? code : 1));
+/**
+ * Watches a child from the moment it is spawned. A command that cannot be spawned (a missing
+ * binary) emits `error` and never `exit`, so both are listened for, before either can be missed.
+ */
+export function watch(name: string, child: ChildProcess): Supervised {
+  const ended = new Promise<Ending>((resolve) => {
+    child.once("exit", (code) => {
+      resolve({ code: typeof code === "number" ? code : 1 });
+    });
+    child.once("error", (error) => {
+      resolve({ code: 1, error });
+    });
+  });
+  return { name, child, ended };
 }
 
-/** Sends SIGTERM to every child still running, then SIGKILL to any left after the grace period. */
+/**
+ * Sends SIGTERM to every child still running, then SIGKILL to any left after the grace period.
+ * A child that never spawned has no process to stop.
+ */
 async function stopAll(children: ReadonlyArray<Supervised>, graceMs = STOP_GRACE_MS) {
   const running = children.filter(
-    ({ child }) => child.exitCode === null && child.signalCode === null,
+    ({ child }) => child.pid !== undefined && child.exitCode === null && child.signalCode === null,
   );
   for (const { child } of running) child.kill("SIGTERM");
   const timer = setTimeout(() => {
     for (const { child } of running) if (child.exitCode === null) child.kill("SIGKILL");
   }, graceMs);
-  await Promise.all(running.map(({ child }) => exitOf(child)));
+  await Promise.all(running.map(({ ended }) => ended));
   clearTimeout(timer);
 }
 
 /**
- * Waits until a child exits on its own (then stops the rest and returns its code) or `stop`
- * resolves (then stops all and returns 0).
+ * Waits until a child ends on its own or fails to spawn (then stops the rest and returns its
+ * code) or `stop` resolves (then stops all and returns 0). The others are stopped in every case.
  */
 export async function supervise(
   children: ReadonlyArray<Supervised>,
   stop: Promise<void>,
   graceMs = STOP_GRACE_MS,
 ): Promise<number> {
-  const firstExit = Promise.race(
-    children.map(({ name, child }) => exitOf(child).then((code) => ({ name, code }))),
+  const firstEnd = Promise.race(
+    children.map(({ name, ended }) => ended.then((ending) => ({ name, ...ending }))),
   );
-  const outcome = await Promise.race([firstExit, stop.then(() => undefined)]);
-  await stopAll(children, graceMs);
+  let outcome: (Ending & { readonly name: string }) | undefined;
+  try {
+    outcome = await Promise.race([firstEnd, stop.then(() => undefined)]);
+  } finally {
+    await stopAll(children, graceMs);
+  }
   if (outcome === undefined) return 0;
-  console.error(`${outcome.name} exited with code ${String(outcome.code)}; stopped the others.`);
+  const what =
+    outcome.error === undefined
+      ? `exited with code ${String(outcome.code)}`
+      : `could not start (${outcome.error.message})`;
+  console.error(`${outcome.name} ${what}; stopped the others.`);
   return outcome.code === 0 ? 1 : outcome.code;
 }
 
@@ -132,7 +160,8 @@ export async function runCommand(
   options: { readonly cwd: string; readonly env: Record<string, string> },
 ): Promise<void> {
   const child = spawn(command, args, { cwd: options.cwd, env: options.env, stdio: "inherit" });
-  const code = await exitOf(child);
+  const { code, error } = await watch(command, child).ended;
+  if (error !== undefined) throw error;
   if (code !== 0) throw new Error(`${command} ${args.join(" ")} exited with code ${String(code)}`);
 }
 
@@ -153,14 +182,15 @@ export function processDevIo(root: string): DevIo {
       console.error(line);
     },
     run: (command, args, env) => runCommand(command, args, { cwd: root, env }),
-    start: (devProcess, env) => ({
-      name: devProcess.name,
-      child: spawn(devProcess.command, devProcess.args, {
-        cwd: devProcess.cwd,
-        env,
-        stdio: "inherit",
-      }),
-    }),
+    start: (devProcess, env) =>
+      watch(
+        devProcess.name,
+        spawn(devProcess.command, devProcess.args, {
+          cwd: devProcess.cwd,
+          env,
+          stdio: "inherit",
+        }),
+      ),
   };
 }
 
