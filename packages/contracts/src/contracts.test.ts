@@ -71,7 +71,7 @@ describe("BootstrapConfig", () => {
     );
   });
 
-  it("has exactly the three fields, without the removed desktop and live-stream fields", () => {
+  it("has exactly the three fields: app name, version and API base URL", () => {
     expect(
       Object.keys(BootstrapConfig.fields).toSorted((left, right) => left.localeCompare(right)),
     ).toEqual(["apiBaseUrl", "appName", "appVersion"]);
