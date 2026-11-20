@@ -50,7 +50,9 @@ export function pickNodeRelease(
   const eligible = index.flatMap((entry) => {
     const version = /^v(\d+\.\d+\.\d+)$/.exec(entry.version)?.[1];
     const published = Date.parse(`${entry.date}T23:59:59.999Z`);
-    if (version === undefined || now.getTime() - published < MIN_RELEASE_AGE_MS) return [];
+    // A date that does not parse gives NaN, and NaN is never below the minimum age.
+    const oldEnough = Number.isFinite(published) && now.getTime() - published >= MIN_RELEASE_AGE_MS;
+    if (version === undefined || !oldEnough) return [];
     return [{ version, major: Number(version.split(".")[0]), lts: entry.lts !== false }];
   });
   const ltsMajors = eligible

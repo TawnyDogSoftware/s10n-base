@@ -58,6 +58,12 @@ describe("pickNodeRelease", () => {
     expect(pickNodeRelease(index, 26, now)).toEqual({ version: "26.13.1", newerLtsMajor: 28 });
   });
 
+  it("skips a release whose date cannot be read", () => {
+    expect(
+      pickNodeRelease([{ version: "v26.13.2", date: "17 Nov 2026", lts: "Lithium" }], 26, now),
+    ).toEqual({ version: undefined, newerLtsMajor: undefined });
+  });
+
   it("counts a release dated today or 3 days ago as too young", () => {
     expect(
       pickNodeRelease([{ version: "v26.13.2", date: "2026-11-16", lts: "Lithium" }], 26, now),
