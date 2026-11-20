@@ -26,6 +26,7 @@ import {
   Scope,
 } from "effect";
 import type { Kysely, PostgresPool } from "kysely";
+import type { Migration } from "kysely/migration";
 
 import { createSesAuthEmailSender, type AuthEmailSender } from "./auth/email/sender";
 import { createAppAuth, type AppAuth } from "./auth/instance";
@@ -36,6 +37,12 @@ import { createSesClient } from "./infra/email/ses";
 import type { AwsCredentials } from "./infra/email/sigv4";
 import type { DB } from "./infra/postgres/generated/db";
 import { pingDatabase, waitForDatabase } from "./infra/postgres/connect";
+import {
+  MigrationCheckError,
+  MigrationsPendingError,
+  pendingMigrations,
+} from "./infra/postgres/migrator";
+import { migrations as committedMigrations } from "./infra/postgres/migrations";
 import { createDb, createPool, warnOnIdleError } from "./infra/postgres/pool";
 import { createRequestHandler } from "./http/routes";
 import { createLogger, type Logger, type LogWriter } from "./observability/logger";
@@ -88,6 +95,8 @@ export interface ServerLayerOptions {
   readonly resolveActor?: ActorResolver;
   /** Defaults to SES, at `SES_ENDPOINT` when it is set. */
   readonly emailSender?: AuthEmailSender;
+  /** The migrations the database must have applied before the server starts: this build's. */
+  readonly migrations?: Readonly<Record<string, Migration>>;
 }
 
 function defaultPool(config: ServerConfig, logger: Logger): PostgresPool {
@@ -140,6 +149,14 @@ const databaseLayer = (options: ServerLayerOptions) =>
           logger.warn("database_unavailable", { error });
         },
       });
+      // The server never migrates, and refuses a database that misses a migration it needs:
+      // `migrate up` runs before a new version rolls out.
+      const pending = yield* Effect.tryPromise({
+        try: () =>
+          pendingMigrations(db as Kysely<unknown>, options.migrations ?? committedMigrations),
+        catch: (cause) => new MigrationCheckError({ cause }),
+      });
+      if (pending.length > 0) return yield* new MigrationsPendingError({ pending });
       const checkReadiness = () =>
         Effect.runPromise(
           Effect.tryPromise(() => pingDatabase(db as Kysely<unknown>)).pipe(

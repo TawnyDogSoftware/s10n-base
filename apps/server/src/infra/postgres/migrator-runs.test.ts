@@ -13,6 +13,7 @@ import {
   migrateDown,
   migrateUp,
   migrationStatus,
+  pendingMigrations,
   resetSchema,
   runMigrationCommand,
   withMigrationLock,
@@ -197,7 +198,7 @@ describe("granting the app role", () => {
     'grant usage on all sequences in schema "app" to "app_runtime"',
     'alter default privileges in schema "app" grant select, insert, update, delete on tables to "app_runtime"',
     'alter default privileges in schema "app" grant usage on sequences to "app_runtime"',
-    'revoke all on "app"."kysely_migration", "app"."kysely_migration_lock" from "app_runtime"',
+    'revoke insert, update, delete on "app"."kysely_migration", "app"."kysely_migration_lock" from "app_runtime"',
   ];
 
   it("grants what the server needs after the migrations, inside the lock", async () => {
@@ -262,5 +263,40 @@ describe("granting the app role", () => {
       "migrations_applied",
       expect.objectContaining({ grantedTo: "app_runtime" }),
     );
+  });
+});
+
+describe("pendingMigrations", () => {
+  it("is every migration when the migrator's table is not on the search path", async () => {
+    const { db, queries } = scriptedDb<unknown>(() => [{ present: false }]);
+
+    expect(await pendingMigrations(db, migrations)).toEqual(["001_widget", "002_gadget"]);
+    expect(queries.map((query) => query.sql)).toEqual([
+      "select to_regclass('kysely_migration') is not null as present",
+    ]);
+  });
+
+  it("is the migrations not applied yet, in name order, ignoring ones this build does not know", async () => {
+    const { db } = scriptedDb<unknown>((query) =>
+      query.sql.startsWith("select to_regclass")
+        ? [{ present: true }]
+        : [{ name: "001_widget" }, { name: "009_from_the_future" }],
+    );
+
+    // Listed out of order: the result is in the order Kysely runs them.
+    expect(await pendingMigrations(db, { "003_gizmo": table("gizmo"), ...migrations })).toEqual([
+      "002_gadget",
+      "003_gizmo",
+    ]);
+  });
+
+  it("is empty when every migration has been applied", async () => {
+    const { db } = scriptedDb<unknown>((query) =>
+      query.sql.startsWith("select to_regclass")
+        ? [{ present: true }]
+        : [{ name: "001_widget" }, { name: "002_gadget" }],
+    );
+
+    expect(await pendingMigrations(db, migrations)).toEqual([]);
   });
 });

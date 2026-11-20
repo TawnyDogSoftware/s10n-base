@@ -9,21 +9,31 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { defineRpc } from "@s10n-base/contracts";
 
 import type { ServerConfig } from "./config";
+import { migrations } from "./infra/postgres/migrations";
 import { defineHandler } from "./rpc/dispatcher";
 import { sesCredentials, startFromEnvironment, startServer, type StartedServer } from "./server";
 import { testServerConfig } from "./test/config";
 
 const noop = () => {};
 
+/** The rows the fake database answers a query with: every committed migration is applied. */
+function rowsFor(text: string, applied: readonly string[]): ReadonlyArray<Record<string, unknown>> {
+  if (text.startsWith("select to_regclass")) return [{ present: true }];
+  if (text.startsWith('select name from "kysely_migration"'))
+    return applied.map((name) => ({ name }));
+  return [{ "?column?": 1 }];
+}
+
 /** A stand-in for pg.Pool that records what happens to it and can hold queries back. */
-function createFakePool(events: string[]) {
+function createFakePool(events: string[], applied: readonly string[] = Object.keys(migrations)) {
   let gate: Promise<void> | undefined;
   let failing = false;
   const client: PostgresPoolClient = {
-    query: (async () => {
+    query: (async (text: string) => {
       await gate;
       if (failing) throw Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" });
-      return { command: "SELECT", rowCount: 1, rows: [{ "?column?": 1 }] };
+      const rows = rowsFor(text, applied);
+      return { command: "SELECT", rowCount: rows.length, rows };
     }) as unknown as PostgresPoolClient["query"],
     release: () => {},
   };
@@ -246,6 +256,51 @@ describe("startServer", () => {
       }),
     ).rejects.toMatchObject({ _tag: "DatabaseUnavailableError" });
     expect(events).toEqual(["pool:end"]);
+  });
+
+  it("refuses to start on a database that misses a migration, naming it, and closes the pool", async () => {
+    const events: string[] = [];
+
+    const failure = startServer(testConfig(), {
+      createPool: () => createFakePool(events, []),
+      write: () => {},
+    });
+
+    await expect(failure).rejects.toMatchObject({
+      _tag: "MigrationsPendingError",
+      pending: ["001_auth"],
+    });
+    await expect(failure).rejects.toThrow(
+      "The database has not applied 001_auth, which this build needs. Run `migrate up` before starting it.",
+    );
+    expect(events).toEqual(["pool:end"]);
+  });
+
+  it("starts when the database has every migration the build lists", async () => {
+    started = await startServer(testConfig(), {
+      createPool: () => createFakePool([], ["001_widget"]),
+      migrations: { "001_widget": { up: () => Promise.resolve() } },
+      write: () => {},
+    });
+
+    expect(started.port).toBeGreaterThan(0);
+  });
+
+  it("fails to start when it cannot read which migrations were applied", async () => {
+    const events: string[] = [];
+    const pool = createFakePool(events);
+    const original = pool.connect.bind(pool);
+    let connections = 0;
+    pool.connect = async () => {
+      connections += 1;
+      // The first connection answers the readiness ping; the check after it fails.
+      if (connections > 1) pool.fail(true);
+      return original();
+    };
+
+    await expect(
+      startServer(testConfig(), { createPool: () => pool, write: () => {} }),
+    ).rejects.toThrow("Could not read which migrations the database has applied.");
   });
 
   it("connects with a pg pool to DATABASE_URL by default, and fails to start without a database", async () => {

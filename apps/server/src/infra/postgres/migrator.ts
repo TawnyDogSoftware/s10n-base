@@ -5,6 +5,7 @@
  * together can race on creating them. Every command that writes therefore runs on one pinned
  * connection holding a Postgres session advisory lock, keyed by the schema, for the whole run.
  */
+import { Data } from "effect";
 import { type Kysely, sql } from "kysely";
 import { type Migration, type MigrationResultSet, Migrator } from "kysely/migration";
 
@@ -38,6 +39,24 @@ export interface MigrationStatus {
   readonly pending: ReadonlyArray<string>;
   /** Applied in the database but not in this build's list: the database is ahead of the code. */
   readonly unknown: ReadonlyArray<string>;
+}
+
+/** The database misses migrations this build needs: the server refuses to start on it. */
+export class MigrationsPendingError extends Data.TaggedError("MigrationsPendingError")<{
+  readonly pending: ReadonlyArray<string>;
+}> {
+  override get message(): string {
+    return `The database has not applied ${this.pending.join(", ")}, which this build needs. Run \`migrate up\` before starting it.`;
+  }
+}
+
+/** Which migrations the database has applied could not be read. */
+export class MigrationCheckError extends Data.TaggedError("MigrationCheckError")<{
+  readonly cause: unknown;
+}> {
+  override get message(): string {
+    return "Could not read which migrations the database has applied.";
+  }
 }
 
 /** A migration (or the run around it) failed. `cause` is the error it threw. */
@@ -113,8 +132,9 @@ export async function withMigrationLock<T>(
  * Grants `role` what the server needs on `schema`: to use the schema, to read and write rows in
  * its tables and to use its sequences, and the same on tables and sequences that later
  * migrations create (default privileges belong to the role running this, the one that migrates).
- * Nothing that changes the schema, and nothing on the migrator's own bookkeeping tables. Every
- * statement is idempotent, so it runs after every `up`.
+ * Nothing that changes the schema. The migrator's own tables are read-only to it: the server
+ * reads them at startup to refuse a database that misses a migration. Every statement is
+ * idempotent, so it runs after every `up`.
  */
 async function grantAppRole(
   connection: Kysely<unknown>,
@@ -129,7 +149,7 @@ async function grantAppRole(
     sql`grant usage on all sequences in schema ${inSchema} to ${to}`,
     sql`alter default privileges in schema ${inSchema} grant select, insert, update, delete on tables to ${to}`,
     sql`alter default privileges in schema ${inSchema} grant usage on sequences to ${to}`,
-    sql`revoke all on ${sql.id(schema, MIGRATION_TABLE)}, ${sql.id(schema, MIGRATION_LOCK_TABLE)} from ${to}`,
+    sql`revoke insert, update, delete on ${sql.id(schema, MIGRATION_TABLE)}, ${sql.id(schema, MIGRATION_LOCK_TABLE)} from ${to}`,
   ];
   for (const statement of statements) await statement.execute(connection);
 }
@@ -196,6 +216,26 @@ export async function migrationStatus(target: MigrationTarget): Promise<Migratio
     pending: expected.filter((name) => !appliedSet.has(name)),
     unknown: applied.filter((name) => !expectedSet.has(name)),
   };
+}
+
+/**
+ * The migrations in `migrations` that the database has not applied, in the order they would run.
+ * Reads the migrator's table through the search path, as the server sees the database, and never
+ * creates it. Migrations the database has that this build does not know are not counted: an
+ * older build may run against a newer database while a release rolls back.
+ */
+export async function pendingMigrations(
+  db: Kysely<unknown>,
+  migrations: Readonly<Record<string, Migration>>,
+): Promise<ReadonlyArray<string>> {
+  const expected = Object.keys(migrations).toSorted(compareCodeUnits);
+  const table = await sql<{
+    present: boolean;
+  }>`select to_regclass(${sql.lit(MIGRATION_TABLE)}) is not null as present`.execute(db);
+  if (table.rows[0]?.present !== true) return expected;
+  const rows = await sql<{ name: string }>`select name from ${sql.id(MIGRATION_TABLE)}`.execute(db);
+  const applied = new Set(rows.rows.map((row) => row.name));
+  return expected.filter((name) => !applied.has(name));
 }
 
 /**
