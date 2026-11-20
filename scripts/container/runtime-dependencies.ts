@@ -16,7 +16,7 @@
  * (`better-call` imports `zod`, an optional peer). TypeScript sources and declarations, source
  * maps and packages' own tests are left out: Node never loads them from `node_modules`.
  */
-import { cp, lstat, mkdir, readFile, realpath, symlink } from "node:fs/promises";
+import { cp, lstat, mkdir, readdir, readFile, realpath, symlink } from "node:fs/promises";
 import path from "node:path";
 
 /** One package the workspace needs at run time. */
@@ -180,13 +180,31 @@ export function isRuntimeFile(file: string): boolean {
   );
 }
 
-/** Copies the closure into `out`, in the same layout, and returns its packages. */
+/** The entries of a directory, or none when it does not exist. */
+async function entriesOf(directory: string): Promise<string[]> {
+  try {
+    return await readdir(directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+/**
+ * Copies the closure into `out`, in the same layout, and returns its packages. `out` must be new
+ * or empty: an export over an earlier one would keep packages and links the closure has dropped.
+ */
 export async function exportRuntimeDependencies(options: {
   readonly root: string;
   readonly workspace: string;
   readonly out: string;
 }): Promise<ReadonlyArray<RuntimePackage>> {
   const { root, workspace, out } = options;
+  if ((await entriesOf(out)).length > 0) {
+    throw new Error(
+      `${out} is not empty: export the runtime dependencies into a new or empty directory`,
+    );
+  }
   const closure = await collectRuntimeClosure(root, workspace);
   for (const item of closure.packages) {
     const relative = path.join(STORE, item.entry, "node_modules", item.name);
