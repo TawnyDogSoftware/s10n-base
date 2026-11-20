@@ -4,7 +4,7 @@
 
 ## Context
 
-The base needs sign-up, sign-in, sessions, password reset, roles and passkeys, for a browser and a native app. Better Auth provides them, and two of the three projects built on this base already used it. It serves a large and growing set of HTTP endpoints, many of which a given product does not want exposed, and its handler speaks the Fetch API while the server is plain `node:http` ([001](001-effect-core-on-the-server.md)). Its own objects change shape between releases, which clients should not have to follow.
+The base needs sign-up, sign-in, sessions, password reset, roles and passkeys, for a browser and a native app. Better Auth provides them, and all three projects built on this base use it. It serves a large and growing set of HTTP endpoints, many of which a given product does not want exposed, and its handler speaks the Fetch API while the server is plain `node:http` ([001](001-effect-core-on-the-server.md)). Its own objects change shape between releases, which clients should not have to follow.
 
 ## Decision
 

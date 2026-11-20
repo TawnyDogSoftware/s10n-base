@@ -4,7 +4,7 @@
 
 ## Context
 
-A starter should sign people in on day one without each project wiring auth again, but every feature switched on is surface to secure and keep upgraded. Every project built on this base needed email and password with verified addresses, a native app session, and a way to tell administrators from users. Two of the three used passkeys; organizations and social sign-in were product-specific.
+A starter should sign people in on day one without each project wiring auth again, but every feature switched on is surface to secure and keep upgraded. Every project built on this base needed email and password with verified addresses, and those with a mobile app needed its session to work natively. Two of the three used passkeys, one used Better Auth's admin plugin for roles, and organizations and social sign-in were product-specific.
 
 ## Decision
 
