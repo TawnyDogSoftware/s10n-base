@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   imageContentProblems,
   LIST_FILES_SCRIPT,
+  listFilesScript,
   REQUIRED_FILES,
   runtimePackages,
 } from "./image-contents";
@@ -77,20 +78,42 @@ describe("runtimePackages", () => {
   });
 });
 
-describe("LIST_FILES_SCRIPT", () => {
-  it("lists every path under /app as JSON, without following links", () => {
+describe("listFilesScript", () => {
+  it("lists every path under the root as JSON, without following links, and the extra paths that exist", () => {
     const root = mkdtempSync(path.join(tmpdir(), "image-contents-"));
     mkdirSync(path.join(root, "app/apps/server/dist"), { recursive: true });
     writeFileSync(path.join(root, "app/apps/server/dist/bin.mjs"), "");
-    const script = LIST_FILES_SCRIPT.replaceAll('"/app"', JSON.stringify(path.join(root, "app")));
+    mkdirSync(path.join(root, "outside/hidden"), { recursive: true });
+    symlinkSync(path.join(root, "outside"), path.join(root, "app/linked"));
+    writeFileSync(path.join(root, "npm"), "");
+    const script = listFilesScript(path.join(root, "app"), [
+      path.join(root, "npm"),
+      path.join(root, "yarn"),
+    ]);
 
     const listed = JSON.parse(execFileSync("node", ["-e", script]).toString()) as string[];
 
-    expect(listed.map((file) => path.relative(root, file))).toEqual([
+    expect(
+      listed
+        .map((file) => path.relative(root, file))
+        .toSorted((left, right) => left.localeCompare(right)),
+    ).toEqual([
       "app/apps",
       "app/apps/server",
       "app/apps/server/dist",
       "app/apps/server/dist/bin.mjs",
+      "app/linked",
+      "npm",
     ]);
+  });
+
+  it("is what the image is listed with: /app and the package managers' paths", () => {
+    expect(LIST_FILES_SCRIPT).toBe(
+      listFilesScript("/app", [
+        "/usr/local/bin/npm",
+        "/usr/local/bin/npx",
+        "/usr/local/lib/node_modules",
+      ]),
+    );
   });
 });

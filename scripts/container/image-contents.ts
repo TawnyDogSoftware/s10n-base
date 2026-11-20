@@ -70,10 +70,12 @@ export function imageContentProblems(paths: readonly string[]): string[] {
 }
 
 /**
- * A Node program that prints, as JSON, every path under `/app` (without following links) and
- * which of the package-manager paths exist.
+ * A Node program that prints, as JSON, every path under `root` (without following links) and
+ * which of the `extra` paths exist. Both are parameters so the tests can list a directory of
+ * their own on a machine that has package managers installed.
  */
-export const LIST_FILES_SCRIPT = `
+export function listFilesScript(root: string, extra: readonly string[]): string {
+  return `
 const fs = require("node:fs");
 const path = require("node:path");
 const found = [];
@@ -84,7 +86,11 @@ const walk = (dir) => {
     if (entry.isDirectory()) walk(full);
   }
 };
-walk("/app");
-for (const file of ${JSON.stringify(PACKAGE_MANAGERS)}) if (fs.existsSync(file)) found.push(file);
+walk(${JSON.stringify(root)});
+for (const file of ${JSON.stringify(extra)}) if (fs.existsSync(file)) found.push(file);
 process.stdout.write(JSON.stringify(found));
 `;
+}
+
+/** The program the smoke check runs inside the image: `/app` and the package managers' paths. */
+export const LIST_FILES_SCRIPT = listFilesScript("/app", PACKAGE_MANAGERS);
