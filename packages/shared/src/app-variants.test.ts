@@ -29,9 +29,15 @@ describe("appVariants", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("uses placeholders under com.example until a project renames them", () => {
-    for (const variant of APP_VARIANTS) {
-      expect(appVariants[variant].bundleIdentifier.startsWith("com.example.")).toBe(true);
-    }
+  it("names the development and preview builds after the production one", () => {
+    const { development, preview, production } = appVariants;
+
+    // `bun run rename` replaces the names, so this holds before and after it.
+    expect(development.bundleIdentifier).toBe(`${production.bundleIdentifier}.dev`);
+    expect(preview.bundleIdentifier).toBe(`${production.bundleIdentifier}.preview`);
+    expect(development.urlScheme).toBe(`${production.urlScheme}-dev`);
+    expect(preview.urlScheme).toBe(`${production.urlScheme}-preview`);
+    expect(development.displayName).toBe(`${production.displayName} (Dev)`);
+    expect(preview.displayName).toBe(`${production.displayName} (Preview)`);
   });
 });
