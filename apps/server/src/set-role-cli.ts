@@ -9,7 +9,7 @@ import { type Kysely, sql } from "kysely";
 
 import { Role } from "@s10n-base/contracts";
 
-import { openCliDatabase, readDatabaseConfig } from "./database-cli";
+import { closeCliDatabase, openCliDatabase, readDatabaseConfig } from "./database-cli";
 import type { DB } from "./infra/postgres/generated/db";
 import { createLogger, type LogWriter } from "./observability/logger";
 
@@ -97,8 +97,9 @@ export async function runSetRoleCli(options: SetRoleCliOptions): Promise<number>
   const config = readDatabaseConfig(options.env, startupLogger);
   if (config === undefined) return 1;
   const logger = createLogger({ level: config.logLevel, write: options.write });
-  const db = options.db ?? openCliDatabase(config, logger, options.schema);
+  let db: Kysely<DB> | undefined;
   try {
+    db = options.db ?? openCliDatabase(config, logger, options.schema);
     const userId = await setUserRole(db, parsed.email, parsed.role);
     logger.info("role_set", { userId, role: parsed.role });
     return 0;
@@ -106,6 +107,6 @@ export async function runSetRoleCli(options: SetRoleCliOptions): Promise<number>
     logger.error("set_role_failed", { error });
     return 1;
   } finally {
-    await db.destroy();
+    if (db !== undefined) await closeCliDatabase(db, logger);
   }
 }

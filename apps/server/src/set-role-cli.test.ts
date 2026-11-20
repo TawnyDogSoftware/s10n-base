@@ -141,6 +141,39 @@ describe("runSetRoleCli with a database", () => {
     expect(queries.some((query) => query.sql.startsWith("update"))).toBe(false);
   });
 
+  it("keeps the exit code and logs it when closing the database fails", async () => {
+    const { db } = scriptedDb<DB>(() => [{ id: "u1" }]);
+    db.destroy = () => Promise.reject(new Error("close failed"));
+    const output = capture();
+
+    const code = await runSetRoleCli({
+      args: ["sam@example.com", "admin"],
+      env,
+      write: output.write,
+      db,
+    });
+
+    expect(code).toBe(0);
+    expect(output.lines.map((line) => line.message)).toEqual(["role_set", "database_close_failed"]);
+  });
+
+  it("exits 1 with a logged error when the database cannot be opened", async () => {
+    const output = capture();
+
+    const code = await runSetRoleCli({
+      args: ["sam@example.com", "admin"],
+      env,
+      write: output.write,
+      schema: "Not-An-Identifier",
+    });
+
+    expect(code).toBe(1);
+    expect(output.lines).toMatchObject([{ message: "set_role_failed" }]);
+    expect(JSON.stringify(output.lines)).toContain(
+      "searchPath must be a single lowercase identifier.",
+    );
+  });
+
   it("exits 1 when the database cannot be reached", async () => {
     const output = capture();
 

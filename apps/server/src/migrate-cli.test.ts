@@ -155,4 +155,33 @@ describe("runMigrateCli with a database", () => {
 
     expect(code).toBe(0);
   });
+
+  it("keeps the command's exit code and logs it when closing the database fails", async () => {
+    const output = capture();
+    const { db } = scriptedDb<unknown>(() => []);
+    db.destroy = () => Promise.reject(new Error("close failed"));
+
+    const code = await runMigrateCli({ args: ["status"], env, write: output.write, db });
+
+    expect(code).toBe(0);
+    expect(output.entries().map((entry) => entry.message)).toEqual([
+      "migration_status",
+      "database_close_failed",
+    ]);
+  });
+
+  it("exits 1 with a logged error when the database cannot be opened", async () => {
+    const output = capture();
+
+    const code = await runMigrateCli({
+      args: ["status"],
+      env,
+      write: output.write,
+      schema: "Not-An-Identifier",
+    });
+
+    expect(code).toBe(1);
+    expect(output.entries()).toMatchObject([{ message: "migrate_failed" }]);
+    expect(output.text()).toContain("searchPath must be a single lowercase identifier.");
+  });
 });
