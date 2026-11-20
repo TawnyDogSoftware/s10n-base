@@ -70,20 +70,27 @@ export interface FlowOptions {
   readonly author: { readonly name: string; readonly email: string };
 }
 
-export type FlowOutcome =
-  | { readonly kind: "unchanged" }
-  | {
-      readonly kind: "opened" | "updated";
-      readonly branch: string;
-      readonly url: string;
-      readonly body: string;
-    };
+interface Published {
+  readonly kind: "opened" | "updated";
+  readonly branch: string;
+  readonly url: string;
+  readonly body: string;
+}
+
+export type FlowOutcome = { readonly kind: "unchanged" } | Published;
 
 interface OpenPr {
   readonly number: number;
   readonly headRefName: string;
+  readonly baseRefName: string;
+  readonly isCrossRepository: boolean;
+  readonly headRefOid: string;
+  readonly body: string;
   readonly url: string;
 }
+
+/** The branches the updater pushes: `deps/update-YYYY-MM-DD`. */
+const UPDATE_BRANCH = /^deps\/update-\d{4}-\d{2}-\d{2}$/;
 
 const BUN_RELEASES_PAGE = 30;
 const BUN_RELEASES_URL = `https://api.github.com/repos/oven-sh/bun/releases?per_page=${String(BUN_RELEASES_PAGE)}`;
@@ -127,19 +134,35 @@ export async function readManifests(io: Io): Promise<ManifestFile[]> {
   return [{ path: "package.json", json: root }, ...workspaceFiles];
 }
 
-export async function findOpenPr(io: Io, label: string): Promise<OpenPr | undefined> {
+/**
+ * The updater's open PRs, newest first. A PR counts only with the label, a head branch of this
+ * repository named like the updater's, and the base branch as its base; any other labelled PR
+ * is logged and left alone, so a label put on the wrong PR never gets it merged into or closed.
+ */
+export async function findOpenPrs(io: Io, options: FlowOptions): Promise<OpenPr[]> {
   const result = await mustRun(io, "gh", [
     "pr",
     "list",
     "--label",
-    label,
+    options.label,
     "--state",
     "open",
     "--json",
-    "number,headRefName,url",
+    "number,headRefName,baseRefName,isCrossRepository,headRefOid,body,url",
   ]);
-  const prs = JSON.parse(result.stdout) as OpenPr[];
-  return prs.toSorted((a, b) => b.number - a.number)[0];
+  const prs = (JSON.parse(result.stdout) as OpenPr[]).toSorted((a, b) => b.number - a.number);
+  return prs.filter((pr) => {
+    const ours =
+      UPDATE_BRANCH.test(pr.headRefName) &&
+      pr.baseRefName === options.baseBranch &&
+      !pr.isCrossRepository;
+    if (!ours) {
+      io.log(
+        `Leaving PR #${String(pr.number)} alone: it has the ${options.label} label but is not the updater's (head ${pr.headRefName} into ${pr.baseRefName}).`,
+      );
+    }
+    return ours;
+  });
 }
 
 interface Start {
@@ -524,22 +547,153 @@ function indirectChanges(
   return [...moved, ...addedOrRemoved(names, before, after)];
 }
 
-export async function runDependencyUpdate(io: Io, options: FlowOptions): Promise<FlowOutcome> {
-  const date = options.now.toISOString().slice(0, 10);
-  const branch = `deps/update-${date}`;
-  const write = async (
-    command: string,
-    args: readonly string[],
-    input?: string,
-  ): Promise<CommandResult> => {
+/** The marker that ends a PR body, naming the commit the body describes. */
+const HEAD_MARKER = /<!-- dependency-update head: (\S+) -->/;
+
+function withHead(body: string, sha: string): string {
+  return `${body}\n<!-- dependency-update head: ${sha} -->\n`;
+}
+
+type Write = (command: string, args: readonly string[], input?: string) => Promise<CommandResult>;
+
+function writer(io: Io, options: FlowOptions): Write {
+  return async (command, args, input) => {
     if (options.dryRun) {
       io.log(`Would run: ${[command, ...args].join(" ")}`);
       return { code: 0, stdout: DRY_RUN_URL, stderr: "" };
     }
     return mustRun(io, command, args, input === undefined ? undefined : { input });
   };
+}
 
-  const openPr = await findOpenPr(io, options.label);
+/** Comments on and closes each older update PR, pointing at the one that replaces it. */
+async function closeSuperseded(write: Write, older: readonly OpenPr[], url: string): Promise<void> {
+  for (const pr of older) {
+    await write("gh", ["pr", "comment", String(pr.number), "--body", `Superseded by ${url}.`]);
+    await write("gh", ["pr", "close", String(pr.number), "--delete-branch"]);
+  }
+}
+
+/** What the update found, gathered before deciding whether there is anything to publish. */
+interface Findings {
+  readonly date: string;
+  readonly base: BaseSnapshot;
+  readonly freshStart: boolean;
+  readonly restorations: readonly Restoration[];
+  readonly notApplied: readonly string[];
+  readonly heldByAge: readonly AgeHeldPackage[];
+}
+
+/** The PR body for the files as they are now, compared with the base. */
+async function describe(io: Io, options: FlowOptions, found: Findings): Promise<string> {
+  const lockedAfter = parseLockedVersions(await io.readFile("bun.lock"));
+  const declaredAfter = collectSpecs(await readManifests(io));
+  const direct = new Set([...found.base.specs.keys(), ...declaredAfter.keys()]);
+  return buildPrBody({
+    date: found.date,
+    baseBranch: options.baseBranch,
+    freshStart: found.freshStart,
+    changes: versionChanges(direct, found.base.locked, lockedAfter),
+    addedOrRemoved: addedOrRemoved(direct, found.base.locked, lockedAfter),
+    indirect: indirectChanges(direct, found.base.locked, lockedAfter),
+    runtimes: await runtimeChanges(io, found.base),
+    notApplied: [
+      ...found.restorations.map(
+        (restoration) =>
+          `${restoration.name} stays at ${restoration.restoredTo} (newest allowed: ${specBaseVersion(restoration.attempted) ?? restoration.attempted}): ${restoration.reason}`,
+      ),
+      ...found.notApplied,
+    ],
+    heldByAge: found.heldByAge,
+  });
+}
+
+/**
+ * With no file to change, the open PR is left alone (docs/dependencies.md, step 6) unless its
+ * body names a commit other than the PR's head: an earlier run pushed and then failed to edit
+ * the body, so the body is rewritten for the head. A body without the marker is never touched.
+ */
+async function repairBody(
+  io: Io,
+  write: Write,
+  openPr: OpenPr | undefined,
+  body: () => Promise<string>,
+): Promise<FlowOutcome> {
+  const described = openPr === undefined ? undefined : HEAD_MARKER.exec(openPr.body)?.[1];
+  if (openPr === undefined || described === undefined || described === openPr.headRefOid) {
+    io.log("Nothing to update: no file changed on top of the starting point.");
+    return { kind: "unchanged" };
+  }
+  io.log(`The body of ${openPr.url} describes ${described}, not its head; rewriting it.`);
+  const repaired = withHead(await body(), openPr.headRefOid);
+  await write("gh", ["pr", "edit", String(openPr.number), "--body-file", "-"], repaired);
+  return { kind: "updated", branch: openPr.headRefName, url: openPr.url, body: repaired };
+}
+
+/** Pushes the commit and opens or updates the PR; returns the PR and the PRs it replaces. */
+async function publish(
+  write: Write,
+  options: FlowOptions,
+  open: {
+    readonly pr: OpenPr | undefined;
+    readonly date: string;
+    readonly branch: string;
+    readonly body: string;
+  },
+): Promise<{ readonly outcome: Published; readonly replaced: readonly OpenPr[] }> {
+  const { pr, date, branch, body } = open;
+  if (pr?.headRefName === branch) {
+    // A lease rather than a plain push: after a conflict forced a fresh start, the new
+    // commit does not descend from the branch, and a plain push would be rejected.
+    await write("git", [
+      "push",
+      `--force-with-lease=refs/heads/${branch}:origin/${branch}`,
+      "origin",
+      `HEAD:refs/heads/${branch}`,
+    ]);
+    await write("gh", ["pr", "edit", String(pr.number), "--body-file", "-"], body);
+    return { outcome: { kind: "updated", branch, url: pr.url, body }, replaced: [] };
+  }
+  await write("git", ["push", "--force", "origin", `HEAD:refs/heads/${branch}`]);
+  await write("gh", [
+    "label",
+    "create",
+    options.label,
+    "--color",
+    "0366d6",
+    "--description",
+    "Opened by the daily dependency-update workflow",
+    "--force",
+  ]);
+  const created = await write(
+    "gh",
+    [
+      "pr",
+      "create",
+      "--base",
+      options.baseBranch,
+      "--head",
+      branch,
+      "--title",
+      `Dependency updates ${date}`,
+      "--label",
+      options.label,
+      "--body-file",
+      "-",
+    ],
+    body,
+  );
+  const url = created.stdout.trim();
+  return { outcome: { kind: "opened", branch, url, body }, replaced: pr === undefined ? [] : [pr] };
+}
+
+export async function runDependencyUpdate(io: Io, options: FlowOptions): Promise<FlowOutcome> {
+  const date = options.now.toISOString().slice(0, 10);
+  const branch = `deps/update-${date}`;
+  const write = writer(io, options);
+
+  // Only the newest update PR is built on; any older one an interrupted run left open is closed.
+  const [openPr, ...older] = await findOpenPrs(io, options);
   io.log(
     openPr === undefined
       ? "No open dependency-update PR."
@@ -555,38 +709,24 @@ export async function runDependencyUpdate(io: Io, options: FlowOptions): Promise
   const nodeMajor = nvmrc.slice(0, nvmrc.indexOf("."));
 
   const restorations = await updatePackages(io, holds, nodeMajor);
-  const notApplied = await updateRuntimes(io, options.now);
+  const runtimeNotes = await updateRuntimes(io, options.now);
   const expoNotes = await checkExpo(io);
-  const heldByAge = await packagesHeldByAge(io);
+  const found: Findings = {
+    date,
+    base,
+    freshStart,
+    restorations,
+    notApplied: [...runtimeNotes, ...expoNotes],
+    heldByAge: await packagesHeldByAge(io),
+  };
 
   const status = await mustRun(io, "git", ["status", "--porcelain"]);
   if (status.stdout.trim() === "") {
-    io.log("Nothing to update: no file changed on top of the starting point.");
-    return { kind: "unchanged" };
+    if (openPr !== undefined) await closeSuperseded(write, older, openPr.url);
+    return repairBody(io, write, openPr, () => describe(io, options, found));
   }
 
-  const lockedAfter = parseLockedVersions(await io.readFile("bun.lock"));
-  const declaredAfter = collectSpecs(await readManifests(io));
-  const direct = new Set([...base.specs.keys(), ...declaredAfter.keys()]);
-  const body = buildPrBody({
-    date,
-    baseBranch: options.baseBranch,
-    freshStart,
-    changes: versionChanges(direct, base.locked, lockedAfter),
-    addedOrRemoved: addedOrRemoved(direct, base.locked, lockedAfter),
-    indirect: indirectChanges(direct, base.locked, lockedAfter),
-    runtimes: await runtimeChanges(io, base),
-    notApplied: [
-      ...restorations.map(
-        (restoration) =>
-          `${restoration.name} stays at ${restoration.restoredTo} (newest allowed: ${specBaseVersion(restoration.attempted) ?? restoration.attempted}): ${restoration.reason}`,
-      ),
-      ...notApplied,
-      ...expoNotes,
-    ],
-    heldByAge,
-  });
-
+  const body = await describe(io, options, found);
   await mustRun(io, "git", ["add", "--all"]);
   await mustRun(io, "git", [
     ...authorArgs(options),
@@ -595,66 +735,19 @@ export async function runDependencyUpdate(io: Io, options: FlowOptions): Promise
     "-m",
     `Update dependencies (${date})`,
   ]);
+  const head = (await mustRun(io, "git", ["rev-parse", "--verify", "HEAD^{commit}"])).stdout.trim();
 
-  let outcome: FlowOutcome;
-  if (openPr?.headRefName === branch) {
-    // A lease rather than a plain push: after a conflict forced a fresh start, the new
-    // commit does not descend from the branch, and a plain push would be rejected.
-    await write("git", [
-      "push",
-      `--force-with-lease=refs/heads/${branch}:origin/${branch}`,
-      "origin",
-      `HEAD:refs/heads/${branch}`,
-    ]);
-    await write("gh", ["pr", "edit", String(openPr.number), "--body-file", "-"], body);
-    outcome = { kind: "updated", branch, url: openPr.url, body };
-  } else {
-    await write("git", ["push", "--force", "origin", `HEAD:refs/heads/${branch}`]);
-    await write("gh", [
-      "label",
-      "create",
-      options.label,
-      "--color",
-      "0366d6",
-      "--description",
-      "Opened by the daily dependency-update workflow",
-      "--force",
-    ]);
-    const created = await write(
-      "gh",
-      [
-        "pr",
-        "create",
-        "--base",
-        options.baseBranch,
-        "--head",
-        branch,
-        "--title",
-        `Dependency updates ${date}`,
-        "--label",
-        options.label,
-        "--body-file",
-        "-",
-      ],
-      body,
-    );
-    const url = created.stdout.trim();
-    if (openPr !== undefined) {
-      await write("gh", [
-        "pr",
-        "comment",
-        String(openPr.number),
-        "--body",
-        `Superseded by ${url}.`,
-      ]);
-      await write("gh", ["pr", "close", String(openPr.number), "--delete-branch"]);
-    }
-    outcome = { kind: "opened", branch, url, body };
-  }
+  const { outcome, replaced } = await publish(write, options, {
+    pr: openPr,
+    date,
+    branch,
+    body: withHead(body, head),
+  });
+  await closeSuperseded(write, [...replaced, ...older], outcome.url);
 
   if (options.dryRun) {
     io.log("PR body:");
-    io.log(body);
+    io.log(outcome.body);
   }
   return outcome;
 }

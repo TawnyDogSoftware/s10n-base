@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   bunVersionOf,
   checkExpo,
-  findOpenPr,
+  findOpenPrs,
   mustRun,
   packagesHeldByAge,
   readBase,
@@ -86,15 +86,28 @@ describe("readManifests", () => {
   });
 });
 
-describe("findOpenPr", () => {
-  it("takes the newest of several open PRs", async () => {
+describe("findOpenPrs", () => {
+  it("takes the updater's open PRs, newest first", async () => {
+    const pr = { baseRefName: "main", isCrossRepository: false, headRefOid: "sha", body: "" };
     const prs = [
-      { number: 4, headRefName: "deps/update-2026-11-17", url: "u4" },
-      { number: 9, headRefName: "deps/update-2026-11-18", url: "u9" },
+      { ...pr, number: 4, headRefName: "deps/update-2026-11-17", url: "u4" },
+      { ...pr, number: 9, headRefName: "deps/update-2026-11-18", url: "u9" },
+      { ...pr, number: 11, headRefName: "deps/update-latest", url: "u11" },
     ];
     const github = io({}, { run: () => ({ code: 0, stdout: JSON.stringify(prs), stderr: "" }) });
 
-    expect(await findOpenPr(github, "dependency-update")).toMatchObject({ number: 9 });
+    const found = await findOpenPrs(github, {
+      dryRun: false,
+      baseBranch: "main",
+      now: new Date("2026-11-19T00:00:00Z"),
+      label: "dependency-update",
+      author: { name: "a", email: "a@example.invalid" },
+    });
+
+    expect(found.map((open) => open.number)).toEqual([9, 4]);
+    expect(github.logs).toEqual([
+      "Leaving PR #11 alone: it has the dependency-update label but is not the updater's (head deps/update-latest into main).",
+    ]);
   });
 });
 

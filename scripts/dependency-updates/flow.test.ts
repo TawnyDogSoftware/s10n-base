@@ -48,8 +48,21 @@ const outdatedOutput = `bun outdated v1.4.4 (38afee6c8)
 | oxlint  | 1.93.0  | 1.93.0   | 1.93.0 * | catalog (root) |
 `;
 
+/** An open PR as `gh pr list --json` gives it; unset fields take the updater's own values. */
+interface PrJson {
+  readonly number: number;
+  readonly headRefName: string;
+  readonly url: string;
+  readonly baseRefName?: string;
+  readonly isCrossRepository?: boolean;
+  readonly headRefOid?: string;
+  readonly body?: string;
+}
+
 interface Scenario {
-  readonly openPr?: { number: number; headRefName: string; url: string };
+  readonly openPr?: PrJson;
+  /** Every open labelled PR, when there is more than one. */
+  readonly openPrs?: readonly PrJson[];
   readonly mergeConflicts?: boolean;
   /** Catalog and lockfile that `bun update -r --latest` produces. */
   readonly latest?: { catalog: Record<string, string>; lock: Record<string, string> };
@@ -207,7 +220,22 @@ class FakeIo implements Io {
 
   private gh(line: string): Promise<CommandResult> | undefined {
     if (line.startsWith("gh pr list")) {
-      return ok(JSON.stringify(this.scenario.openPr === undefined ? [] : [this.scenario.openPr]));
+      const { openPr, openPrs = openPr === undefined ? [] : [openPr] } = this.scenario;
+      return ok(
+        JSON.stringify(
+          openPrs.map((pr) =>
+            Object.assign(
+              {
+                baseRefName: "main",
+                isCrossRepository: false,
+                headRefOid: "pr-head-sha",
+                body: "",
+              },
+              pr,
+            ),
+          ),
+        ),
+      );
     }
     if (line.startsWith("gh pr create")) return ok("https://github.com/o/r/pull/9\n");
     return undefined;
@@ -298,6 +326,10 @@ const viteMajor = {
   },
   lock: { ...startLock, vite: "9.0.1", effect: "4.1.5", react: "19.3.1", typescript: "7.0.2" },
 };
+
+function withoutOxlint(versions: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(versions).filter(([name]) => name !== "oxlint"));
+}
 
 function writes(io: FakeIo): string[] {
   return io.commands.filter((line) =>
@@ -439,8 +471,6 @@ describe("runDependencyUpdate", () => {
   });
 
   it("lists packages added to or removed from bun.lock, direct and indirect", async () => {
-    const withoutOxlint = (versions: Record<string, string>) =>
-      Object.fromEntries(Object.entries(versions).filter(([name]) => name !== "oxlint"));
     const io = new FakeIo({
       latest: {
         catalog: { ...withoutOxlint(startCatalog), zod: "^4.0.0" },
@@ -600,6 +630,129 @@ describe("runDependencyUpdate", () => {
     expect(outcome).toEqual({ kind: "unchanged" });
     expect(io.commands.some((line) => line.includes(" commit "))).toBe(false);
     expect(writes(io)).toEqual([]);
+  });
+
+  it("leaves a labelled PR alone unless it is on a dated update branch into the base branch", async () => {
+    const io = new FakeIo({
+      latest: viteMajor,
+      openPrs: [
+        { number: 12, headRefName: "feature/login", url: "https://github.com/o/r/pull/12" },
+        {
+          number: 11,
+          headRefName: "deps/update-2026-11-18",
+          baseRefName: "release",
+          url: "https://github.com/o/r/pull/11",
+        },
+        {
+          number: 10,
+          headRefName: "deps/update-2026-11-18",
+          isCrossRepository: true,
+          url: "https://github.com/o/r/pull/10",
+        },
+      ],
+    });
+
+    const outcome = await runDependencyUpdate(io, options);
+
+    expect(io.commands).toContain("git checkout --detach base-sha");
+    expect(io.commands.some((line) => line.includes("feature/login"))).toBe(false);
+    expect(writes(io).filter((line) => /^gh pr (close|comment|edit)/.test(line))).toEqual([]);
+    expect(outcome).toMatchObject({ kind: "opened" });
+    expect(io.logs).toContain(
+      "Leaving PR #12 alone: it has the dependency-update label but is not the updater's (head feature/login into main).",
+    );
+  });
+
+  it("closes every older update PR when it opens a new one", async () => {
+    const io = new FakeIo({
+      latest: viteMajor,
+      openPrs: [
+        { number: 5, headRefName: "deps/update-2026-11-17", url: "https://github.com/o/r/pull/5" },
+        { number: 7, headRefName: "deps/update-2026-11-18", url: "https://github.com/o/r/pull/7" },
+      ],
+    });
+
+    await runDependencyUpdate(io, options);
+
+    expect(io.commands).toContain("git checkout --detach origin/deps/update-2026-11-18");
+    expect(writes(io).slice(-4)).toEqual([
+      "gh pr comment 7 --body Superseded by https://github.com/o/r/pull/9.",
+      "gh pr close 7 --delete-branch",
+      "gh pr comment 5 --body Superseded by https://github.com/o/r/pull/9.",
+      "gh pr close 5 --delete-branch",
+    ]);
+  });
+
+  it("closes an older update PR a failed run left open, even when nothing changed", async () => {
+    const io = new FakeIo({
+      openPrs: [
+        { number: 9, headRefName: "deps/update-2026-11-19", url: "https://github.com/o/r/pull/9" },
+        { number: 7, headRefName: "deps/update-2026-11-18", url: "https://github.com/o/r/pull/7" },
+      ],
+    });
+
+    const outcome = await runDependencyUpdate(io, options);
+
+    expect(outcome).toEqual({ kind: "unchanged" });
+    expect(writes(io)).toEqual([
+      "gh pr comment 7 --body Superseded by https://github.com/o/r/pull/9.",
+      "gh pr close 7 --delete-branch",
+    ]);
+  });
+
+  it("records the commit a body describes, and repairs a body left describing an older one", async () => {
+    // The first run pushed and then failed to edit the body; the rerun finds no file change.
+    const prHead = {
+      catalog: { ...startCatalog, vite: "^9.0.1" },
+      lock: { ...startLock, vite: "9.0.1" },
+    };
+    const io = new FakeIo({
+      prHead,
+      openPr: {
+        number: 9,
+        headRefName: "deps/update-2026-11-19",
+        url: "https://github.com/o/r/pull/9",
+        headRefOid: "pushed-sha",
+        body: "Older contents.\n\n<!-- dependency-update head: earlier-sha -->\n",
+      },
+    });
+
+    const outcome = await runDependencyUpdate(io, options);
+
+    expect(writes(io)).toEqual(["gh pr edit 9 --body-file -"]);
+    const body = io.inputs.get("gh pr edit 9 --body-file -") ?? "";
+    expect(body).toContain("| vite | 8.3.8 | 9.0.1 |");
+    expect(body).toMatch(/<!-- dependency-update head: pushed-sha -->\n$/);
+    expect(outcome).toMatchObject({ kind: "updated", url: "https://github.com/o/r/pull/9", body });
+  });
+
+  it("leaves the body alone when it describes the PR's head or names no commit", async () => {
+    for (const body of [
+      "Edited by hand.\n",
+      "Contents.\n\n<!-- dependency-update head: pr-head-sha -->\n",
+    ]) {
+      const io = new FakeIo({
+        openPr: {
+          number: 9,
+          headRefName: "deps/update-2026-11-19",
+          url: "https://github.com/o/r/pull/9",
+          body,
+        },
+      });
+
+      expect(await runDependencyUpdate(io, options)).toEqual({ kind: "unchanged" });
+      expect(writes(io)).toEqual([]);
+    }
+  });
+
+  it("ends the body with the commit it describes", async () => {
+    const io = new FakeIo({ latest: viteMajor });
+
+    const outcome = await runDependencyUpdate(io, options);
+
+    expect(outcome.kind === "unchanged" ? "" : outcome.body).toMatch(
+      /\n\n<!-- dependency-update head: caller-sha -->\n$/,
+    );
   });
 
   it("moves bun and Node to the newest releases at least 3 days old and reports a newer LTS line", async () => {

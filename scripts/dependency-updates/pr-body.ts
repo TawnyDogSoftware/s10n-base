@@ -50,6 +50,27 @@ function changeTable(changes: readonly IndirectChange[]): string {
   return ["| Package | From | To |", "| --- | --- | --- |", ...rows].join("\n");
 }
 
+const KINDS: readonly [ChangeKind, string][] = [
+  ["major", "Major"],
+  ["minor", "Minor"],
+  ["patch", "Patch"],
+];
+
+/** The direct dependency changes, by kind, then those added and removed. */
+function directSections(input: PrBodyInput): string[] {
+  if (input.changes.length === 0 && input.addedOrRemoved.length === 0) {
+    return ["No direct dependency changed."];
+  }
+  const sections = KINDS.flatMap(([kind, title]) => {
+    const changes = input.changes.filter((change) => change.kind === kind);
+    return changes.length > 0 ? [`## ${title}\n\n${changeTable(changes)}`] : [];
+  });
+  if (input.addedOrRemoved.length > 0) {
+    sections.push(`## Added and removed\n\n${changeTable(input.addedOrRemoved)}`);
+  }
+  return sections;
+}
+
 export function buildPrBody(input: PrBodyInput): string {
   const sections: string[] = [
     `Dependency update for ${input.date}, opened by the daily dependency-update workflow. ` +
@@ -63,22 +84,7 @@ export function buildPrBody(input: PrBodyInput): string {
     );
   }
 
-  const kinds: readonly [ChangeKind, string][] = [
-    ["major", "Major"],
-    ["minor", "Minor"],
-    ["patch", "Patch"],
-  ];
-  if (input.changes.length === 0 && input.addedOrRemoved.length === 0) {
-    sections.push("No direct dependency changed.");
-  }
-  for (const [kind, title] of kinds) {
-    const changes = input.changes.filter((change) => change.kind === kind);
-    if (changes.length > 0) sections.push(`## ${title}\n\n${changeTable(changes)}`);
-  }
-
-  if (input.addedOrRemoved.length > 0) {
-    sections.push(`## Added and removed\n\n${changeTable(input.addedOrRemoved)}`);
-  }
+  sections.push(...directSections(input));
 
   if (input.indirect.length > 0) {
     const count = input.indirect.length;
