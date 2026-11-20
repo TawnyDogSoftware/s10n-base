@@ -203,4 +203,3 @@ Checked against this lockfile and `bun audit` on 2026-11-19:
 6. **Defects:** above.
 7. **CI:** recorded in the pull request description for the head commit; all three jobs.
 8. **Scrub:** the plan 000 check prints nothing, run before every push.
-
