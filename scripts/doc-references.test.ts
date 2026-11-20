@@ -86,9 +86,11 @@ describe.each(DOCS)("%s", (doc) => {
 
     expect(broken).toEqual([]);
   });
+});
 
-  it.runIf(ROOT_ONLY.has(doc))("names only paths that exist", () => {
-    const missing = codePaths(text).filter(({ target }) => !pathExists(target));
+describe.each([...ROOT_ONLY])("%s", (doc) => {
+  it("names only paths that exist", () => {
+    const missing = codePaths(read(doc)).filter(({ target }) => !pathExists(target));
 
     expect(missing).toEqual([]);
   });

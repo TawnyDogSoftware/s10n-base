@@ -1,6 +1,6 @@
 # 010: Recheck the session inside the profile update
 
-> Status: not started.
+> Status: in progress since 2026-11-20, on `feature/001-strip-desktop-and-local-first` (pull request #1).
 
 A follow-up to [005](005-web-blank-slate.md) and [009](009-conventions-and-docs.md), on the same pull request as the rework ([000](000-hosted-starter-rework.md)).
 
