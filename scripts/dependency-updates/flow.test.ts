@@ -318,6 +318,28 @@ describe("runDependencyUpdate", () => {
     expect(body).not.toMatch(/react\s*\|\s*19\.3\.0\s*\|\s*19\.3\.1/);
   });
 
+  it("puts a range-held package moved past its range back to its spec without pinning it", async () => {
+    // Only the spec goes back, in one install, so bun resolves the package again inside it.
+    // Checked with bun 1.4.4 (plan 011, F49): kysely held to 0.28.x at ^0.28.5, moved by
+    // `bun update --latest` to ^0.29.9, then given ^0.28.5 back, locked 0.28.20, the newest
+    // 0.28 release old enough for the age gate (0.28.19 with a 10-day gate).
+    const io = new FakeIo({
+      latest: {
+        catalog: { ...startCatalog, typescript: "~7.0.2", effect: "4.1.5" },
+        lock: { ...startLock, typescript: "7.0.2", effect: "4.1.5" },
+      },
+    });
+
+    const outcome = await runDependencyUpdate(io, options);
+
+    expect(io.commands.filter((line) => line === "bun install --ignore-scripts")).toHaveLength(1);
+    expect(io.files.get("package.json")).toContain('"typescript": "~6.0.3"');
+    expect(parseLockedVersions(io.files.get("bun.lock") ?? "").get("typescript")).toBe("6.0.3");
+    expect(outcome.kind === "unchanged" ? "" : outcome.body).toContain(
+      "typescript stays at ~6.0.3",
+    );
+  });
+
   it("opens a labelled PR from main with the updates, restoring held packages", async () => {
     const io = new FakeIo({ latest: viteMajor });
 
