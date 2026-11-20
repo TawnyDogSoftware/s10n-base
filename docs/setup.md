@@ -80,7 +80,6 @@ Notes:
 - **`TRUSTED_PROXY_HOPS`** decides which `X-Forwarded-For` entry is the client's address: with one proxy, the last entry; with two, the one before it. With `0` the header is ignored and the socket's address is used. Set it to exactly the number of proxies you run, or clients can choose their own address.
 - **`SHUTDOWN_TIMEOUT_MS`:** on SIGTERM or SIGINT the server stops accepting connections, answers `/ready` with 503, waits up to this long for requests in flight, then closes what is left and the database pool. It exits 0 after a clean stop and 1 when it had to force anything.
 - **`SES_ENDPOINT`, `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`:** `.env.example` points the server at the local capture server with the placeholder keys `local`/`local`, so email works on a fresh clone with no AWS account. In production, leave `SES_ENDPOINT` unset and give real keys for an IAM user allowed to call `ses:SendEmail`; `EMAIL_FROM` must be a verified SES identity.
-- `S10N_BASE_PORT` no longer exists; use `PORT`.
 
 ## The local inbox
 

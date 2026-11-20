@@ -86,6 +86,8 @@
     "smoke": "bun scripts/with-env.main.ts bun scripts/smoke-built-server.main.ts",
     "docker:build": "docker build -f docker/Dockerfile --build-arg APP_VERSION=$(git rev-parse --short HEAD) -t s10n-base:local .",
     "docker:smoke": "bun scripts/with-env.main.ts bun scripts/container/smoke.main.ts",
+    "rename": "bun scripts/rename/rename.main.ts",
+    "rename:proof": "bun scripts/rename/proof.main.ts",
     "ses:local": "bun scripts/with-env.main.ts bun scripts/ses-local/run.main.ts",
     "deps:update": "bun scripts/dependency-updates/run.main.ts",
     "deps:audit": "bun scripts/quality/dependency-audit.main.ts",
