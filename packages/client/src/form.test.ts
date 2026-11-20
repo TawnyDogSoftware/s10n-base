@@ -1,7 +1,7 @@
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { checkFields, useFocusAfterRender } from "./form";
+import { checkFields, useFocusAfterRender, withoutError } from "./form";
 import { validateEmail, validateName } from "./validation";
 
 function field() {
@@ -57,5 +57,14 @@ describe("useFocusAfterRender", () => {
     expect(email.focus).toHaveBeenCalledOnce();
     rerender();
     expect(email.focus).toHaveBeenCalledOnce();
+  });
+});
+
+describe("withoutError", () => {
+  it("drops one field's error, and keeps the same object when it had none", () => {
+    const errors = { email: { key: "validation.emailRequired" as const } };
+
+    expect(withoutError<"email" | "password">(errors, "email")).toEqual({});
+    expect(withoutError<"email" | "password">(errors, "password")).toBe(errors);
   });
 });

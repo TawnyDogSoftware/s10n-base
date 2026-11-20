@@ -455,6 +455,58 @@ function watchFocus() {
   return { seen, focus };
 }
 
+describe("feedback that no longer describes the form", () => {
+  it("clears a field's error when its value changes, and leaves the others", async () => {
+    renderApp("/sign-in", backendWith());
+    await screen.findByRole("heading", { level: 1, name: "Sign in" });
+    click("Sign in");
+    await waitFor(() => {
+      expect(screen.getByLabelText("Email address")).toHaveAttribute("aria-invalid", "true");
+    });
+
+    type("Email address", "sam@example.com");
+
+    expect(screen.getByLabelText("Email address")).not.toHaveAttribute("aria-invalid");
+    expect(screen.getByLabelText("Password")).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("clears a refusal when a field it concerned changes", async () => {
+    renderApp("/sign-in", backendWith("sam@example.com"));
+    await screen.findByRole("heading", { level: 1, name: "Sign in" });
+    type("Email address", "sam@example.com");
+    type("Password", "wrong password");
+    click("Sign in");
+    await screen.findByRole("alert");
+
+    type("Password", "correct horse");
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["/sign-in", "/api/auth/sign-in/email", "Sign in"],
+    ["/sign-up", "/api/auth/sign-up/email", "Create account"],
+  ])("on %s keeps the fields still while the request runs", async (path, route, submit) => {
+    const app = renderApp(path, backendWith());
+    await screen.findByLabelText("Email address");
+    if (path === "/sign-up") type("Name", "Robin");
+    type("Email address", "robin@example.com");
+    type(/^Password/, "long enough password");
+    const release = app.backend.hold(route);
+
+    click(submit);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Email address")).toBeDisabled();
+    });
+    expect(screen.getByLabelText(/^Password/)).toBeDisabled();
+    release();
+    await waitFor(() => {
+      expect(app.backend.calls("/api/app-auth/session").length).toBeGreaterThan(1);
+    });
+  });
+});
+
 describe("a field error", () => {
   it.each([
     // A single field: its error is the alert.

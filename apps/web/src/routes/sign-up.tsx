@@ -2,7 +2,12 @@ import { createRoute, Link } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { checkFields, type FieldErrors, useFocusAfterRender } from "@s10n-base/client/form";
+import {
+  checkFields,
+  type FieldErrors,
+  useFocusAfterRender,
+  withoutError,
+} from "@s10n-base/client/form";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 import {
@@ -42,20 +47,20 @@ function SignUpPage() {
   const passwordRef = useRef<HTMLInputElement>(null);
   const focusAfterRender = useFocusAfterRender();
 
-  const submit = () =>
-    run(async () => {
-      setOutcome(null);
-      const checked = checkFields<Name>([
-        ["name", validateName(name), nameRef],
-        ["email", validateEmail(email), emailRef],
-        ["password", validateNewPassword(password), passwordRef],
-      ]);
-      if (!checked.ok) {
-        setErrors(checked.errors);
-        focusAfterRender(checked.first);
-        return;
-      }
-      setErrors({});
+  const submit = () => {
+    setOutcome(null);
+    const checked = checkFields<Name>([
+      ["name", validateName(name), nameRef],
+      ["email", validateEmail(email), emailRef],
+      ["password", validateNewPassword(password), passwordRef],
+    ]);
+    if (!checked.ok) {
+      setErrors(checked.errors);
+      focusAfterRender(checked.first);
+      return;
+    }
+    setErrors({});
+    void run(async () => {
       const result = await gate.settle(() => auth.signUp(checked.values));
       if (result.kind === "done" && result.value.ok) {
         setSentTo(checked.values.email);
@@ -63,6 +68,7 @@ function SignUpPage() {
       }
       setOutcome(result);
     });
+  };
 
   if (sentTo !== null) {
     return (
@@ -71,6 +77,13 @@ function SignUpPage() {
       </PageShell>
     );
   }
+
+  /** A changed field drops its own error and any refusal, which described the old values. */
+  const edit = (field: Name, set: (value: string) => void) => (value: string) => {
+    set(value);
+    setErrors((current) => withoutError(current, field));
+    setOutcome(null);
+  };
 
   const fieldError = (field: Name) => {
     const error = errors[field];
@@ -85,7 +98,7 @@ function SignUpPage() {
           className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault();
-            void submit();
+            submit();
           }}
         >
           {Object.keys(errors).length > 0 ? (
@@ -99,7 +112,8 @@ function SignUpPage() {
             autoComplete="name"
             inputRef={nameRef}
             value={name}
-            onValueChange={setName}
+            onValueChange={edit("name", setName)}
+            disabled={pending}
             alertError={false}
             error={fieldError("name")}
           />
@@ -110,7 +124,8 @@ function SignUpPage() {
             autoComplete="username"
             inputRef={emailRef}
             value={email}
-            onValueChange={setEmail}
+            onValueChange={edit("email", setEmail)}
+            disabled={pending}
             alertError={false}
             error={fieldError("email")}
           />
@@ -122,7 +137,8 @@ function SignUpPage() {
             hint={t("fields.passwordHint", { min: PASSWORD_MIN })}
             inputRef={passwordRef}
             value={password}
-            onValueChange={setPassword}
+            onValueChange={edit("password", setPassword)}
+            disabled={pending}
             alertError={false}
             error={fieldError("password")}
           />

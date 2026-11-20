@@ -2,7 +2,12 @@ import { createRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { checkFields, type FieldErrors, useFocusAfterRender } from "@s10n-base/client/form";
+import {
+  checkFields,
+  type FieldErrors,
+  useFocusAfterRender,
+  withoutError,
+} from "@s10n-base/client/form";
 import type { SettledAction } from "@s10n-base/client/query-state";
 import { usePending } from "@s10n-base/client/use-pending";
 import { validateEmail, validatePassword, fieldErrorText } from "@s10n-base/client/validation";
@@ -47,19 +52,19 @@ function SignInPage() {
     setOutcome(result);
   };
 
-  const submit = () =>
-    run(async () => {
-      setOutcome(null);
-      const checked = checkFields<Name>([
-        ["email", validateEmail(email), emailRef],
-        ["password", validatePassword(password), passwordRef],
-      ]);
-      if (!checked.ok) {
-        setErrors(checked.errors);
-        focusAfterRender(checked.first);
-        return;
-      }
-      setErrors({});
+  const submit = () => {
+    setOutcome(null);
+    const checked = checkFields<Name>([
+      ["email", validateEmail(email), emailRef],
+      ["password", validatePassword(password), passwordRef],
+    ]);
+    if (!checked.ok) {
+      setErrors(checked.errors);
+      focusAfterRender(checked.first);
+      return;
+    }
+    setErrors({});
+    void run(async () => {
       const result = await gate.settle(() => auth.signIn(checked.values));
       if (
         result.kind === "done" &&
@@ -71,6 +76,7 @@ function SignInPage() {
       }
       await finish(result);
     });
+  };
 
   const signInWithPasskey = () =>
     runPasskey(async () => {
@@ -87,6 +93,13 @@ function SignInPage() {
     );
   }
 
+  /** A changed field drops its own error and any refusal, which described the old values. */
+  const edit = (field: Name, set: (value: string) => void) => (value: string) => {
+    set(value);
+    setErrors((current) => withoutError(current, field));
+    setOutcome(null);
+  };
+
   const fieldError = (field: Name) => {
     const error = errors[field];
     return error === undefined ? undefined : fieldErrorText(t, error);
@@ -100,7 +113,7 @@ function SignInPage() {
           className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault();
-            void submit();
+            submit();
           }}
         >
           {Object.keys(errors).length > 0 ? (
@@ -119,7 +132,8 @@ function SignInPage() {
             autoComplete="username webauthn"
             inputRef={emailRef}
             value={email}
-            onValueChange={setEmail}
+            onValueChange={edit("email", setEmail)}
+            disabled={pending}
             alertError={false}
             error={fieldError("email")}
           />
@@ -130,7 +144,8 @@ function SignInPage() {
             autoComplete="current-password"
             inputRef={passwordRef}
             value={password}
-            onValueChange={setPassword}
+            onValueChange={edit("password", setPassword)}
+            disabled={pending}
             alertError={false}
             error={fieldError("password")}
           />

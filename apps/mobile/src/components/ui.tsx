@@ -113,12 +113,14 @@ export function Field(
     readonly error?: string | undefined;
     readonly hint?: string;
     readonly inputRef?: Ref<TextInputInstance>;
+    /** Not editable, while what was typed is being sent. */
+    readonly disabled?: boolean;
   } & Pick<
     TextInputProps,
     "autoComplete" | "textContentType" | "keyboardType" | "secureTextEntry" | "autoCapitalize"
   >,
 ) {
-  const { label, value, onChangeText, error, hint, inputRef, ...input } = props;
+  const { label, value, onChangeText, error, hint, inputRef, disabled = false, ...input } = props;
   const invalid = error !== undefined;
   // Read out when it appears, even when focus does not move.
   useEffect(() => {
@@ -135,6 +137,8 @@ export function Field(
         aria-invalid={invalid}
         value={value}
         onChangeText={onChangeText}
+        editable={!disabled}
+        aria-disabled={disabled}
         autoCorrect={false}
         className={`text-foreground bg-background min-h-11 rounded-md border px-3 py-2 ${
           invalid ? "border-danger" : "border-border"

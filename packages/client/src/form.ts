@@ -41,6 +41,17 @@ export function checkFields<Name extends string>(
   return { ok: false, errors, first };
 }
 
+/** `errors` without `name`'s: for a field whose value changed since it was checked. */
+export function withoutError<Name extends string>(
+  errors: FieldErrors<Name>,
+  name: Name,
+): FieldErrors<Name> {
+  if (!(name in errors)) return errors;
+  return Object.fromEntries(
+    Object.entries(errors).filter(([field]) => field !== name),
+  ) as FieldErrors<Name>;
+}
+
 /**
  * Returns a function that focuses a field after the next render, so the error that render shows
  * is already there, and named by the field, when a screen reader reads the field out. Focusing
