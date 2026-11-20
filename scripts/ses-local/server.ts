@@ -214,6 +214,25 @@ function requestLine(request: IncomingMessage): { method: string; target: string
 }
 
 /**
+ * Answers a request whose handling threw: a 500 while nothing has been sent, otherwise the
+ * connection is closed, since a half-sent answer cannot be corrected. Either way the request does
+ * not hang, and the error is printed for whoever runs the server.
+ */
+export function failRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  error: unknown,
+): void {
+  const { method, target } = requestLine(request);
+  console.error(`ses-local: ${method} ${target} failed: ${(error as Error).message}`);
+  if (response.headersSent) {
+    response.destroy();
+    return;
+  }
+  awsError(response, 500, "InternalFailure", "The capture server failed to handle the request.");
+}
+
+/**
  * Starts the capture server.
  *
  * @throws {Error} when `host` is not a loopback address, or the port cannot be bound.
@@ -225,6 +244,12 @@ export async function startSesLocal(options: SesLocalOptions): Promise<SesLocal>
     );
   }
   const maxEmails = options.maxEmails ?? 200;
+  // slice(-0) keeps everything, so a store of 0 (or a fraction) would never drop an email.
+  if (!Number.isInteger(maxEmails) || maxEmails < 1) {
+    throw new Error(
+      `ses-local keeps at most maxEmails emails, which must be a positive whole number, not ${String(maxEmails)}.`,
+    );
+  }
   const bodyLimit = options.bodyLimitBytes ?? 1024 * 1024;
   let emails: StoredEmail[] = [];
 
@@ -312,9 +337,9 @@ export async function startSesLocal(options: SesLocalOptions): Promise<SesLocal>
   }
 
   const server = http.createServer((request, response) => {
-    // handle never rejects: readBody reports a broken stream as aborted, and http.Server turns a
-    // malformed body into one.
-    void handle(request, response);
+    handle(request, response).catch((error: unknown) => {
+      failRequest(request, response, error);
+    });
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);

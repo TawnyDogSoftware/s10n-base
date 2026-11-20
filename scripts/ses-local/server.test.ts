@@ -1,8 +1,9 @@
 import { once } from "node:events";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import net from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { LOCAL_SES_CREDENTIALS } from "../../apps/server/src/infra/email/local";
 import {
@@ -11,7 +12,7 @@ import {
   type SesEmail,
 } from "../../apps/server/src/infra/email/ses";
 import { signRequest } from "../../apps/server/src/infra/email/sigv4";
-import { startSesLocal, type SesLocal } from "./server";
+import { failRequest, startSesLocal, type SesLocal } from "./server";
 
 let running: SesLocal | undefined;
 
@@ -163,6 +164,47 @@ describe("ses-local", () => {
     for (const subject of ["one", "two", "three"]) await ses.sendEmail({ ...email, subject });
 
     expect((await store(local)).map((stored) => stored.subject)).toEqual(["two", "three"]);
+  });
+
+  it.each([0, -1, 1.5, Number.NaN])("refuses a store size of %s", async (maxEmails) => {
+    await expect(startSesLocal({ host: "127.0.0.1", port: 0, maxEmails })).rejects.toThrow(
+      `ses-local keeps at most maxEmails emails, which must be a positive whole number, not ${String(maxEmails)}.`,
+    );
+  });
+
+  it("answers 500 when handling a request fails, instead of leaving it open", async () => {
+    const local = await start();
+    const stringify = JSON.stringify.bind(JSON);
+    const failing = vi.spyOn(JSON, "stringify").mockImplementation((value: unknown) => {
+      if (typeof value === "object" && value !== null && "ok" in value) throw new Error("boom");
+      return stringify(value);
+    });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const response = await fetch(`${local.url}/health-check`, {
+        signal: AbortSignal.timeout(2_000),
+      });
+
+      expect(response.status).toBe(500);
+      expect(errors).toHaveBeenCalledWith("ses-local: GET /health-check failed: boom");
+    } finally {
+      failing.mockRestore();
+      errors.mockRestore();
+    }
+  });
+
+  it("closes the connection when handling fails after the answer has started", () => {
+    const destroy = vi.fn<() => void>();
+    const request = { method: "GET", url: "/" } as unknown as IncomingMessage;
+    const response = { headersSent: true, destroy } as unknown as ServerResponse;
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    failRequest(request, response, new Error("late"));
+
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(errors).toHaveBeenCalledWith("ses-local: GET / failed: late");
+    errors.mockRestore();
   });
 
   it("empties the store on POST /clear-store", async () => {
