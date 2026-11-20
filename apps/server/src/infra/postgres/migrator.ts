@@ -64,6 +64,31 @@ export class MigrationFailedError extends Error {
   override readonly name = "MigrationFailedError";
 }
 
+/**
+ * The connection would create tables in a schema other than the one the command targets: the
+ * migrations' unqualified names resolve through the search path, while the migrator's own
+ * tables and lock are in the target schema.
+ */
+export class SchemaMismatchError extends Error {
+  override readonly name = "SchemaMismatchError";
+}
+
+/**
+ * @throws {SchemaMismatchError} unless the first schema of `db`'s search path, where its
+ * unqualified names create tables, is `schema`.
+ */
+async function assertConnectionSchema(db: Kysely<unknown>, schema: string): Promise<void> {
+  const result = await sql<{ schema: string | null }>`select current_schema() as schema`.execute(
+    db,
+  );
+  const actual = result.rows[0]?.schema ?? null;
+  if (actual === schema) return;
+  const where = actual === null ? "no schema" : `schema "${actual}"`;
+  throw new SchemaMismatchError(
+    `The connection's search path creates tables in ${where}, not in "${schema}". Make "${schema}" the first schema of the search path.`,
+  );
+}
+
 /** Parses the `migrate` command line. No argument means `up`. */
 export function parseMigrationCommand(args: ReadonlyArray<string>): MigrationCommand {
   const [command = "up", ...rest] = args;
@@ -220,8 +245,10 @@ export async function migrationStatus(target: MigrationTarget): Promise<Migratio
 
 /**
  * The migrations in `migrations` that the database has not applied, in the order they would run.
- * Reads the migrator's table through the search path, as the server sees the database, and never
- * creates it. Migrations the database has that this build does not know are not counted: an
+ * Reads the migrator's table in the connection's current schema (the first schema of its search
+ * path, where the server's unqualified names resolve), as the server sees the database, and never
+ * creates it. A migrator's table further along the search path describes another schema, so it
+ * is not read. Migrations the database has that this build does not know are not counted: an
  * older build may run against a newer database while a release rolls back.
  */
 export async function pendingMigrations(
@@ -229,11 +256,17 @@ export async function pendingMigrations(
   migrations: Readonly<Record<string, Migration>>,
 ): Promise<ReadonlyArray<string>> {
   const expected = Object.keys(migrations).toSorted(compareCodeUnits);
-  const table = await sql<{
-    present: boolean;
-  }>`select to_regclass(${sql.lit(MIGRATION_TABLE)}) is not null as present`.execute(db);
-  if (table.rows[0]?.present !== true) return expected;
-  const rows = await sql<{ name: string }>`select name from ${sql.id(MIGRATION_TABLE)}`.execute(db);
+  // `schema` is null only when no schema of the search path exists, and then `present` is false.
+  const located = await sql<{ schema: string; present: boolean }>`
+    select current_schema() as schema,
+      to_regclass(quote_ident(current_schema()) || '.' || ${sql.lit(MIGRATION_TABLE)}) is not null as present`.execute(
+    db,
+  );
+  const table = located.rows[0];
+  if (table?.present !== true) return expected;
+  const rows = await sql<{
+    name: string;
+  }>`select name from ${sql.id(table.schema, MIGRATION_TABLE)}`.execute(db);
   const applied = new Set(rows.rows.map((row) => row.name));
   return expected.filter((name) => !applied.has(name));
 }
@@ -262,6 +295,8 @@ function grantedTo(role: string | undefined): { grantedTo?: string } {
  * `down` reverts the latest migration, and `reset` drops the schema and migrates it again.
  *
  * @throws {Error} for `down` or `reset` when `nodeEnv` is production, before touching the database.
+ * @throws {SchemaMismatchError} when the connection would create tables outside `schema`, before
+ * changing anything.
  * @throws {MigrationFailedError} when a migration fails.
  */
 export async function runMigrationCommand(
@@ -269,6 +304,7 @@ export async function runMigrationCommand(
   options: MigrationCommandOptions,
 ): Promise<void> {
   assertCommandAllowed(command, options.nodeEnv);
+  await assertConnectionSchema(options.db, options.schema);
   switch (command) {
     case "up":
       options.log("migrations_applied", {

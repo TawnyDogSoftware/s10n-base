@@ -8,6 +8,7 @@ import {
   migrateDown,
   migrateUp,
   migrationStatus,
+  pendingMigrations,
   resetSchema,
   withMigrationLock,
 } from "./migrator";
@@ -107,6 +108,29 @@ describe("migrator against Postgres", () => {
     await fixture.admin.query(`create table "${fixture.schema}".stray (id int)`);
     expect(await resetSchema(target)).toEqual(["001_create_widget", "002_create_gadget"]);
     expect(await tables()).not.toContain("stray");
+  });
+
+  it("counts as pending a migration recorded only in a later schema of the search path", async () => {
+    await migrateUp({ db: openDb(), schema: fixture.schema, migrations: fixtureMigrations });
+    expect(await pendingMigrations(openDb(), fixtureMigrations)).toEqual([]);
+    const first = await createFixtureSchema();
+    try {
+      // The server would create and read its tables in `first`, which was never migrated; the
+      // migrator's table further along the search path says nothing about it.
+      const url = new URL(fixture.url);
+      url.searchParams.set("options", `-c search_path=${first.schema},${fixture.schema}`);
+      const db = createDb(
+        createPool({ connectionString: url.toString(), max: 1, onIdleError: () => {} }),
+      ) as Kysely<unknown>;
+      opened.push(db);
+
+      expect(await pendingMigrations(db, fixtureMigrations)).toEqual([
+        "001_create_widget",
+        "002_create_gadget",
+      ]);
+    } finally {
+      await first.drop();
+    }
   });
 
   it("names applied migrations this build does not know", async () => {

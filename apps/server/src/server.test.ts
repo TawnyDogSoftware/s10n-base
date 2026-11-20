@@ -18,8 +18,9 @@ const noop = () => {};
 
 /** The rows the fake database answers a query with: every committed migration is applied. */
 function rowsFor(text: string, applied: readonly string[]): ReadonlyArray<Record<string, unknown>> {
-  if (text.startsWith("select to_regclass")) return [{ present: true }];
-  if (text.startsWith('select name from "kysely_migration"'))
+  if (text.trim().startsWith("select current_schema()"))
+    return [{ schema: "public", present: true }];
+  if (text.startsWith('select name from "public"."kysely_migration"'))
     return applied.map((name) => ({ name }));
   return [{ "?column?": 1 }];
 }

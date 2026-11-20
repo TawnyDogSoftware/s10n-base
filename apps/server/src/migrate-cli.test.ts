@@ -87,12 +87,19 @@ describe("runMigrateCli", () => {
   });
 });
 
+/** A database whose connection creates tables in `schema`, answering every other query with no rows. */
+function databaseIn(schema = "public") {
+  return scriptedDb<unknown>((query) =>
+    query.sql === "select current_schema() as schema" ? [{ schema }] : [],
+  );
+}
+
 describe("runMigrateCli with a database", () => {
   const env = { DATABASE_URL: "postgres://app:secret@127.0.0.1:9/app" };
 
   it("applies the committed migrations and exits 0", async () => {
     const output = capture();
-    const { db, queries } = scriptedDb<unknown>(() => []);
+    const { db, queries } = databaseIn();
 
     const code = await runMigrateCli({ args: ["up"], env, write: output.write, db });
 
@@ -105,7 +112,7 @@ describe("runMigrateCli with a database", () => {
 
   it("runs the given migrations in the given schema", async () => {
     const output = capture();
-    const { db } = scriptedDb<unknown>(() => []);
+    const { db } = databaseIn("fixture_schema");
 
     const code = await runMigrateCli({
       args: ["status"],
@@ -124,7 +131,7 @@ describe("runMigrateCli with a database", () => {
 
   it("grants DATABASE_APP_ROLE after applying, and says so", async () => {
     const output = capture();
-    const { db, queries } = scriptedDb<unknown>(() => []);
+    const { db, queries } = databaseIn();
 
     const code = await runMigrateCli({
       args: ["up"],
@@ -144,7 +151,7 @@ describe("runMigrateCli with a database", () => {
 
   it("needs no DATABASE_URL when MIGRATION_DATABASE_URL is set", async () => {
     const output = capture();
-    const { db } = scriptedDb<unknown>(() => []);
+    const { db } = databaseIn();
 
     const code = await runMigrateCli({
       args: ["status"],
@@ -158,7 +165,7 @@ describe("runMigrateCli with a database", () => {
 
   it("keeps the command's exit code and logs it when closing the database fails", async () => {
     const output = capture();
-    const { db } = scriptedDb<unknown>(() => []);
+    const { db } = databaseIn();
     db.destroy = () => Promise.reject(new Error("close failed"));
 
     const code = await runMigrateCli({ args: ["status"], env, write: output.write, db });
