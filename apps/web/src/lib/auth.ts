@@ -10,9 +10,10 @@ import { createAuthClient } from "better-auth/client";
 import {
   type AuthClientResult,
   type AuthResult,
+  type CallFetchOptions,
+  lostAnswerFetch,
   type PasswordAuth,
   runAuthAction,
-  trackNetworkFailures,
 } from "@s10n-base/client/auth";
 
 export type { AuthResult } from "@s10n-base/client/auth";
@@ -44,29 +45,35 @@ export function createWebAuth(options: {
   readonly baseUrl: string;
   readonly fetch?: typeof fetch;
 }): WebAuth {
-  const tracker = trackNetworkFailures(
-    options.fetch ?? ((input, init) => globalThis.fetch(input, init)),
-  );
+  const base = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  // Every call passes its own fetch (below); this one is for requests a plugin sends without
+  // the call's options, such as a passkey ceremony's first.
   const client = createAuthClient({
     baseURL: `${options.baseUrl}/api/auth`,
     plugins: [passkeyClient()],
-    fetchOptions: { customFetchImpl: tracker.fetch },
+    fetchOptions: { customFetchImpl: lostAnswerFetch(base) },
   });
-  const run = (action: () => Promise<AuthClientResult>) => runAuthAction(tracker, action);
+  const run = (action: (fetchOptions: CallFetchOptions) => Promise<AuthClientResult>) =>
+    runAuthAction(base, action);
   return {
-    signUp: (input) => run(() => client.signUp.email(input)),
-    signIn: (input) => run(() => client.signIn.email(input)),
-    signInWithPasskey: () => run(() => client.signIn.passkey()),
-    signOut: () => run(() => client.signOut()),
-    verifyEmail: (token) => run(() => client.verifyEmail({ query: { token } })),
-    sendVerificationEmail: (email) => run(() => client.sendVerificationEmail({ email })),
-    requestPasswordReset: (email) => run(() => client.requestPasswordReset({ email })),
-    resetPassword: (token, newPassword) => run(() => client.resetPassword({ token, newPassword })),
+    signUp: (input) => run((fetchOptions) => client.signUp.email({ ...input, fetchOptions })),
+    signIn: (input) => run((fetchOptions) => client.signIn.email({ ...input, fetchOptions })),
+    signInWithPasskey: () => run((fetchOptions) => client.signIn.passkey({ fetchOptions })),
+    signOut: () => run((fetchOptions) => client.signOut({ fetchOptions })),
+    verifyEmail: (token) =>
+      run((fetchOptions) => client.verifyEmail({ query: { token }, fetchOptions })),
+    sendVerificationEmail: (email) =>
+      run((fetchOptions) => client.sendVerificationEmail({ email, fetchOptions })),
+    requestPasswordReset: (email) =>
+      run((fetchOptions) => client.requestPasswordReset({ email, fetchOptions })),
+    resetPassword: (token, newPassword) =>
+      run((fetchOptions) => client.resetPassword({ token, newPassword, fetchOptions })),
     listPasskeys: async () => {
-      const result = await run(() => client.passkey.listUserPasskeys());
+      const result = await run((fetchOptions) => client.passkey.listUserPasskeys({ fetchOptions }));
       return result.ok ? { ok: true, data: toPasskeys(result.data) } : result;
     },
-    addPasskey: () => run(() => client.passkey.addPasskey()),
-    deletePasskey: (id) => run(() => client.passkey.deletePasskey({ id })),
+    addPasskey: () => run((fetchOptions) => client.passkey.addPasskey({ fetchOptions })),
+    deletePasskey: (id) =>
+      run((fetchOptions) => client.passkey.deletePasskey({ id, fetchOptions })),
   };
 }

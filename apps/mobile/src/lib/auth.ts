@@ -14,9 +14,10 @@ import * as SecureStore from "expo-secure-store";
 
 import {
   type AuthClientResult,
+  type CallFetchOptions,
+  lostAnswerFetch,
   type PasswordAuth,
   runAuthAction,
-  trackNetworkFailures,
 } from "@s10n-base/client/auth";
 import { AUTH_COOKIE_PREFIX } from "@s10n-base/shared/auth";
 
@@ -54,9 +55,7 @@ export function createMobileAuth(options: {
   readonly scheme: string;
   readonly fetch?: typeof fetch;
 }): MobileAuth {
-  const tracker = trackNetworkFailures(
-    options.fetch ?? ((input, init) => globalThis.fetch(input, init)),
-  );
+  const base = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
   const client = createAuthClient({
     baseURL: `${options.baseUrl}${AUTH_BASE_PATH}`,
     plugins: [
@@ -67,18 +66,22 @@ export function createMobileAuth(options: {
         cookiePrefix: AUTH_COOKIE_PREFIX,
       }),
     ],
-    fetchOptions: { customFetchImpl: tracker.fetch },
+    // Every call passes its own fetch (below), so only its own requests decide its outcome.
+    fetchOptions: { customFetchImpl: lostAnswerFetch(base) },
   });
-  const run = (action: () => Promise<AuthClientResult>) => runAuthAction(tracker, action);
+  const run = (action: (fetchOptions: CallFetchOptions) => Promise<AuthClientResult>) =>
+    runAuthAction(base, action);
   // The same storage format and queue the Expo client uses: both are keyed by SecureStore.
   const storage = storageAdapter(SecureStore);
   const cookieKey = `${authStoragePrefix(options.baseUrl)}_cookie`;
   return {
-    signUp: (input) => run(() => client.signUp.email(input)),
-    signIn: (input) => run(() => client.signIn.email(input)),
-    signOut: () => run(() => client.signOut()),
-    sendVerificationEmail: (email) => run(() => client.sendVerificationEmail({ email })),
-    requestPasswordReset: (email) => run(() => client.requestPasswordReset({ email })),
+    signUp: (input) => run((fetchOptions) => client.signUp.email({ ...input, fetchOptions })),
+    signIn: (input) => run((fetchOptions) => client.signIn.email({ ...input, fetchOptions })),
+    signOut: () => run((fetchOptions) => client.signOut({ fetchOptions })),
+    sendVerificationEmail: (email) =>
+      run((fetchOptions) => client.sendVerificationEmail({ email, fetchOptions })),
+    requestPasswordReset: (email) =>
+      run((fetchOptions) => client.requestPasswordReset({ email, fetchOptions })),
     cookie: () => client.getCookie(),
     storeCookies: async (setCookie) => {
       if (!hasBetterAuthCookies(setCookie, AUTH_COOKIE_PREFIX)) return;

@@ -2,18 +2,18 @@
 
 `packages/client` (`@s10n-base/client`) is how the web and mobile apps talk to the server: an RPC client, a session client, session-gated query state on TanStack Query, and the helpers both apps' screens share. It imports `contracts`, `shared` (the auth cookie prefix, for the test server) and `i18n` (message keys), and `effect`; `react` and `@tanstack/react-query` are peer dependencies. Import from its subpaths; there is no barrel:
 
-| Import                                   | What it has                                                                                                                                       |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@s10n-base/client/rpc`                  | `createRpcClient`, the three failure classes, `parseBaseUrl`                                                                                      |
-| `@s10n-base/client/session`              | `createSessionClient`, `sessionQueryOptions`, `useSession`, `SESSION_QUERY_KEY`                                                                   |
-| `@s10n-base/client/query-state`          | `createSessionGate`, `SessionGateProvider`, `useProtectedQuery`, `protectedQueryKey`, `StaleSessionError`, `browserSessionChannel`                |
-| `@s10n-base/client/auth`                 | `AuthResult`, `PasswordAuth`, `runAuthAction` and `trackNetworkFailures`: a Better Auth client's results as data, a lost answer as `NetworkError` |
-| `@s10n-base/client/validation`           | The form fields' checks (name from the contract, email, password within Better Auth's limits) and `fieldErrorText`                                |
-| `@s10n-base/client/messages`             | `errorMessageKey`: the `errors` message for any failure a screen shows                                                                            |
-| `@s10n-base/client/form`                 | `checkFields`: checks a form's fields together and focuses the first invalid one                                                                  |
-| `@s10n-base/client/profile-name`         | `useProfileNameForm`: the profile name form's draft, save and notices, shared by both apps                                                        |
-| `@s10n-base/client/use-pending`          | `usePending`: pending state for one action, ignoring a second press while it runs                                                                 |
-| `@s10n-base/client/testing/fake-backend` | Test code only: an in-memory server for both apps' screen tests                                                                                   |
+| Import                                   | What it has                                                                                                                                  |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@s10n-base/client/rpc`                  | `createRpcClient`, the three failure classes, `parseBaseUrl`                                                                                 |
+| `@s10n-base/client/session`              | `createSessionClient`, `sessionQueryOptions`, `useSession`, `SESSION_QUERY_KEY`                                                              |
+| `@s10n-base/client/query-state`          | `createSessionGate`, `SessionGateProvider`, `useProtectedQuery`, `protectedQueryKey`, `StaleSessionError`, `browserSessionChannel`           |
+| `@s10n-base/client/auth`                 | `AuthResult`, `PasswordAuth`, `runAuthAction` and `lostAnswerFetch`: a Better Auth client's results as data, a lost answer as `NetworkError` |
+| `@s10n-base/client/validation`           | The form fields' checks (name from the contract, email, password within Better Auth's limits) and `fieldErrorText`                           |
+| `@s10n-base/client/messages`             | `errorMessageKey`: the `errors` message for any failure a screen shows                                                                       |
+| `@s10n-base/client/form`                 | `checkFields`: checks a form's fields together and focuses the first invalid one                                                             |
+| `@s10n-base/client/profile-name`         | `useProfileNameForm`: the profile name form's draft, save and notices, shared by both apps                                                   |
+| `@s10n-base/client/use-pending`          | `usePending`: pending state for one action, ignoring a second press while it runs                                                            |
+| `@s10n-base/client/testing/fake-backend` | Test code only: an in-memory server for both apps' screen tests                                                                              |
 
 ## The base URL
 
@@ -70,6 +70,10 @@ const { session, query } = useProtectedQuery(["orders", status], (signal) =>
 - Data that is the same for everyone and safe to keep across users (public config, say) can be a plain query with `meta: PUBLIC_META`, from `packages/client/src/session.ts`. Nothing outside the package uses it yet, so it is not exported (the dead-code gate fails on an export nobody imports): export it from `session.ts` with the first such query. Use it sparingly: anything not marked public is purged on a change of user, which is the safe default.
 - Local React state is not purged. If a component copies query data into state (a form), key it by the user id so it remounts for another user, as `NameForm` in `profile.tsx` is.
 - A form over query data keeps only the user's draft in state and shows the query's value while there is none, as `useProfileNameForm` does: a value changed elsewhere then reaches an untouched field, and a save's answer never replaces what was typed after it was sent. After a save, drop the user's other cached queries that no screen shows and invalidate the rest, so no other screen shows the old value; after a `NetworkError`, read the saved value again.
+
+### Auth calls
+
+Each app wraps its Better Auth client's methods in `runAuthAction(fetch, (fetchOptions) => client.method({ ...input, fetchOptions }))`. The call gets a `fetch` of its own, which reads every answer whole and notes a request that got none, so whether its answer was lost is decided by its own requests alone, never by another call running at the same time. Pass `fetchOptions` to every Better Auth method you wrap; the client's default `customFetchImpl` (`lostAnswerFetch(fetch)`) covers requests a plugin sends without the call's options, such as the first request of a passkey ceremony.
 
 ## Testing
 

@@ -90,6 +90,20 @@ describe("createMobileAuth", () => {
     ).rejects.toBeInstanceOf(NetworkError);
   });
 
+  it("reports a call's own answer when an overlapping call loses its answer", async () => {
+    const { backend, auth } = setup();
+    const release = backend.hold("/api/auth/sign-in/email");
+    backend.failNext("/api/auth/send-verification-email", { kind: "network" });
+
+    const signIn = auth.signIn({ email: "sam@example.com", password: "correct horse" });
+    await expect(auth.sendVerificationEmail("sam@example.com")).rejects.toBeInstanceOf(
+      NetworkError,
+    );
+    release();
+
+    await expect(signIn).resolves.toMatchObject({ ok: true });
+  });
+
   it("sends the email actions to Better Auth", async () => {
     const { backend, auth } = setup();
 

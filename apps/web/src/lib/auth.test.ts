@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { NetworkError } from "@s10n-base/client/rpc";
+import { createFakeBackend } from "@s10n-base/client/testing/fake-backend";
 
 import { createWebAuth } from "./auth";
 
@@ -102,6 +103,20 @@ describe("createWebAuth", () => {
 
     await expect(auth.signOut()).rejects.toBeInstanceOf(NetworkError);
     await expect(auth.signInWithPasskey()).rejects.toBeInstanceOf(NetworkError);
+  });
+
+  it("reports a call's own answer when an overlapping call loses its answer", async () => {
+    const backend = createFakeBackend({ origin: BASE });
+    backend.addUser({ email: "sam@example.com" });
+    const auth = createWebAuth({ baseUrl: BASE, fetch: backend.fetch });
+    const release = backend.hold("/api/auth/sign-in/email");
+    backend.failNext("/api/auth/passkey/list-user-passkeys", { kind: "network" });
+
+    const signIn = auth.signIn({ email: "sam@example.com", password: "correct horse" });
+    await expect(auth.listPasskeys()).rejects.toBeInstanceOf(NetworkError);
+    release();
+
+    await expect(signIn).resolves.toMatchObject({ ok: true });
   });
 
   it.each([502, 503, 504])(
