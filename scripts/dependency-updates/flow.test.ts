@@ -438,6 +438,27 @@ describe("runDependencyUpdate", () => {
     expect(body).toContain("| isbot | 5.1.39 | 5.2.3 |");
   });
 
+  it("lists packages added to or removed from bun.lock, direct and indirect", async () => {
+    const withoutOxlint = (versions: Record<string, string>) =>
+      Object.fromEntries(Object.entries(versions).filter(([name]) => name !== "oxlint"));
+    const io = new FakeIo({
+      latest: {
+        catalog: { ...withoutOxlint(startCatalog), zod: "^4.0.0" },
+        lock: { ...withoutOxlint(startLock), zod: "4.0.0", "new-dep": "2.0.0" },
+      },
+    });
+    io.files.set("bun.lock", lockfile({ ...startLock, "old-dep": "1.0.0" }));
+
+    const outcome = await runDependencyUpdate(io, options);
+
+    const body = outcome.kind === "unchanged" ? "" : outcome.body;
+    expect(body).toContain(
+      "## Added and removed\n\n| Package | From | To |\n| --- | --- | --- |\n| oxlint | 1.93.0 | (none) |\n| zod | (none) | 4.0.0 |",
+    );
+    expect(body).toContain("| new-dep | (none) | 2.0.0 |");
+    expect(body).toContain("| old-dep | 1.0.0 | (none) |");
+  });
+
   it("commits as the configured author", async () => {
     const io = new FakeIo({ latest: viteMajor });
 

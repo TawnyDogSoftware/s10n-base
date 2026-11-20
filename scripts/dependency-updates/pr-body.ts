@@ -32,7 +32,9 @@ export interface PrBodyInput {
   readonly baseBranch: string;
   readonly freshStart: boolean;
   readonly changes: readonly VersionChange[];
-  /** Packages no manifest names directly that moved in bun.lock. */
+  /** Packages a manifest names directly that came into or left bun.lock. */
+  readonly addedOrRemoved: readonly IndirectChange[];
+  /** Packages no manifest names directly that moved in, came into or left bun.lock. */
   readonly indirect: readonly IndirectChange[];
   readonly runtimes: readonly RuntimeChange[];
   readonly notApplied: readonly string[];
@@ -66,7 +68,7 @@ export function buildPrBody(input: PrBodyInput): string {
     ["minor", "Minor"],
     ["patch", "Patch"],
   ];
-  if (input.changes.length === 0) {
+  if (input.changes.length === 0 && input.addedOrRemoved.length === 0) {
     sections.push("No direct dependency changed.");
   }
   for (const [kind, title] of kinds) {
@@ -74,11 +76,15 @@ export function buildPrBody(input: PrBodyInput): string {
     if (changes.length > 0) sections.push(`## ${title}\n\n${changeTable(changes)}`);
   }
 
+  if (input.addedOrRemoved.length > 0) {
+    sections.push(`## Added and removed\n\n${changeTable(input.addedOrRemoved)}`);
+  }
+
   if (input.indirect.length > 0) {
     const count = input.indirect.length;
     const noun = count === 1 ? "indirect dependency" : "indirect dependencies";
     sections.push(
-      `## Indirect dependencies\n\n<details>\n<summary>${String(count)} ${noun} moved in bun.lock</summary>\n\n${changeTable(input.indirect)}\n\n</details>`,
+      `## Indirect dependencies\n\n<details>\n<summary>${String(count)} ${noun} changed in bun.lock</summary>\n\n${changeTable(input.indirect)}\n\n</details>`,
     );
   }
 

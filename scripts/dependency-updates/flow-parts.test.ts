@@ -140,6 +140,17 @@ describe("checkExpo", () => {
 
     expect(await checkExpo(mobile)).toEqual([]);
   });
+
+  it("says the check could not run when it fails without naming drift", async () => {
+    const offline = io(
+      { "apps/mobile/package.json": "{}" },
+      { run: () => ({ code: 1, stdout: "", stderr: "TypeError: fetch failed\n" }) },
+    );
+
+    expect(await checkExpo(offline)).toEqual([
+      "`expo install --check` in apps/mobile could not run (exit 1), so Expo drift is not checked:\n\n  ```\n  TypeError: fetch failed\n  ```",
+    ]);
+  });
 });
 
 describe("packagesHeldByAge", () => {

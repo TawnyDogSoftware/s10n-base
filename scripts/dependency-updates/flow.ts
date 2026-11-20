@@ -411,13 +411,17 @@ export async function checkExpo(io: Io): Promise<string[]> {
   }
   const result = await io.run("bunx", ["expo", "install", "--check"], { cwd: "apps/mobile" });
   if (result.code === 0) return [];
-  const output = `${result.stdout}\n${result.stderr}`
-    .trim()
+  const text = `${result.stdout}\n${result.stderr}`.trim();
+  const output = text
     .split("\n")
-    .map((line) => `  ${line}`);
-  return [
-    `\`expo install --check\` in apps/mobile reports drift:\n\n  \`\`\`\n${output.join("\n")}\n  \`\`\``,
-  ];
+    .map((line) => `  ${line}`)
+    .join("\n");
+  // Expo names each package that drifted as `name@version - expected version: range`; a
+  // failure without such a line means the check did not run (no network, a crash).
+  const finding = / - expected version: /.test(text)
+    ? "reports drift"
+    : `could not run (exit ${String(result.code)}), so Expo drift is not checked`;
+  return [`\`expo install --check\` in apps/mobile ${finding}:\n\n  \`\`\`\n${output}\n  \`\`\``];
 }
 
 interface RegistryDocument {
@@ -486,15 +490,38 @@ export function versionChanges(
   });
 }
 
+/** Shown in place of a version for a package one side of the lockfile does not have. */
+const NONE = "(none)";
+
+/** The packages in `names` that bun.lock gained or lost. */
+function addedOrRemoved(
+  names: Iterable<string>,
+  before: ReadonlyMap<string, string>,
+  after: ReadonlyMap<string, string>,
+): IndirectChange[] {
+  return [...new Set(names)].flatMap((name) => {
+    const from = before.get(name);
+    const to = after.get(name);
+    if ((from === undefined) === (to === undefined)) return [];
+    return [{ name, from: from ?? NONE, to: to ?? NONE }];
+  });
+}
+
+/** Packages no manifest names that moved in, came into or left bun.lock. */
 function indirectChanges(
   direct: ReadonlySet<string>,
   before: ReadonlyMap<string, string>,
   after: ReadonlyMap<string, string>,
 ): IndirectChange[] {
-  return [...after].flatMap(([name, to]) => {
+  const names = [...new Set([...before.keys(), ...after.keys()])].filter(
+    (name) => !direct.has(name),
+  );
+  const moved = names.flatMap((name) => {
     const from = before.get(name);
-    return direct.has(name) || from === undefined || from === to ? [] : [{ name, from, to }];
+    const to = after.get(name);
+    return from === undefined || to === undefined || from === to ? [] : [{ name, from, to }];
   });
+  return [...moved, ...addedOrRemoved(names, before, after)];
 }
 
 export async function runDependencyUpdate(io: Io, options: FlowOptions): Promise<FlowOutcome> {
@@ -546,6 +573,7 @@ export async function runDependencyUpdate(io: Io, options: FlowOptions): Promise
     baseBranch: options.baseBranch,
     freshStart,
     changes: versionChanges(direct, base.locked, lockedAfter),
+    addedOrRemoved: addedOrRemoved(direct, base.locked, lockedAfter),
     indirect: indirectChanges(direct, base.locked, lockedAfter),
     runtimes: await runtimeChanges(io, base),
     notApplied: [
