@@ -104,7 +104,7 @@ function SignInPage() {
 
   if (unverified !== null) {
     return (
-      <PageShell title={t("checkEmail.title")}>
+      <PageShell focus title={t("checkEmail.title")}>
         <CheckEmail email={unverified} lead={t("signIn.unverified")} />
       </PageShell>
     );

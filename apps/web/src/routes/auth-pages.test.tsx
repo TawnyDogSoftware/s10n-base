@@ -489,6 +489,56 @@ function watchFocus() {
   return { seen, focus };
 }
 
+describe("a form replaced by its result", () => {
+  it("moves focus to the result's heading after sign-up", async () => {
+    renderApp("/sign-up", backendWith());
+    await screen.findByRole("heading", { name: "Create an account" });
+    type("Name", "Robin");
+    type("Email address", "robin@example.com");
+    type(/^Password/, "long enough");
+    click("Create account");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Check your email" }),
+    ).toHaveFocus();
+  });
+
+  it("moves focus to the result's heading after a reset request", async () => {
+    renderApp("/forgot-password", backendWith());
+    await screen.findByRole("heading", { name: "Reset your password" });
+    type("Email address", "sam@example.com");
+    click("Send the link");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Check your email" }),
+    ).toHaveFocus();
+  });
+
+  it("moves focus to the result's heading after a password reset", async () => {
+    const backend = backendWith("sam@example.com");
+    const token = backend.issueToken("sam@example.com", "reset");
+    renderApp(`/reset-password?token=${token}`, backend);
+    await screen.findByRole("heading", { name: "Choose a new password" });
+    type(/^New password/, "a brand new one");
+    click("Save the new password");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Password changed" }),
+    ).toHaveFocus();
+  });
+
+  it("moves focus to the result's heading when an email address is confirmed", async () => {
+    const backend = backendWith();
+    backend.addUser({ email: "new@example.com", verified: false });
+    const token = backend.issueToken("new@example.com", "verify");
+    renderApp(`/verify-email?token=${token}`, backend);
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Email address confirmed" }),
+    ).toHaveFocus();
+  });
+});
+
 describe("feedback that no longer describes the form", () => {
   it("clears a field's error when its value changes, and leaves the others", async () => {
     renderApp("/sign-in", backendWith());

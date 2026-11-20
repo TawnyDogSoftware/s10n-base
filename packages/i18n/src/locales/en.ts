@@ -199,6 +199,7 @@ export const en = {
     loadMore: "Load more",
     loadingMore: "Loading more…",
     refreshFailed: "We could not refresh the list.",
+    allListed: "Every user is listed.",
     notAllowedTitle: "You do not have access to this page",
     notAllowedBody: "Only admins can see the user list.",
   },

@@ -28,7 +28,7 @@ function ForgotPasswordPage() {
 
   if (sentTo !== null) {
     return (
-      <PageShell title={t("forgotPassword.sentTitle")}>
+      <PageShell focus title={t("forgotPassword.sentTitle")}>
         <Notice tone="info">{t("forgotPassword.sentBody", { email: sentTo })}</Notice>
         <Link to="/sign-in" search={redirectSearch(redirect)} className={linkClass}>
           {t("forgotPassword.backToSignIn")}

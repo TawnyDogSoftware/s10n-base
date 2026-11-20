@@ -1,5 +1,6 @@
 import { act, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { AccessibilityInfo } from "react-native";
+import { describe, expect, it, vi } from "vitest";
 
 import { authStoragePrefix } from "../lib/auth";
 import { router, secureStore } from "../test/native";
@@ -189,6 +190,30 @@ describe("UsersScreen", () => {
     await waitFor(() => {
       expect(screen.queryByText("We could not refresh the list.")).toBeNull();
     });
+  });
+
+  it("keeps Load more focusable while it loads, and says when every user is listed", async () => {
+    const announce = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
+    const { backend, services } = await signedIn("admin");
+    for (let index = 0; index < ADMIN_USERS_PAGE_SIZE; index += 1) {
+      backend.addUser({ email: `user${String(index)}@example.com`, name: `User ${String(index)}` });
+    }
+    renderScreen(<UsersScreen />, { backend, services });
+    await screen.findByText("user24@example.com");
+    const release = backend.hold("/rpc");
+
+    press("Load more");
+
+    const loading = await screen.findByRole("button", { name: "Loading more…" });
+    expect(loading).toHaveAttribute("tabindex", "0");
+    press("Loading more…");
+    expect(backend.calls("/rpc").filter((call) => call.body !== undefined)).toHaveLength(2);
+    release();
+    await screen.findByText("sam@example.com");
+    await waitFor(() => {
+      expect(announce).toHaveBeenCalledWith("Every user is listed.");
+    });
+    announce.mockRestore();
   });
 
   it("lists users for an admin, a page at a time", async () => {

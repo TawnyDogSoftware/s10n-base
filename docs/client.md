@@ -8,6 +8,7 @@
 | `@s10n-base/client/session`              | `createSessionClient`, `sessionQueryOptions`, `useSession`, `SESSION_QUERY_KEY`                                                                  |
 | `@s10n-base/client/query-state`          | `createSessionGate`, `SessionGateProvider`, `useProtectedQuery`, `protectedQueryKey`, `StaleSessionError`, `browserSessionChannel`, `useRecheck` |
 | `@s10n-base/client/auth`                 | `AuthResult`, `PasswordAuth`, `runAuthAction` and `lostAnswerFetch`: a Better Auth client's results as data, a lost answer as `NetworkError`     |
+| `@s10n-base/client/user-list`            | `useUserList`: the admin user list's query, a page at a time, and what to do when the last page arrives                                          |
 | `@s10n-base/client/validation`           | The form fields' checks (name from the contract, email, password within Better Auth's limits) and `fieldErrorText`                               |
 | `@s10n-base/client/messages`             | `errorMessageKey`: the `errors` message for any failure a screen shows                                                                           |
 | `@s10n-base/client/form`                 | `checkFields`: checks a form's fields together; `useFocusAfterRender`: focuses the first invalid one once its error is shown                     |
@@ -66,7 +67,7 @@ const { session, query } = useProtectedQuery(["orders", status], (signal) =>
 ```
 
 - Put everything the data depends on after the first part of the key (`["orders", status]`); the gate adds `["user", userId]` in front.
-- For `useInfiniteQuery` or a mutation, build the key with `protectedQueryKey(session, parts)` and wrap the request in `gate.guard(() => ...)`, as `apps/web/src/routes/admin-users.tsx` and the name form in `profile.tsx` do.
+- For `useInfiniteQuery` or a mutation, build the key with `protectedQueryKey(session, parts)` and wrap the request in `gate.guard(() => ...)`, as `useUserList` and `useProfileNameForm` in this package do.
 - Data that is the same for everyone and safe to keep across users (public config, say) can be a plain query with `meta: PUBLIC_META`, from `packages/client/src/session.ts`. Nothing outside the package uses it yet, so it is not exported (the dead-code gate fails on an export nobody imports): export it from `session.ts` with the first such query. Use it sparingly: anything not marked public is purged on a change of user, which is the safe default.
 - Local React state is not purged. If a component copies query data into state (a form), key it by the user id so it remounts for another user, as `NameForm` in `profile.tsx` is.
 - A form over query data keeps only the user's draft in state and shows the query's value while there is none, as `useProfileNameForm` does: a value changed elsewhere then reaches an untouched field, and a save's answer never replaces what was typed after it was sent. After a save, drop the user's other cached queries that no screen shows and invalidate the rest, so no other screen shows the old value; after a `NetworkError`, read the saved value again.

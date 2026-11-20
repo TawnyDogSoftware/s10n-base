@@ -120,7 +120,7 @@ function VerifyEmail(props: { readonly token: string | undefined }) {
       );
     case "verified":
       return (
-        <PageShell title={t("verifyEmail.successTitle")} intro={t("verifyEmail.successBody")}>
+        <PageShell focus title={t("verifyEmail.successTitle")} intro={t("verifyEmail.successBody")}>
           <Link to="/sign-in" className={linkClass}>
             {t("verifyEmail.continue")}
           </Link>

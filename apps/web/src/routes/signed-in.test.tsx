@@ -493,6 +493,47 @@ describe("/admin/users", () => {
     });
   });
 
+  it("lets a long unbroken name wrap instead of widening the page", async () => {
+    const backend = withUsers(1);
+    backend.addUser({ email: "long@example.com", name: "x".repeat(100) });
+    renderApp("/admin/users", backend);
+
+    expect(await screen.findByRole("cell", { name: "x".repeat(100) })).toHaveClass("wrap-anywhere");
+    expect(screen.getByRole("cell", { name: "long@example.com" })).toHaveClass("wrap-anywhere");
+  });
+
+  it("makes the scrolling table reachable and named for the keyboard", async () => {
+    renderApp("/admin/users", withUsers(1));
+
+    const region = await screen.findByRole("region", { name: "Users" });
+
+    expect(region).toHaveAttribute("tabindex", "0");
+    expect(within(region).getByRole("table")).toBeInTheDocument();
+  });
+
+  it("keeps focus on Load more while it loads, then moves it to the first new row", async () => {
+    const backend = withUsers(ADMIN_USERS_PAGE_SIZE + 5);
+    renderApp("/admin/users", backend);
+    const table = await screen.findByRole("table");
+    const button = screen.getByRole("button", { name: "Load more" });
+    button.focus();
+    const release = backend.hold("/rpc");
+
+    click("Load more");
+
+    const loading = await screen.findByRole("button", { name: "Loading more…" });
+    expect(loading).not.toBeDisabled();
+    expect(loading).toHaveAttribute("aria-disabled", "true");
+    expect(loading).toHaveFocus();
+    release();
+    await waitFor(() => {
+      expect(within(table).getAllByRole("row")).toHaveLength(ADMIN_USERS_PAGE_SIZE + 7);
+    });
+    await waitFor(() => {
+      expect(within(table).getAllByRole("row")[ADMIN_USERS_PAGE_SIZE + 1]).toHaveFocus();
+    });
+  });
+
   it("shows a signed-in non-admin a not-allowed page, not a redirect, and asks for nothing", async () => {
     const app = renderApp("/admin/users", signedIn());
 

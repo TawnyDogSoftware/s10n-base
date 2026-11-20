@@ -168,3 +168,13 @@ describe("ForgotPasswordScreen", () => {
     );
   });
 });
+
+describe("link-styled buttons", () => {
+  it("take only the width of their text, so the rest of the row is not a link", async () => {
+    renderScreen(<SignInScreen />);
+
+    expect(await screen.findByRole("link", { name: "Forgot your password?" })).toHaveClass(
+      "self-start",
+    );
+  });
+});

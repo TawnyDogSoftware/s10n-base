@@ -48,7 +48,11 @@ function ResetPasswordForm(props: { readonly token: string }) {
   // refused and read as a dead link. Offer the two ways forward instead of the form.
   if (outcome?.kind === "unknown") {
     return (
-      <PageShell title={t("resetPassword.unknownTitle")} intro={t("resetPassword.unknownBody")}>
+      <PageShell
+        focus
+        title={t("resetPassword.unknownTitle")}
+        intro={t("resetPassword.unknownBody")}
+      >
         <div className="flex flex-wrap gap-4">
           <Link to="/sign-in" className={linkClass}>
             {t("resetPassword.signIn")}
@@ -63,7 +67,11 @@ function ResetPasswordForm(props: { readonly token: string }) {
 
   if (done) {
     return (
-      <PageShell title={t("resetPassword.successTitle")} intro={t("resetPassword.successBody")}>
+      <PageShell
+        focus
+        title={t("resetPassword.successTitle")}
+        intro={t("resetPassword.successBody")}
+      >
         <Link to="/sign-in" className={linkClass}>
           {t("resetPassword.signIn")}
         </Link>

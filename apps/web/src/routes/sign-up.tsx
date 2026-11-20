@@ -74,7 +74,7 @@ function SignUpPage() {
 
   if (sentTo !== null) {
     return (
-      <PageShell title={t("checkEmail.title")}>
+      <PageShell focus title={t("checkEmail.title")}>
         <CheckEmail email={sentTo} />
       </PageShell>
     );

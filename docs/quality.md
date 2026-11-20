@@ -56,6 +56,7 @@ A rule a framework or library cannot satisfy is changed in the config, once, wit
   - `vitest/expect-expect` counts `expectTypeOf` and the web tests' `waitForLocation` as assertions.
   - `import/no-unassigned-import` allows stylesheets and `@testing-library/jest-dom/vitest`.
   - `react/style-prop-object` allows `StatusBar`, whose `style` is a string.
+  - `jsx-a11y/no-noninteractive-tabindex` allows `tabIndex` on a `<section>`: a region that scrolls must be reachable by keyboard to be scrolled (WCAG 2.1.1, axe's `scrollable-region-focusable`), as the user table's is.
   - `no-await-in-loop` off: every loop it found waits on purpose, because each step depends on the one before (cursor pagination, rolling back one migration at a time, counting rate-limited attempts in order, polling a server until it answers). Independent work uses `Promise.all`.
   - In `apps/mobile`, `jsx-a11y/prefer-tag-over-role` and `jsx-a11y/role-has-required-aria-props` off: React Native has no HTML elements and no `aria-level`, so `role` is how a native view is named a heading, button or link.
   - In `packages/client/src/query-state.ts`, `unicorn/require-post-message-target-origin` off: the rule reads any one-argument `postMessage` as `window.postMessage`, and the session gate's is a `BroadcastChannel`'s, which takes no target origin and stays within the origin.

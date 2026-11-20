@@ -1,11 +1,9 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Text, View } from "react-native";
+import { AccessibilityInfo, Text, View } from "react-native";
 
 import { errorMessageKey } from "@s10n-base/client/messages";
-import { protectedQueryKey } from "@s10n-base/client/query-state";
 import { useSession } from "@s10n-base/client/session";
-import { adminListUsers } from "@s10n-base/contracts";
+import { useUserList } from "@s10n-base/client/user-list";
 
 import { Body, Button, Loading, Notice, Screen } from "../components/ui";
 import { useServices } from "../services";
@@ -16,22 +14,14 @@ function UserList() {
   const { t, i18n } = useTranslation("admin");
   const { t: tError } = useTranslation("errors");
   const { t: tCommon } = useTranslation("common");
-  const { rpc, gate } = useServices();
-  const session = useSession();
-  const query = useInfiniteQuery({
-    // A protected key and a guarded call, as useProtectedQuery would build them.
-    queryKey: protectedQueryKey(session, ["admin", "users"]),
-    queryFn: ({ pageParam, signal }) =>
-      gate.guard(() =>
-        rpc.call(
-          adminListUsers,
-          { limit: ADMIN_USERS_PAGE_SIZE, ...(pageParam === null ? {} : { cursor: pageParam }) },
-          { signal },
-        ),
-      ),
-    initialPageParam: null as string | null,
-    getNextPageParam: (page) => page.nextCursor,
-    enabled: session?.role === "admin",
+  const { rpc } = useServices();
+  const { query, loadMore } = useUserList({
+    rpc,
+    pageSize: ADMIN_USERS_PAGE_SIZE,
+    // The last page arrived and its button is gone: say so, since focus had nowhere to stay.
+    onLastPage: () => {
+      AccessibilityInfo.announceForAccessibility(t("allListed"));
+    },
   });
 
   if (query.isPending) return <Loading />;
@@ -75,7 +65,8 @@ function UserList() {
           variant="secondary"
           pending={query.isFetchingNextPage}
           pendingLabel={t("loadingMore")}
-          onPress={() => void query.fetchNextPage()}
+          keepFocusWhilePending
+          onPress={loadMore}
         >
           {t("loadMore")}
         </Button>
