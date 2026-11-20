@@ -182,6 +182,55 @@ describe("packagesHeldByAge", () => {
   });
 });
 
+describe("packagesHeldByAge, when only the in-range column is held back", () => {
+  // The age gate holds back a release inside the spec (0.28.20); the registry's `latest` (0.29.9)
+  // is outside the spec and old enough, so it is not what the gate held back.
+  const outdated = `| Package | Current | Update | Latest | Workspace |
+|---|---|---|---|---|
+| kysely | 0.28.19 | 0.28.19 * | 0.29.9 | catalog (root) |
+`;
+
+  it("reports the newest release between that column and the latest column", async () => {
+    const registry = io(
+      {},
+      {
+        run: () => ({ code: 0, stdout: outdated, stderr: "" }),
+        fetchJson: () => ({
+          "dist-tags": { latest: "0.29.9", next: "0.30.0-beta.2" },
+          time: {
+            created: "2020-01-01T00:00:00.000Z",
+            "0.28.19": "2026-11-01T02:23:45.998Z",
+            "0.28.20": "2026-11-18T17:42:46.860Z",
+            "0.29.9": "2026-11-12T16:48:02.551Z",
+            "0.30.0-beta.2": "2026-11-18T00:40:59.594Z",
+          },
+        }),
+      },
+    );
+
+    expect(await packagesHeldByAge(registry)).toEqual([
+      {
+        name: "kysely",
+        current: "0.28.19",
+        newest: "0.28.20",
+        publishedAt: "2026-11-18T17:42:46.860Z",
+      },
+    ]);
+  });
+
+  it("reports no newest release when the registry lists none in that span", async () => {
+    const registry = io(
+      {},
+      {
+        run: () => ({ code: 0, stdout: outdated, stderr: "" }),
+        fetchJson: () => ({ "dist-tags": { latest: "0.29.9" } }),
+      },
+    );
+
+    expect(await packagesHeldByAge(registry)).toEqual([{ name: "kysely", current: "0.28.19" }]);
+  });
+});
+
 describe("versionChanges", () => {
   it("leaves out names missing on either side, unchanged ones and specs that are not versions", () => {
     const before = new Map([

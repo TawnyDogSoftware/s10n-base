@@ -21,10 +21,38 @@ Note: The * indicates that version isn't true latest due to minimum release age
 describe("parseOutdated", () => {
   it("reads each row and whether the age gate holds back a newer release", () => {
     expect(parseOutdated(output)).toEqual([
-      { name: "@tanstack/react-query", current: "5.107.1", latest: "5.107.1", heldByAge: true },
-      { name: "@testing-library/jest-dom", current: "6.9.1", latest: "7.0.1", heldByAge: true },
-      { name: "effect", current: "4.0.3", latest: "4.1.4", heldByAge: false },
-      { name: "oxlint", current: "1.90.0", latest: "1.93.0", heldByAge: true },
+      {
+        name: "@tanstack/react-query",
+        current: "5.107.1",
+        update: "5.107.1",
+        latest: "5.107.1",
+        heldByAge: true,
+        latestHeld: true,
+      },
+      {
+        name: "@testing-library/jest-dom",
+        current: "6.9.1",
+        update: "6.9.1",
+        latest: "7.0.1",
+        heldByAge: true,
+        latestHeld: true,
+      },
+      {
+        name: "effect",
+        current: "4.0.3",
+        update: "4.0.3",
+        latest: "4.1.4",
+        heldByAge: false,
+        latestHeld: false,
+      },
+      {
+        name: "oxlint",
+        current: "1.90.0",
+        update: "1.90.0",
+        latest: "1.93.0",
+        heldByAge: true,
+        latestHeld: true,
+      },
     ]);
   });
 

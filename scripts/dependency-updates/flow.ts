@@ -22,7 +22,7 @@ import {
   type Manifest,
   type ManifestFile,
 } from "./manifests";
-import { parseOutdated } from "./outdated";
+import { parseOutdated, type OutdatedRow } from "./outdated";
 import {
   buildPrBody,
   type AgeHeldPackage,
@@ -420,6 +420,32 @@ export async function checkExpo(io: Io): Promise<string[]> {
   ];
 }
 
+interface RegistryDocument {
+  readonly "dist-tags"?: { readonly latest?: string };
+  readonly time?: Readonly<Record<string, string>>;
+}
+
+const PLAIN_VERSION = /^\d+\.\d+\.\d+$/;
+
+/**
+ * The release the age gate holds back. When it holds back the latest column, that is the
+ * registry's `latest`. When it holds back only the spec's column, it is the newest release
+ * above that column and below the latest one, which the gate already allows: the registry's
+ * `latest` is outside the spec there, and not held back at all.
+ */
+function heldBackRelease(row: OutdatedRow, doc: RegistryDocument): string | undefined {
+  if (row.latestHeld) return doc["dist-tags"]?.latest;
+  return Object.keys(doc.time ?? {})
+    .filter(
+      (version) =>
+        PLAIN_VERSION.test(version) &&
+        compareVersions(version, row.update) > 0 &&
+        compareVersions(version, row.latest) < 0,
+    )
+    .toSorted(compareVersions)
+    .at(-1);
+}
+
 export async function packagesHeldByAge(io: Io): Promise<AgeHeldPackage[]> {
   const result = await io.run("bun", ["outdated", "-r"]);
   const rows = parseOutdated(result.stdout).filter((row) => row.heldByAge);
@@ -429,11 +455,8 @@ export async function packagesHeldByAge(io: Io): Promise<AgeHeldPackage[]> {
       try {
         const doc = (await io.fetchJson(
           `https://registry.npmjs.org/${row.name.replace("/", "%2f")}`,
-        )) as {
-          "dist-tags"?: { latest?: string };
-          time?: Record<string, string>;
-        };
-        const newest = doc["dist-tags"]?.latest;
+        )) as RegistryDocument;
+        const newest = heldBackRelease(row, doc);
         const publishedAt = newest === undefined ? undefined : doc.time?.[newest];
         const held: { -readonly [Key in keyof AgeHeldPackage]: AgeHeldPackage[Key] } = {
           name: row.name,
