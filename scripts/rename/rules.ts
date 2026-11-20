@@ -132,13 +132,20 @@ export function trackedTextFiles(git: Git, root: string): TextFile[] {
     });
 }
 
-/** The third-party packages bun.lock resolves, as `name@version` (workspace entries left out). */
-export function lockedVersions(lockfile: string): string[] {
-  const found = new Set<string>();
-  for (const [, resolved = ""] of lockfile.matchAll(/^ {4}"[^"]+": \["([^"]+)"/gm)) {
-    if (!resolved.includes("@workspace:")) found.add(resolved);
+/**
+ * Every third-party entry bun.lock resolves, one per path in the tree, as `name@version`, or
+ * `name@version (path)` for a copy nested under another package. Workspace entries are left out.
+ * Comparing entries one for one, not the set of versions, catches a version that moved from one
+ * path to another while another path took the old one.
+ */
+export function lockedEntries(lockfile: string): string[] {
+  const entries: string[] = [];
+  for (const [, key = "", resolved = ""] of lockfile.matchAll(/^ {4}"([^"]+)": \["([^"]+)"/gm)) {
+    if (resolved.includes("@workspace:")) continue;
+    const name = resolved.slice(0, resolved.lastIndexOf("@"));
+    entries.push(key === name ? resolved : `${resolved} (${key})`);
   }
-  return [...found].toSorted((a, b) => a.localeCompare(b));
+  return entries.toSorted((a, b) => a.localeCompare(b));
 }
 
 /** What is in one list and not the other, as lines for a report. */
