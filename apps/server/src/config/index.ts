@@ -10,6 +10,7 @@
 import { Config, ConfigProvider, Data, Effect, Option, Redacted, Schema } from "effect";
 
 import { APP_VARIANTS, type AppVariant } from "@s10n-base/shared/app-variants";
+import { parseCaptureEndpoint } from "@s10n-base/shared/local-endpoint";
 import { parseBareOrigin } from "@s10n-base/shared/origin";
 
 import serverPackage from "../../package.json" with { type: "json" };
@@ -154,13 +155,6 @@ function isEmailAddress(value: string): boolean {
   return /^[^\s@<>()",;:]+@[^\s@<>()",;:.]+(\.[^\s@<>()",;:.]+)+$/.test(value);
 }
 
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
-
-/** A bare http or https origin on a loopback host, such as `http://127.0.0.1:8005`. */
-function isLoopbackOrigin(value: string): boolean {
-  return isBareOrigin(value) && LOOPBACK_HOSTS.has(new URL(value).hostname);
-}
-
 const BareOrigin = Schema.String.check(Schema.makeFilter(isBareOrigin));
 const PostgresUrl = Schema.String.check(Schema.makeFilter(isPostgresUrl));
 const BindAddress = Schema.String.check(Schema.makeFilter((value) => /^\S+$/.test(value)));
@@ -171,7 +165,10 @@ const EmailAddress = Schema.String.check(Schema.makeFilter(isEmailAddress));
 const AwsRegion = Schema.String.check(
   Schema.makeFilter((value) => /^[a-z]{2}(-[a-z]+)+-\d+$/.test(value)),
 );
-const LoopbackOrigin = Schema.String.check(Schema.makeFilter(isLoopbackOrigin));
+/** An address the local capture server can listen on, as `bun run ses:local` reads it too. */
+const LoopbackOrigin = Schema.String.check(
+  Schema.makeFilter((value) => parseCaptureEndpoint(value) !== null),
+);
 /** The characters a build version may use, so it is safe in a header, a log and an image label. */
 export const APP_VERSION_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._+-]{0,127}$/;
 const AppVersion = Schema.String.check(

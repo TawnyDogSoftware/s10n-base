@@ -89,6 +89,8 @@ interface Context {
   readonly secrets: Secrets;
   /** Containers to remove at the end. */
   readonly containers: string[];
+  /** The database and roles created so far, as the statements that drop them, latest first. */
+  readonly drops: string[];
 }
 
 function check(condition: boolean, message: string): asserts condition {
@@ -157,23 +159,31 @@ function psql(context: Context, sql: string): Promise<string> {
   );
 }
 
-/** Names and passwords come from `random()`, which is hex, so quoting is safe. */
-function setupSql(roles: Roles, secrets: Secrets): string {
-  return [
-    `create role "${roles.owner.name}" login password '${secrets.ownerPassword}';`,
-    `create role "${roles.app.name}" login password '${secrets.appPassword}';`,
-    `create database "${roles.database}" owner "${roles.owner.name}";`,
-    "",
-  ].join("\n");
-}
-
-function teardownSql(roles: Roles): string {
-  return [
-    `drop database if exists "${roles.database}" with (force);`,
-    `drop role if exists "${roles.app.name}";`,
-    `drop role if exists "${roles.owner.name}";`,
-    "",
-  ].join("\n");
+/**
+ * Creates the two roles and the database the owner owns, one statement at a time, recording each
+ * as it is made so that cleanup drops exactly what exists. Names and passwords come from
+ * `random()`, which is hex, so quoting is safe.
+ */
+async function setUpDatabase(context: Context): Promise<void> {
+  const { roles, secrets, drops } = context;
+  const steps: ReadonlyArray<readonly [create: string, drop: string]> = [
+    [
+      `create role "${roles.owner.name}" login password '${secrets.ownerPassword}';`,
+      `drop role if exists "${roles.owner.name}";`,
+    ],
+    [
+      `create role "${roles.app.name}" login password '${secrets.appPassword}';`,
+      `drop role if exists "${roles.app.name}";`,
+    ],
+    [
+      `create database "${roles.database}" owner "${roles.owner.name}";`,
+      `drop database if exists "${roles.database}" with (force);`,
+    ],
+  ];
+  for (const [create, drop] of steps) {
+    await psql(context, `${create}\n`);
+    drops.unshift(drop);
+  }
 }
 
 interface ImageInfo {
@@ -484,30 +494,63 @@ async function checkStop(context: Context, name: string): Promise<void> {
   io.log(`ok: SIGTERM, exit code 0 after ${String(io.now() - started)} ms`);
 }
 
-async function cleanUp(context: Context): Promise<void> {
-  for (const name of context.containers) await context.io.run("docker", ["rm", "-f", name]);
-  await psql(context, teardownSql(context.roles));
+/**
+ * Removes every container and drops every database and role this run created, each on its own so
+ * that one failure does not leave the rest behind. Returns what could not be cleaned up.
+ */
+async function cleanUp(context: Context): Promise<string[]> {
+  const problems: string[] = [];
+  for (const name of context.containers) {
+    const removed = await context.io.run("docker", ["rm", "-f", name]);
+    if (removed.code !== 0) {
+      problems.push(
+        `docker rm -f ${name} failed (exit ${String(removed.code)}): ${removed.stderr.trim()}`,
+      );
+    }
+  }
+  for (const drop of context.drops) {
+    try {
+      await psql(context, `${drop}\n`);
+    } catch (error) {
+      problems.push((error as Error).message);
+    }
+  }
+  return problems;
 }
 
-/** Runs every check; throws {@link SmokeFailure} at the first that fails, after cleaning up. */
+async function runChecks(context: Context): Promise<void> {
+  const { io } = context;
+  const version = await checkImage(context);
+  await checkContents(context);
+  await setUpDatabase(context);
+  await migrate(context);
+  await checkBadConfigs(context);
+  const port = await io.freePort();
+  const name = await startServer(context, port);
+  await checkHttp(context, `http://127.0.0.1:${String(port)}`, version);
+  await checkProcess(context, name);
+  await checkStop(context, name);
+}
+
+/**
+ * Runs every check; throws {@link SmokeFailure} at the first that fails, after cleaning up. A
+ * cleanup that fails is logged and, when every check passed, fails the run; it never replaces the
+ * failure that came first.
+ */
 export async function runContainerSmoke(io: SmokeIo, options: SmokeOptions): Promise<void> {
   const secrets = makeSecrets(() => io.random());
   const roles = makeRoles(options.adminUrl, `smoke_${io.random().slice(0, 12)}`, secrets);
-  const context: Context = { io, options, roles, secrets, containers: [] };
-  const version = await checkImage(context);
-  await checkContents(context);
-  await psql(context, setupSql(roles, secrets));
+  const context: Context = { io, options, roles, secrets, containers: [], drops: [] };
+  let failure: Error | undefined;
   try {
-    await migrate(context);
-    await checkBadConfigs(context);
-    const port = await io.freePort();
-    const name = await startServer(context, port);
-    await checkHttp(context, `http://127.0.0.1:${String(port)}`, version);
-    await checkProcess(context, name);
-    await checkStop(context, name);
-  } finally {
-    await cleanUp(context);
+    await runChecks(context);
+  } catch (error) {
+    failure = error as Error;
   }
+  const problems = await cleanUp(context);
+  for (const problem of problems) io.log(`cleanup failed: ${problem}`);
+  if (failure !== undefined) throw failure;
+  check(problems.length === 0, `cleanup failed: ${problems.join("; ")}`);
 }
 
 /** The image of the compose file's Postgres service, from its `image: postgres:...` line. */

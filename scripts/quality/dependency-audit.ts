@@ -35,6 +35,13 @@ export function advisoryId(advisory: Advisory): string {
   return GHSA.exec(advisory.url)?.[0] ?? advisory.url;
 }
 
+/** A real calendar date written `YYYY-MM-DD`: `2026-13-01` and `2026-02-30` are not. */
+function isCalendarDate(value: string): boolean {
+  if (!DATE.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -44,7 +51,7 @@ function acceptanceProblem(entry: Record<string, unknown>): string | undefined {
   if (typeof id !== "string" || !GHSA.test(id)) return "needs an id such as GHSA-xxxx-xxxx-xxxx";
   if (typeof entry.package !== "string" || entry.package === "") return "needs a package";
   if (typeof reason !== "string" || reason.trim() === "") return "needs a reason";
-  if (typeof expires !== "string" || !DATE.test(expires))
+  if (typeof expires !== "string" || !isCalendarDate(expires))
     return "needs an expiry date (YYYY-MM-DD)";
   return undefined;
 }

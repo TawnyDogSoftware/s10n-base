@@ -88,6 +88,15 @@ describe("parseTriage", () => {
       { accepted: [{ ...accepted, expires: "next year" }] },
       "entry 1 needs an expiry date (YYYY-MM-DD)",
     ],
+    // Shaped like a date but not one: compared as text, it would never expire (plan 011, F33).
+    [
+      { accepted: [{ ...accepted, expires: "2026-13-01" }] },
+      "entry 1 needs an expiry date (YYYY-MM-DD)",
+    ],
+    [
+      { accepted: [{ ...accepted, expires: "2026-02-30" }] },
+      "entry 1 needs an expiry date (YYYY-MM-DD)",
+    ],
   ])("refuses %j", (json, message) => {
     expect(() => parseTriage(json)).toThrow(message);
   });

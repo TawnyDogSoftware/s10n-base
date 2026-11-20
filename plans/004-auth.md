@@ -212,4 +212,3 @@ Implemented on 2026-11-19 on Node 26.13.1 and bun 1.4.4, with Docker for the loc
 ### Verification on the final commit (section 9)
 
 Recorded in the pull request description (PR #1, section "Phase 4", "Tests and verification (plan 004 section 9)"), not in this file. (Corrected by phase 9: this line used to say "see below", and nothing followed.)
-

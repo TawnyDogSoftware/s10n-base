@@ -27,10 +27,14 @@ export function specBaseVersion(spec: string): string | undefined {
 
 type Comparator = (version: string) => boolean;
 
-/** The upper bound of `^target` (the next major, or the next minor below 1.0.0) and `~target`. */
+/**
+ * The upper bound of `^target`, as npm reads it: the next major; below 1.0.0 the next minor;
+ * below 0.1.0 the next patch, so `^0.0.3` allows only 0.0.3.
+ */
 function caretCeiling(target: string): string {
-  const [major, minor] = parse(target);
-  return major > 0 ? `${String(major + 1)}.0.0` : `0.${String(minor + 1)}.0`;
+  const [major, minor, patch] = parse(target);
+  if (major > 0) return `${String(major + 1)}.0.0`;
+  return minor > 0 ? `0.${String(minor + 1)}.0` : `0.0.${String(patch + 1)}`;
 }
 
 function tildeCeiling(target: string): string {

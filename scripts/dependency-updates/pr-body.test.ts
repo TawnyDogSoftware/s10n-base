@@ -7,6 +7,7 @@ const empty: PrBodyInput = {
   baseBranch: "main",
   freshStart: false,
   changes: [],
+  addedOrRemoved: [],
   indirect: [],
   runtimes: [],
   notApplied: [],
@@ -51,7 +52,7 @@ describe("buildPrBody", () => {
     });
 
     expect(body).toContain(
-      "## Indirect dependencies\n\n<details>\n<summary>2 indirect dependencies moved in bun.lock</summary>\n\n| Package | From | To |\n| --- | --- | --- |\n| @babel/runtime | 7.29.2 | 7.29.14 |\n| isbot | 5.1.39 | 5.2.3 |\n\n</details>",
+      "## Indirect dependencies\n\n<details>\n<summary>2 indirect dependencies changed in bun.lock</summary>\n\n| Package | From | To |\n| --- | --- | --- |\n| @babel/runtime | 7.29.2 | 7.29.14 |\n| isbot | 5.1.39 | 5.2.3 |\n\n</details>",
     );
   });
 

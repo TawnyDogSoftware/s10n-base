@@ -31,47 +31,71 @@ function isVersionSpec(spec: string): boolean {
   return !/^(catalog|workspace|file|link|git\+|https?):/.test(spec);
 }
 
-/** Every version spec by package name: catalog entries, then direct specs in the manifests. */
-export function collectSpecs(files: readonly ManifestFile[]): Map<string, string> {
-  const specs = new Map<string, string>();
-  for (const file of files) {
-    for (const [name, spec] of Object.entries(catalogOf(file.json))) specs.set(name, spec);
-  }
-  const direct = files.flatMap((file) =>
-    DEPENDENCY_SECTIONS.flatMap((section) => Object.entries(asStringRecord(file.json[section]))),
-  );
-  for (const [name, spec] of direct) {
-    if (isVersionSpec(spec)) specs.set(name, spec);
-  }
-  return specs;
+/** One place a package's version is written: a catalog, or a dependency section of a manifest. */
+export interface Declaration {
+  readonly path: string;
+  readonly section: "catalog" | (typeof DEPENDENCY_SECTIONS)[number];
+  readonly name: string;
+  readonly spec: string;
 }
 
-/** Writes `specs` wherever those packages are declared; returns only the files that changed. */
-export function applySpecs(
+/** Every version spec, once for each place it is declared: catalog entries, then direct specs. */
+export function collectDeclarations(files: readonly ManifestFile[]): Declaration[] {
+  const catalogs = files.flatMap((file) =>
+    Object.entries(catalogOf(file.json)).map(([name, spec]): Declaration => {
+      return { path: file.path, section: "catalog", name, spec };
+    }),
+  );
+  const direct = files.flatMap((file) =>
+    DEPENDENCY_SECTIONS.flatMap((section) =>
+      Object.entries(asStringRecord(file.json[section]))
+        .filter(([, spec]) => isVersionSpec(spec))
+        .map(([name, spec]): Declaration => ({ path: file.path, section, name, spec })),
+    ),
+  );
+  return [...catalogs, ...direct];
+}
+
+/** Every version spec by package name; where a package is declared twice, the last one read. */
+export function collectSpecs(files: readonly ManifestFile[]): Map<string, string> {
+  return new Map(collectDeclarations(files).map(({ name, spec }) => [name, spec]));
+}
+
+/**
+ * Writes each declaration's spec at its own place, a later one for the same place winning. A
+ * place that is not a version spec (`catalog:`, `workspace:`) is left alone. Returns only the
+ * files that changed.
+ */
+export function applyDeclarations(
   files: readonly ManifestFile[],
-  specs: ReadonlyMap<string, string>,
+  declarations: readonly Declaration[],
 ): ManifestFile[] {
   return files.flatMap((file) => {
+    const mine = declarations.filter((declaration) => declaration.path === file.path);
     const changed = new Set<string>();
-    const replace = (record: Record<string, string>) => {
-      const next = { ...record };
-      for (const [name, spec] of Object.entries(record)) {
-        const wanted = specs.get(name);
-        if (wanted !== undefined && isVersionSpec(spec) && wanted !== spec) {
-          next[name] = wanted;
-          changed.add(name);
+    const replace = (section: Declaration["section"], record: Record<string, string>) => {
+      const next = new Map(Object.entries(record));
+      for (const { name, spec } of mine.filter((item) => item.section === section)) {
+        const current = next.get(name);
+        if (current !== undefined && isVersionSpec(current) && current !== spec) {
+          next.set(name, spec);
+          changed.add(`${section} ${name}`);
         }
       }
-      return next;
+      return Object.fromEntries(next);
     };
 
     let json: Record<string, unknown> = { ...file.json };
     const workspaces = file.json.workspaces;
     if (typeof workspaces === "object" && workspaces !== null && "catalog" in workspaces) {
-      json = { ...json, workspaces: { ...workspaces, catalog: replace(catalogOf(file.json)) } };
+      json = {
+        ...json,
+        workspaces: { ...workspaces, catalog: replace("catalog", catalogOf(file.json)) },
+      };
     }
     for (const section of DEPENDENCY_SECTIONS) {
-      if (section in file.json) json[section] = replace(asStringRecord(file.json[section]));
+      if (section in file.json)
+        json[section] = replace(section, asStringRecord(file.json[section]));
     }
     return changed.size > 0 ? [{ path: file.path, json }] : [];
   });

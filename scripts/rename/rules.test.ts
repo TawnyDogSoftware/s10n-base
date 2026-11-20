@@ -11,7 +11,7 @@ import {
   BASE_NAMES,
   isKept,
   leftovers,
-  lockedVersions,
+  lockedEntries,
   type ProjectNames,
   renameRules,
   trackedTextFiles,
@@ -194,17 +194,41 @@ const LOCKFILE = `{
 }
 `;
 
-describe("lockedVersions", () => {
+describe("lockedEntries", () => {
   it("lists the third-party versions the lockfile resolves, without workspace entries", () => {
-    expect(lockedVersions(LOCKFILE)).toEqual(["kysely@0.29.9", "semver@6.3.1", "semver@7.7.2"]);
+    expect(lockedEntries(LOCKFILE)).toEqual([
+      "kysely@0.29.9",
+      "semver@6.3.1 (@babel/core/semver)",
+      "semver@7.7.2",
+    ]);
   });
 
   it("is the same after a rename, which touches only the workspace names", () => {
-    expect(lockedVersions(renamed(LOCKFILE))).toEqual(lockedVersions(LOCKFILE));
+    expect(lockedEntries(renamed(LOCKFILE))).toEqual(lockedEntries(LOCKFILE));
     expect(renamed(LOCKFILE)).toContain(
       `"@acme/client": ["@acme/client@workspace:packages/client"]`,
     );
     expect(renamed(LOCKFILE)).toContain(`"name": "acme-notes",`);
+  });
+});
+
+describe("a lockfile whose entries moved without changing its set of versions", () => {
+  // bun resolved @babel/core's semver to 7.7.2 and another package's to 6.3.1: the same two
+  // versions as before, each now at another path (plan 011, F30).
+  const moved = LOCKFILE.replace(
+    `"@babel/core/semver": ["semver@6.3.1"`,
+    `"@babel/core/semver": ["semver@7.7.2"`,
+  ).replace(
+    `    "semver": ["semver@7.7.2", "", {}, "sha512-z"],`,
+    `    "semver": ["semver@7.7.2", "", {}, "sha512-z"],\n\n    "other/semver": ["semver@6.3.1", "", {}, "sha512-y"],`,
+  );
+
+  it("is a change", () => {
+    expect(versionChanges(lockedEntries(LOCKFILE), lockedEntries(moved))).toEqual([
+      "- semver@6.3.1 (@babel/core/semver)",
+      "+ semver@6.3.1 (other/semver)",
+      "+ semver@7.7.2 (@babel/core/semver)",
+    ]);
   });
 });
 

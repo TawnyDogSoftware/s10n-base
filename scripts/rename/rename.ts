@@ -19,7 +19,7 @@ import {
   BASE_NAMES,
   isKept,
   leftovers,
-  lockedVersions,
+  lockedEntries,
   type ProjectNames,
   renameRules,
   type TextFile,
@@ -90,8 +90,9 @@ function refusal(io: RenameIo, dryRun: boolean): string | undefined {
 
 /** Writes the changes, reinstalls, and checks the versions and leftovers. Returns the exit code. */
 function applyRename(changes: readonly FileChange[], io: RenameIo): number {
-  const before = lockedVersions(io.readFile("bun.lock"));
   for (const change of changes) io.writeFile(change.file, change.text);
+  // Read once renamed, so that a key naming a workspace package compares under its new name.
+  const before = lockedEntries(io.readFile("bun.lock"));
   io.print("rename: running bun install, so bun rewrites the lockfile for the new names");
   if (io.install() !== 0) {
     io.print("rename: bun install failed; the files are renamed, the lockfile may not be");
@@ -103,7 +104,7 @@ function applyRename(changes: readonly FileChange[], io: RenameIo): number {
     io.print("rename: bun run fmt failed; run it, then check the result");
     return 1;
   }
-  const moved = versionChanges(before, lockedVersions(io.readFile("bun.lock")));
+  const moved = versionChanges(before, lockedEntries(io.readFile("bun.lock")));
   if (moved.length > 0) {
     io.print("rename: bun install changed package versions, which a rename must not:");
     for (const line of moved) io.print(`  ${line}`);

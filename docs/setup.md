@@ -29,7 +29,7 @@ bun dev
 
 Open `APP_URL` (`http://localhost:5173` by default). You land on the sign-in page: create an account, open the verification link from the inbox, and sign in to reach the signed-in home page, your profile (name, passkeys, sign-out) and, as an admin, the user list. Emails the server sends (verification, password reset) are captured, not delivered: read them in the local inbox at `http://127.0.0.1:8005/`, which `bun dev` prints when it starts. [docs/auth.md](auth.md) explains how auth works. The browser talks only to Vite, which proxies `/rpc`, `/api`, `/config`, `/health` and `/ready` to the API server on `PORT`. The database keeps running after `bun dev` stops; `bun run db:down` stops it.
 
-To run the parts on their own: `bun run dev:server`, `bun run dev:web` and `bun run ses:local` (start the database first with `bun run db:up`).
+To run the parts on their own: `bun run dev:server`, `bun run dev:web` and `bun run ses:local`. Start the database first with `bun run db:up`, and apply migrations with `bun run db:migrate`: only `bun dev` migrates for you, and the server refuses to start while a migration in its build is pending.
 
 The mobile app runs separately, against the server `bun dev` starts: `bun run dev:mobile` for Metro, and `bun run ios:simulator` on a Mac for the first build. See [mobile-dev.md](mobile-dev.md).
 
@@ -37,28 +37,28 @@ The mobile app runs separately, against the server `bun dev` starts: `bun run de
 
 The server reads these once at startup and refuses to start if any is invalid, listing every problem in one log line. The value of a secret (`DATABASE_URL`, `BETTER_AUTH_SECRET`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`) is never printed.
 
-| Variable                   | Rule                                                                                                                                       | Default             |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- |
-| `NODE_ENV`                 | `development`, `test` or `production`                                                                                                      | `development`       |
-| `APP_URL`                  | The single public origin users see: scheme, host and optional port, with no path, query or credentials. `https` is required in production. | required            |
-| `HOST`                     | Bind address                                                                                                                               | `0.0.0.0`           |
-| `PORT`                     | Integer 0 to 65535                                                                                                                         | `4210`              |
-| `DATABASE_URL`             | A `postgres://` or `postgresql://` URL. A secret.                                                                                          | required            |
-| `DATABASE_POOL_MAX`        | Integer 1 to 100: connections in the pool                                                                                                  | `10`                |
-| `TRUSTED_PROXY_HOPS`       | Integer 0 to 10: how many reverse proxies sit in front of the server                                                                       | `0`                 |
-| `REQUEST_BODY_LIMIT_BYTES` | Integer, at least 1024                                                                                                                     | `1048576`           |
-| `SHUTDOWN_TIMEOUT_MS`      | Integer 1000 to 60000: how long a shutdown waits for requests in flight                                                                    | `10000`             |
-| `LOG_LEVEL`                | `debug`, `info`, `warn` or `error`                                                                                                         | `info`              |
-| `BETTER_AUTH_SECRET`       | At least 32 characters. A secret. Production refuses the value in `.env.example`.                                                          | required            |
-| `APP_VARIANT`              | `development`, `preview` or `production`: the mobile app build this server serves. Must be set in production.                              | `development`       |
-| `EMAIL_FROM`               | A plain email address, the sender of every email                                                                                           | required            |
-| `SUPPORT_EMAIL`            | A plain email address, shown in email footers and used as the reply-to                                                                     | required            |
-| `SES_REGION`               | An AWS region name such as `us-east-1`                                                                                                     | required            |
-| `SES_ENDPOINT`             | A loopback origin that replaces the AWS endpoint (the local capture server). Refused in production.                                        | unset               |
-| `AWS_ACCESS_KEY_ID`        | The SES sender's access key. Production refuses the placeholder `local`.                                                                   | required            |
-| `AWS_SECRET_ACCESS_KEY`    | Its secret. A secret. Production refuses the placeholder `local`.                                                                          | required            |
-| `AWS_SESSION_TOKEN`        | For temporary credentials. A secret.                                                                                                       | unset               |
-| `APP_VERSION`              | The build's version, reported by `/config`. The container image sets it.                                                                   | the package version |
+| Variable                   | Rule                                                                                                                                                                                                         | Default             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- |
+| `NODE_ENV`                 | `development`, `test` or `production`                                                                                                                                                                        | `development`       |
+| `APP_URL`                  | The single public origin users see: scheme, host and optional port, with no path, query or credentials. `https` is required in production.                                                                   | required            |
+| `HOST`                     | Bind address                                                                                                                                                                                                 | `0.0.0.0`           |
+| `PORT`                     | Integer 0 to 65535                                                                                                                                                                                           | `4210`              |
+| `DATABASE_URL`             | A `postgres://` or `postgresql://` URL. A secret.                                                                                                                                                            | required            |
+| `DATABASE_POOL_MAX`        | Integer 1 to 100: connections in the pool                                                                                                                                                                    | `10`                |
+| `TRUSTED_PROXY_HOPS`       | Integer 0 to 10: how many reverse proxies sit in front of the server                                                                                                                                         | `0`                 |
+| `REQUEST_BODY_LIMIT_BYTES` | Integer, at least 1024                                                                                                                                                                                       | `1048576`           |
+| `SHUTDOWN_TIMEOUT_MS`      | Integer 1000 to 60000: how long a shutdown waits for requests in flight                                                                                                                                      | `10000`             |
+| `LOG_LEVEL`                | `debug`, `info`, `warn` or `error`                                                                                                                                                                           | `info`              |
+| `BETTER_AUTH_SECRET`       | At least 32 characters. A secret. Production refuses the value in `.env.example`.                                                                                                                            | required            |
+| `APP_VARIANT`              | `development`, `preview` or `production`: the mobile app build this server serves. Must be set in production.                                                                                                | `development`       |
+| `EMAIL_FROM`               | A plain email address, the sender of every email                                                                                                                                                             | required            |
+| `SUPPORT_EMAIL`            | A plain email address, shown in email footers and used as the reply-to                                                                                                                                       | required            |
+| `SES_REGION`               | An AWS region name such as `us-east-1`                                                                                                                                                                       | required            |
+| `SES_ENDPOINT`             | The local capture server's address, which replaces the AWS endpoint: an http loopback origin with a port, such as `http://127.0.0.1:8005`. `bun dev` starts the capture server there. Refused in production. | unset               |
+| `AWS_ACCESS_KEY_ID`        | The SES sender's access key. Production refuses the placeholder `local`.                                                                                                                                     | required            |
+| `AWS_SECRET_ACCESS_KEY`    | Its secret. A secret. Production refuses the placeholder `local`.                                                                                                                                            | required            |
+| `AWS_SESSION_TOKEN`        | For temporary credentials. A secret.                                                                                                                                                                         | unset               |
+| `APP_VERSION`              | The build's version, reported by `/config`. The container image sets it.                                                                                                                                     | the package version |
 
 The live tests also read `TEST_DATABASE_URL` (below). `migrate` also reads `MIGRATION_DATABASE_URL` and `DATABASE_APP_ROLE`, for a deployment where the server's database role may not change the schema; development leaves both unset. [deployment.md](deployment.md#environment) has every variable of each command, checked against the code.
 
@@ -68,6 +68,13 @@ The web app reads one variable at build time (Vite exposes `VITE_*` variables to
 | ------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------- |
 | `VITE_API_BASE_URL` | The API's origin (`https://api.example.com`), with no path, query or credentials. The build fails on anything else. | the page's own origin |
 
+The Vite dev server reads two more, both optional, for where it listens when that is not where the browser reaches it:
+
+| Variable       | Rule                                                      | Default                                                               |
+| -------------- | --------------------------------------------------------- | --------------------------------------------------------------------- |
+| `WEB_DEV_HOST` | The address Vite listens on, such as `0.0.0.0`            | `APP_URL`'s host when `APP_URL` is http; `127.0.0.1` when it is https |
+| `WEB_DEV_PORT` | The port Vite listens on, 1 to 65535; anything else fails | `APP_URL`'s port when `APP_URL` is http; `5173` when it is https      |
+
 The mobile app reads `APP_VARIANT`, `EXPO_PUBLIC_API_BASE_URL` and `EAS_PROJECT_ID` when it builds, from your shell or `apps/mobile/.env.local` (copy `apps/mobile/.env.example`). Its table, and how to point a phone at this server, are in [mobile-dev.md](mobile-dev.md#environment). The server's `APP_VARIANT` must match the app's, since the server trusts only that variant's URL scheme.
 
 Leave `VITE_API_BASE_URL` unset when the server serves the web app (the built server does) or, in development, when Vite proxies the API. Set it when the web app is hosted on its own origin. The server then has to accept that page: its `APP_URL` must be the web app's origin (CORS and Better Auth's origin checks allow only `APP_URL`), the session cookie must reach the API (same site, or `SameSite=None` with `Secure`), and the HTML's Content-Security-Policy, which allows `connect-src 'self'`, must list the API origin if the server still serves the page.
@@ -76,7 +83,7 @@ Leave `VITE_API_BASE_URL` unset when the server serves the web app (the built se
 
 Notes:
 
-- **`APP_URL`** is also what `GET /config` returns as `apiBaseUrl`, and the only origin allowed by CORS. In development it is the Vite dev server's origin, and Vite listens on its host and port.
+- **`APP_URL`** is also what `GET /config` returns as `apiBaseUrl`, and the only origin allowed by CORS. In development it is the origin the browser opens the Vite dev server at. When it is http, Vite listens on its host and port. When it is https, a forwarder in front of Vite ends TLS, so Vite listens on `127.0.0.1:5173` for the forwarder to point at, and answers requests for `APP_URL`'s host name. `WEB_DEV_HOST` and `WEB_DEV_PORT` change where Vite listens in either case.
 - **`TRUSTED_PROXY_HOPS`** decides which `X-Forwarded-For` entry is the client's address: with one proxy, the last entry; with two, the one before it. With `0` the header is ignored and the socket's address is used. Set it to exactly the number of proxies you run, or clients can choose their own address.
 - **`SHUTDOWN_TIMEOUT_MS`:** on SIGTERM or SIGINT the server stops accepting connections, answers `/ready` with 503, waits up to this long for requests in flight, then closes what is left and the database pool. It exits 0 after a clean stop and 1 when it had to force anything.
 - **`SES_ENDPOINT`, `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`:** `.env.example` points the server at the local capture server with the placeholder keys `local`/`local`, so email works on a fresh clone with no AWS account. In production, leave `SES_ENDPOINT` unset and give real keys for an IAM user allowed to call `ses:SendEmail`; `EMAIL_FROM` must be a verified SES identity.
@@ -169,7 +176,7 @@ bun run build
 bun run smoke
 ```
 
-`smoke` starts the built server with Node, checks `/health`, `/ready` and that `/` serves the web app, then sends SIGTERM and checks that the server exits with code 0. It needs the database running.
+`smoke` starts the built server with Node, checks `/health`, `/ready` and that `/` serves the web app, then sends SIGTERM and checks that the server exits with code 0. It needs the database running and migrated (`bun run db:up`, then `bun run db:migrate`), since the server refuses to start while a migration is pending.
 
 The container image is checked the same way, in production mode:
 

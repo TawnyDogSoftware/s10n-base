@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { applySpecs, collectSpecs, readCatalog, setRuntimeVersions } from "./manifests";
+import {
+  applyDeclarations,
+  collectDeclarations,
+  collectSpecs,
+  readCatalog,
+  setRuntimeVersions,
+} from "./manifests";
 
 const root = {
   name: "root",
@@ -45,15 +51,37 @@ describe("collectSpecs", () => {
   });
 });
 
-describe("applySpecs", () => {
-  it("writes specs back where they are declared and reports only changed files", () => {
-    const changed = applySpecs(
-      files,
-      new Map([
-        ["react", "19.3.0"],
-        ["leftpad", "^1.2.0"],
-      ]),
-    );
+describe("collectDeclarations", () => {
+  it("lists each place a package's version is written, once per place", () => {
+    const twice = [
+      ...files,
+      { path: "apps/other/package.json", json: { devDependencies: { typescript: "^5.9.0" } } },
+    ];
+
+    expect(collectDeclarations(twice)).toEqual([
+      { path: "package.json", section: "catalog", name: "react", spec: "19.3.0" },
+      { path: "package.json", section: "catalog", name: "typescript", spec: "~6.0.3" },
+      { path: "apps/app/package.json", section: "dependencies", name: "leftpad", spec: "^1.3.0" },
+      {
+        path: "apps/other/package.json",
+        section: "devDependencies",
+        name: "typescript",
+        spec: "^5.9.0",
+      },
+    ]);
+  });
+});
+
+describe("applyDeclarations", () => {
+  it("writes each spec at its own place, the last for a place winning, and reports only changed files", () => {
+    const changed = applyDeclarations(files, [
+      { path: "package.json", section: "catalog", name: "react", spec: "19.3.0" },
+      { path: "apps/app/package.json", section: "dependencies", name: "leftpad", spec: "^1.1.0" },
+      { path: "apps/app/package.json", section: "dependencies", name: "leftpad", spec: "^1.2.0" },
+      { path: "apps/app/package.json", section: "devDependencies", name: "react", spec: "19.0.0" },
+      { path: "apps/app/package.json", section: "dependencies", name: "react", spec: "19.0.0" },
+      { path: "apps/app/package.json", section: "dependencies", name: "absent", spec: "1.0.0" },
+    ]);
 
     expect(changed).toEqual([
       {

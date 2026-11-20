@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   bunVersionOf,
   checkExpo,
-  findOpenPr,
+  findOpenPrs,
   mustRun,
   packagesHeldByAge,
   readBase,
@@ -86,15 +86,28 @@ describe("readManifests", () => {
   });
 });
 
-describe("findOpenPr", () => {
-  it("takes the newest of several open PRs", async () => {
+describe("findOpenPrs", () => {
+  it("takes the updater's open PRs, newest first", async () => {
+    const pr = { baseRefName: "main", isCrossRepository: false, headRefOid: "sha", body: "" };
     const prs = [
-      { number: 4, headRefName: "deps/update-2026-11-17", url: "u4" },
-      { number: 9, headRefName: "deps/update-2026-11-18", url: "u9" },
+      { ...pr, number: 4, headRefName: "deps/update-2026-11-17", url: "u4" },
+      { ...pr, number: 9, headRefName: "deps/update-2026-11-18", url: "u9" },
+      { ...pr, number: 11, headRefName: "deps/update-latest", url: "u11" },
     ];
     const github = io({}, { run: () => ({ code: 0, stdout: JSON.stringify(prs), stderr: "" }) });
 
-    expect(await findOpenPr(github, "dependency-update")).toMatchObject({ number: 9 });
+    const found = await findOpenPrs(github, {
+      dryRun: false,
+      baseBranch: "main",
+      now: new Date("2026-11-19T00:00:00Z"),
+      label: "dependency-update",
+      author: { name: "a", email: "a@example.invalid" },
+    });
+
+    expect(found.map((open) => open.number)).toEqual([9, 4]);
+    expect(github.logs).toEqual([
+      "Leaving PR #11 alone: it has the dependency-update label but is not the updater's (head deps/update-latest into main).",
+    ]);
   });
 });
 
@@ -140,6 +153,17 @@ describe("checkExpo", () => {
 
     expect(await checkExpo(mobile)).toEqual([]);
   });
+
+  it("says the check could not run when it fails without naming drift", async () => {
+    const offline = io(
+      { "apps/mobile/package.json": "{}" },
+      { run: () => ({ code: 1, stdout: "", stderr: "TypeError: fetch failed\n" }) },
+    );
+
+    expect(await checkExpo(offline)).toEqual([
+      "`expo install --check` in apps/mobile could not run (exit 1), so Expo drift is not checked:\n\n  ```\n  TypeError: fetch failed\n  ```",
+    ]);
+  });
 });
 
 describe("packagesHeldByAge", () => {
@@ -179,6 +203,55 @@ describe("packagesHeldByAge", () => {
       { name: "oxlint", current: "1.93.0", newest: "1.94.0" },
       { name: "knip", current: "6.45.1" },
     ]);
+  });
+});
+
+describe("packagesHeldByAge, when only the in-range column is held back", () => {
+  // The age gate holds back a release inside the spec (0.28.20); the registry's `latest` (0.29.9)
+  // is outside the spec and old enough, so it is not what the gate held back.
+  const outdated = `| Package | Current | Update | Latest | Workspace |
+|---|---|---|---|---|
+| kysely | 0.28.19 | 0.28.19 * | 0.29.9 | catalog (root) |
+`;
+
+  it("reports the newest release between that column and the latest column", async () => {
+    const registry = io(
+      {},
+      {
+        run: () => ({ code: 0, stdout: outdated, stderr: "" }),
+        fetchJson: () => ({
+          "dist-tags": { latest: "0.29.9", next: "0.30.0-beta.2" },
+          time: {
+            created: "2020-01-01T00:00:00.000Z",
+            "0.28.19": "2026-11-01T02:23:45.998Z",
+            "0.28.20": "2026-11-18T17:42:46.860Z",
+            "0.29.9": "2026-11-12T16:48:02.551Z",
+            "0.30.0-beta.2": "2026-11-18T00:40:59.594Z",
+          },
+        }),
+      },
+    );
+
+    expect(await packagesHeldByAge(registry)).toEqual([
+      {
+        name: "kysely",
+        current: "0.28.19",
+        newest: "0.28.20",
+        publishedAt: "2026-11-18T17:42:46.860Z",
+      },
+    ]);
+  });
+
+  it("reports no newest release when the registry lists none in that span", async () => {
+    const registry = io(
+      {},
+      {
+        run: () => ({ code: 0, stdout: outdated, stderr: "" }),
+        fetchJson: () => ({ "dist-tags": { latest: "0.29.9" } }),
+      },
+    );
+
+    expect(await packagesHeldByAge(registry)).toEqual([{ name: "kysely", current: "0.28.19" }]);
   });
 });
 

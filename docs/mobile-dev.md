@@ -73,13 +73,14 @@ The phone runs the app, loads its JavaScript from Metro on your computer, and ca
 
 ## Pointing a phone at a server on your own machine
 
-The server listens on every interface by default (`HOST=0.0.0.0`), so a phone on the same network reaches it at your computer's address.
+On a fresh clone the server listens on loopback only: `.env.example` sets `HOST=127.0.0.1`, and `bun dev` reads it when there is no `.env`. A phone cannot reach that. To reach the server from a phone on the same network:
 
+- **`HOST`:** copy `.env.example` to `.env` and set `HOST` to your computer's address on that network, such as `HOST=192.168.1.20`, or to `0.0.0.0` for every interface. Either way anyone on that network can then reach the development server, so do it only on a network you trust. Restart `bun dev`.
 - **`EXPO_PUBLIC_API_BASE_URL`:** `http://<your-computer's-address>:4210`, for example `http://192.168.1.20:4210`. Restart Metro after changing it; the dev client does not need a rebuild.
 - **Plain http** is fine in development: the development variant allows it on iOS (App Transport Security's arbitrary loads, development only), and Android debug builds allow cleartext traffic. Preview and production refuse anything but https at config time.
 - **Trusted origins:** nothing to add. The app identifies itself with its URL scheme, which the server trusts for its own `APP_VARIANT` (keep both on `development`). `/rpc` and the session route accept requests without an `Origin` header, which is what the app sends.
 - **`APP_URL`** is the web app's origin. It decides where the links in emails go. The links open the web app in a browser, which finishes the verification or the password reset; the person then returns to the app and signs in (the app's screens say so). To open those links on the phone, `APP_URL` must be an address the phone can reach, such as `http://192.168.1.20:5173`; the Vite dev server then listens on that address. Otherwise open the links on the computer: verifying in one browser verifies the account everywhere.
-- **The local inbox listens on loopback only** (`http://127.0.0.1:8005/`), on purpose. Read the emails on the computer running `bun dev`.
+- **The local inbox stays on loopback** (`http://127.0.0.1:8005/`), whatever `HOST` is, on purpose: it has no sign-in. Read the emails on the computer running `bun dev`.
 
 Opening email links in the app instead of the browser needs universal links (iOS) and app links (Android): a real https domain serving association files. That is not set up; see "Later" below.
 
@@ -92,7 +93,7 @@ When the phone and your computer are not on the same local network, or you want 
 3. In `apps/mobile/.env.local`: `EXPO_PUBLIC_API_BASE_URL=https://<computer-name>:8443`. This works with any variant, since it is https.
 4. Metro: the phone also loads JavaScript from Metro (port 8081). Serve that port privately over https too (`https://<computer-name>:8447` forwarding to `http://127.0.0.1:8081`), and set `EXPO_PACKAGER_PROXY_URL` to that origin **in the shell that starts Metro** (`EXPO_PACKAGER_PROXY_URL=https://<computer-name>:8447 bun run dev:mobile`). Expo reads this variable before it loads `.env` files, so putting it only in `.env.local` does not work. Then pick that server in the dev client's launcher.
 5. Check from the phone's browser: `https://<computer-name>:8443/health` answers `{"ok":true,…}` and `https://<computer-name>:8447/status` answers `packager-status:running`.
-6. Emails: read them in the inbox on the computer, as above. To open the links on the phone, also serve the web dev server privately and set `APP_URL` to that origin; Vite answers only the host names it knows, so the forwarder must pass the name Vite listens on.
+6. Emails: read them in the inbox on the computer, as above. To open the links on the phone, also serve the web dev server privately, for example `https://<computer-name>:8445` forwarding to `http://127.0.0.1:5173`, and set `APP_URL=https://<computer-name>:8445` in `.env`. Since `APP_URL` is https, Vite listens on `127.0.0.1:5173` for the forwarder, not on the forwarder's name and port, and it answers requests for `<computer-name>`. To listen elsewhere, set `WEB_DEV_HOST` and `WEB_DEV_PORT` and point the forwarder there ([setup.md](setup.md#environment-variables)). The forwarder must also pass WebSocket upgrades, or the page loads without hot reload.
 
 Metro can run on any machine on the private network that has the checkout, including a Linux machine: once the dev client is installed, the phone needs the Mac only to rebuild native code.
 

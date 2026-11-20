@@ -164,6 +164,9 @@ describe("server config", () => {
     ["SES_ENDPOINT", "https://192.0.2.5:8005"],
     ["SES_ENDPOINT", "http://127.0.0.1:8005/v2"],
     ["SES_ENDPOINT", "ftp://127.0.0.1:8005"],
+    // The local capture server listens only on http and an explicit port (plan 011, F42).
+    ["SES_ENDPOINT", "http://127.0.0.1"],
+    ["SES_ENDPOINT", "https://localhost:8005"],
     ["AWS_ACCESS_KEY_ID", "has space"],
   ])("rejects %s=%j", (variable, value) => {
     const problem = problemFor({ ...valid, [variable]: value }, variable);

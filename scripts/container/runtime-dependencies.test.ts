@@ -235,6 +235,34 @@ describe("exportRuntimeDependencies", () => {
     );
   });
 
+  it("refuses to export into a directory that already holds files", async () => {
+    // A second export over a first would keep links and packages the closure no longer has.
+    await writeFile(path.join(out, "stale.js"), "");
+
+    await expect(
+      exportRuntimeDependencies({ root, workspace: "apps/server", out }),
+    ).rejects.toThrow(
+      `${out} is not empty: export the runtime dependencies into a new or empty directory`,
+    );
+  });
+
+  it("refuses a path that is a file", async () => {
+    const file = path.join(out, "file");
+    await writeFile(file, "");
+
+    await expect(
+      exportRuntimeDependencies({ root, workspace: "apps/server", out: file }),
+    ).rejects.toThrow("ENOTDIR");
+  });
+
+  it("creates the directory when it does not exist", async () => {
+    const fresh = path.join(out, "fresh");
+
+    await exportRuntimeDependencies({ root, workspace: "apps/server", out: fresh });
+
+    expect(await listFiles(fresh)).toContain("apps/server/node_modules/alpha");
+  });
+
   it("runs from the copy, wherever it is, once the original is gone", async () => {
     await exportRuntimeDependencies({ root, workspace: "apps/server", out });
     await rm(root, { recursive: true, force: true });

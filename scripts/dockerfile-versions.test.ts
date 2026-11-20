@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { baseImages, dockerfileProblems, moveRuntime, tagFor } from "./dockerfile-versions";
+import { baseImages, dockerfileProblems, moveRuntime, tagsFor } from "./dockerfile-versions";
 
 const NODE_DIGEST = `sha256:${"a".repeat(64)}`;
 const BUN_DIGEST = `sha256:${"b".repeat(64)}`;
@@ -74,24 +74,38 @@ describe("dockerfileProblems", () => {
   });
 });
 
-describe("tagFor", () => {
-  it("keeps the current tag's variant", () => {
-    expect(tagFor(dockerfile, "node", "26.14.0")).toBe("26.14.0-trixie-slim");
-    expect(tagFor(dockerfile, "bun", "1.4.5")).toBe("1.4.5-slim");
+describe("tagsFor", () => {
+  it("keeps each image's own variant, once per variant", () => {
+    const move = { from: "26.13.1", to: "26.14.0" };
+    expect(tagsFor(dockerfile, "node", move)).toEqual(["26.14.0-trixie-slim"]);
+    expect(tagsFor(dockerfile, "bun", { from: "1.4.4", to: "1.4.5" })).toEqual(["1.4.5-slim"]);
+    expect(
+      tagsFor(
+        `FROM node:26.13.1-slim@${NODE_DIGEST}\nFROM node:lts\nFROM node\nFROM node:26.13.1-alpine\n`,
+        "node",
+        move,
+      ),
+    ).toEqual(["26.14.0-slim", "26.14.0-alpine"]);
   });
 
-  it("is the bare version when the tag has no variant, or there is no such image", () => {
-    expect(tagFor(`FROM node:26.13.1@${NODE_DIGEST}\n`, "node", "26.14.0")).toBe("26.14.0");
-    expect(tagFor("FROM scratch\n", "bun", "1.4.5")).toBe("1.4.5");
+  it("is the bare version for a tag without a variant, and nothing without such an image", () => {
+    const move = { from: "26.13.1", to: "26.14.0" };
+    expect(tagsFor(`FROM node:26.13.1@${NODE_DIGEST}\n`, "node", move)).toEqual(["26.14.0"]);
+    expect(tagsFor("FROM scratch\n", "bun", { from: "1.4.4", to: "1.4.5" })).toEqual([]);
   });
 });
+
+/** The new digest, for one tag. */
+function digests(tag: string): Record<string, string> {
+  return { [tag]: NEW_DIGEST };
+}
 
 describe("moveRuntime", () => {
   it("moves every image of the runtime to the new tag and digest, and the build's check", () => {
     const moved = moveRuntime(dockerfile, "node", {
       from: "26.13.1",
       to: "26.14.0",
-      digest: NEW_DIGEST,
+      digests: digests("26.14.0-trixie-slim"),
     });
 
     expect(moved).toBe(
@@ -105,11 +119,30 @@ describe("moveRuntime", () => {
     expect(dockerfileProblems(moved, { node: "26.14.0", bun: "1.4.4" })).toEqual([]);
   });
 
+  it("moves each variant to its own tag and digest", () => {
+    const text = `FROM node:26.13.1-slim@${NODE_DIGEST}\nFROM node:26.13.1-alpine@${NODE_DIGEST}\n`;
+    const alpine = `sha256:${"d".repeat(64)}`;
+
+    expect(
+      moveRuntime(text, "node", {
+        from: "26.13.1",
+        to: "26.14.0",
+        digests: { "26.14.0-slim": NEW_DIGEST, "26.14.0-alpine": alpine },
+      }),
+    ).toBe(`FROM node:26.14.0-slim@${NEW_DIGEST}\nFROM node:26.14.0-alpine@${alpine}\n`);
+  });
+
+  it("refuses to move an image whose new tag has no digest", () => {
+    expect(() =>
+      moveRuntime(dockerfile, "node", { from: "26.13.1", to: "26.14.0", digests: {} }),
+    ).toThrow("No digest given for node:26.14.0-trixie-slim");
+  });
+
   it("moves bun and leaves Node alone", () => {
     const moved = moveRuntime(dockerfile, "bun", {
       from: "1.4.4",
       to: "1.4.5",
-      digest: NEW_DIGEST,
+      digests: digests("1.4.5-slim"),
     });
 
     expect(dockerfileProblems(moved, { node: "26.13.1", bun: "1.4.5" })).toEqual([]);
@@ -123,16 +156,20 @@ describe("moveRuntime", () => {
   it("leaves an untagged image of the runtime alone", () => {
     const text = `FROM node@${NODE_DIGEST}\n`;
 
-    expect(moveRuntime(text, "node", { from: "26.13.1", to: "26.14.0", digest: NEW_DIGEST })).toBe(
-      text,
-    );
+    expect(moveRuntime(text, "node", { from: "26.13.1", to: "26.14.0", digests: {} })).toBe(text);
   });
 
   it("pins an image that had no digest, and leaves other versions alone", () => {
-    const text = `FROM node:26.13.1-slim\nFROM node:24.1.0-slim@${NODE_DIGEST}\n`;
+    const text = `FROM node:26.13.1-slim\nFROM node:24.1.0-slim@${NODE_DIGEST}\nFROM node:lts\n`;
 
-    expect(moveRuntime(text, "node", { from: "26.13.1", to: "26.14.0", digest: NEW_DIGEST })).toBe(
-      `FROM node:26.14.0-slim@${NEW_DIGEST}\nFROM node:24.1.0-slim@${NODE_DIGEST}\n`,
+    expect(
+      moveRuntime(text, "node", {
+        from: "26.13.1",
+        to: "26.14.0",
+        digests: digests("26.14.0-slim"),
+      }),
+    ).toBe(
+      `FROM node:26.14.0-slim@${NEW_DIGEST}\nFROM node:24.1.0-slim@${NODE_DIGEST}\nFROM node:lts\n`,
     );
   });
 });
