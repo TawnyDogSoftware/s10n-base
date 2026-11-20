@@ -29,7 +29,7 @@ bun dev
 
 Open `APP_URL` (`http://localhost:5173` by default). You land on the sign-in page: create an account, open the verification link from the inbox, and sign in to reach the signed-in home page, your profile (name, passkeys, sign-out) and, as an admin, the user list. Emails the server sends (verification, password reset) are captured, not delivered: read them in the local inbox at `http://127.0.0.1:8005/`, which `bun dev` prints when it starts. [docs/auth.md](auth.md) explains how auth works. The browser talks only to Vite, which proxies `/rpc`, `/api`, `/config`, `/health` and `/ready` to the API server on `PORT`. The database keeps running after `bun dev` stops; `bun run db:down` stops it.
 
-To run the parts on their own: `bun run dev:server`, `bun run dev:web` and `bun run ses:local` (start the database first with `bun run db:up`).
+To run the parts on their own: `bun run dev:server`, `bun run dev:web` and `bun run ses:local`. Start the database first with `bun run db:up`, and apply migrations with `bun run db:migrate`: only `bun dev` migrates for you, and the server refuses to start while a migration in its build is pending.
 
 The mobile app runs separately, against the server `bun dev` starts: `bun run dev:mobile` for Metro, and `bun run ios:simulator` on a Mac for the first build. See [mobile-dev.md](mobile-dev.md).
 
@@ -176,7 +176,7 @@ bun run build
 bun run smoke
 ```
 
-`smoke` starts the built server with Node, checks `/health`, `/ready` and that `/` serves the web app, then sends SIGTERM and checks that the server exits with code 0. It needs the database running.
+`smoke` starts the built server with Node, checks `/health`, `/ready` and that `/` serves the web app, then sends SIGTERM and checks that the server exits with code 0. It needs the database running and migrated (`bun run db:up`, then `bun run db:migrate`), since the server refuses to start while a migration is pending.
 
 The container image is checked the same way, in production mode:
 
