@@ -16,8 +16,8 @@ function plain(address: string): string {
  * The client's IP address. With no trusted proxy (`hops` 0) it is the socket's peer. Behind
  * `hops` proxies, each proxy appends the address it received the request from to
  * `X-Forwarded-For`, so the client is the entry `hops` places from the right; anything further
- * left was written by the client and is ignored. A header that is missing, too short or holds
- * something that is not an address falls back to the socket's peer.
+ * left was written by the client and is never read. A header that is missing or too short, or
+ * whose trusted entries hold something that is not an address, falls back to the socket's peer.
  */
 export function resolveClientIp(request: ClientIpRequest, hops: number): string | undefined {
   const peer = request.socket.remoteAddress;
@@ -28,8 +28,10 @@ export function resolveClientIp(request: ClientIpRequest, hops: number): string 
   const header = Array.isArray(raw) ? raw.join(",") : (raw as string | undefined);
   if (header === undefined || header.trim() === "") return fallback;
   const entries = header.split(",").map((entry) => entry.trim());
-  // The entry the outermost trusted proxy added, counting from the right.
+  // The entry the outermost trusted proxy added, counting from the right; only the entries the
+  // trusted proxies added are checked.
   const entry = entries.length < hops ? undefined : entries[entries.length - hops];
-  if (entry === undefined || entries.some((item) => isIP(item) === 0)) return fallback;
+  const trusted = entries.slice(-hops);
+  if (entry === undefined || trusted.some((item) => isIP(item) === 0)) return fallback;
   return plain(entry);
 }

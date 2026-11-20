@@ -143,7 +143,8 @@ The server speaks plain HTTP on `PORT`. TLS ends at a proxy or load balancer in 
 
 - `APP_URL` is the public `https` origin users see, such as `https://app.example.com`. Production refuses anything else. Email links, CORS, Better Auth's origin checks and the passkey relying party are all derived from it.
 - Cookies are `Secure` and responses carry `Strict-Transport-Security` because `APP_URL` is `https`.
-- `TRUSTED_PROXY_HOPS` must equal the number of proxies in front of the server that append to `X-Forwarded-For`. The client's address is the entry that many places from the right. Too low, and every user appears to come from the proxy, so one user's failed sign-ins rate-limit everyone. Too high, and a client can choose its own address by sending the header, and escape the rate limits. Request logs show the address the server used (`clientIp`); check it once after deploying.
+- `TRUSTED_PROXY_HOPS` must equal the number of proxies in front of the server that append to `X-Forwarded-For`. The client's address is the entry that many places from the right. Too low, and every user appears to come from the proxy, so one user's failed sign-ins rate-limit everyone. Too high, and a client can choose its own address by sending the header, and escape the rate limits. Request logs show the address the server used (`clientIp`); check it once after deploying. Entries further left were written by the client and are never read.
+- The server must be reachable only through those proxies. A hop count cannot prove that the last hop is a proxy: a client that reaches the server directly can write the entries the server trusts.
 - The proxy must allow request bodies up to `REQUEST_BODY_LIMIT_BYTES`; the server answers 413 above it.
 
 ## More than one instance

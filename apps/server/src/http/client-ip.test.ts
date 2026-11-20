@@ -26,6 +26,13 @@ describe("resolveClientIp", () => {
     ).toBe("198.51.100.7");
   });
 
+  it("ignores text the client wrote left of the trusted entries", () => {
+    expect(resolveClientIp(request("198.51.100.2", "junk, 203.0.113.9"), 1)).toBe("203.0.113.9");
+    expect(resolveClientIp(request("198.51.100.2", "junk, 198.51.100.7, 203.0.113.9"), 2)).toBe(
+      "198.51.100.7",
+    );
+  });
+
   it("joins repeated headers in order", () => {
     expect(resolveClientIp(request("198.51.100.2", ["192.0.2.66", "198.51.100.7"]), 1)).toBe(
       "198.51.100.7",
