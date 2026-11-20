@@ -47,7 +47,7 @@ Enforced by `bun run boundaries` (`.dependency-cruiser.cjs`), type-only imports 
 
 ## Dependencies
 
-- **Prefer a platform API or a package already in the catalog.** A new dependency needs its reason in the body of the commit that adds it. Versions go in the root `catalog` and workspaces use `catalog:`.
+- **Prefer a platform API or a package already in the catalog.** A new dependency needs its reason in the body of the commit that adds it. Versions go in the root `catalog` and workspaces use `catalog:`, with one exception: the Expo-managed packages in `apps/mobile/package.json` carry the version `expo install` writes there (React and React DOM, shared with the web app, stay in the catalog).
 - **The 3-day rule:** every package is on the newest release at least three days old; `bunfig.toml` enforces it at install. Held packages and their reasons are in `dependency-holds.json`. How to take a bug-fix release early, and how the daily update PR works: [docs/dependencies.md](docs/dependencies.md).
 - **Expo-managed packages** (React, React Native, every native module) are added and moved only with `EXPO_OFFLINE=1 bunx expo install <package>` in `apps/mobile`. CI checks with `expo install --check`.
 - **A run-time dependency of the server must be declared in `apps/server/package.json`.** The bundle leaves third-party imports external, and the image build fails when its imports and the declared dependencies differ.
