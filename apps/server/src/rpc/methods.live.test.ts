@@ -129,15 +129,21 @@ describe("admin.listUsers", () => {
     }
   });
 
-  it.each(["not-a-cursor", Buffer.from('{"at":"x","id":"y"}').toString("base64url")])(
-    "refuses the cursor %s with 400",
-    async (cursor) => {
-      const result = await call(admin, "admin.listUsers", { limit: 5, cursor });
+  it.each([
+    "not-a-cursor",
+    Buffer.from('{"at":"x","id":"y"}').toString("base64url"),
+    Buffer.from(
+      JSON.stringify({
+        at: "0000-01-01T00:00:00.000000Z",
+        id: "6f1c2b9e-0000-4000-8000-000000000001",
+      }),
+    ).toString("base64url"),
+  ])("refuses the cursor %s with 400", async (cursor) => {
+    const result = await call(admin, "admin.listUsers", { limit: 5, cursor });
 
-      expect(result.status).toBe(400);
-      expect(result.body).toMatchObject({ error: { code: ERROR_CODES.invalidCursor } });
-    },
-  );
+    expect(result.status).toBe(400);
+    expect(result.body).toMatchObject({ error: { code: ERROR_CODES.invalidCursor } });
+  });
 
   it("pages through every user newest first, with no user repeated or skipped when times are equal", async () => {
     // Twelve users created in one statement share one created_at, so only the id orders them.

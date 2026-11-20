@@ -19,9 +19,13 @@ export function encodeUserCursor(cursor: UserCursor): string {
   return Buffer.from(JSON.stringify({ at: cursor.createdAt, id: cursor.id })).toString("base64url");
 }
 
+/**
+ * Whether `value` is a real instant Postgres can compare with: a calendar date and time in years
+ * 1 to 9999. JavaScript accepts year 0, which Postgres's calendar does not have.
+ */
 function isRealTime(value: string): boolean {
   const parts = TIME.exec(value);
-  if (parts === null) return false;
+  if (parts === null || parts[1] === "0000") return false;
   const date = new Date(`${value.slice(0, 19)}Z`);
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 19) === value.slice(0, 19);
 }
