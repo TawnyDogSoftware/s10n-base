@@ -47,6 +47,9 @@ const DISABLED_AUTH_PATHS: readonly string[] = ["/admin/remove-user"];
 const VERIFY_EMAIL_PAGE = "/verify-email";
 const RESET_PASSWORD_PAGE = "/reset-password";
 
+/** The web pages whose URL carries a token from an email link. */
+export const TOKEN_PAGES: ReadonlySet<string> = new Set([VERIFY_EMAIL_PAGE, RESET_PASSWORD_PAGE]);
+
 /**
  * A link to one of the web app's pages under `APP_URL`, carrying the token. The page calls Better
  * Auth itself, so the link never points at `/api/auth` and works the same for a project whose

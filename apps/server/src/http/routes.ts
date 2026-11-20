@@ -12,6 +12,7 @@ import { Schema } from "effect";
 import { BootstrapConfig, ERROR_CODES, RpcRequest } from "@s10n-base/contracts";
 
 import type { AppAuth } from "../auth/instance";
+import { TOKEN_PAGES } from "../auth/options";
 import type { ServerConfig } from "../config";
 import type { Logger } from "../observability/logger";
 import type { RpcDispatcher } from "../rpc/dispatcher";
@@ -153,6 +154,8 @@ async function serveWebApp(state: RequestState, context: HttpContext): Promise<b
       : null);
   if (file === null) return false;
   if (file.isHtml) response.setHeader("Content-Security-Policy", HTML_CONTENT_SECURITY_POLICY);
+  // The page's URL carries an email link's token: no request it makes names it in a Referer.
+  if (TOKEN_PAGES.has(url.pathname)) response.setHeader("Referrer-Policy", "no-referrer");
   await sendStaticFile(request.method, response, file);
   return true;
 }

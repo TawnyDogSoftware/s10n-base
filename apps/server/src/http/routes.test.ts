@@ -517,6 +517,28 @@ describe("the web app", () => {
     expect(response.headers.get("cache-control")).toBe("no-cache");
   });
 
+  it.each(["/verify-email", "/reset-password"])(
+    "sends no Referer from %s, whose URL carries a token",
+    async (page) => {
+      const base = await start();
+
+      const response = await fetch(`${base}${page}?token=secret-token`, {
+        headers: { accept: "text/html" },
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    },
+  );
+
+  it("keeps the default referrer policy on other pages", async () => {
+    const base = await start();
+
+    const response = await fetch(`${base}/profile`, { headers: { accept: "text/html" } });
+
+    expect(response.headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
+  });
+
   it("serves hashed assets as immutable, without a CSP", async () => {
     const base = await start();
 
