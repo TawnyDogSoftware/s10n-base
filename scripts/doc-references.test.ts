@@ -11,10 +11,14 @@ const tracked = execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" 
   .split("\n")
   .filter((file) => file !== "" && existsSync(path.join(root, file)));
 
-/** The docs a reader follows, outside plans/ (a plan records what was true when it was built). */
+/**
+ * The docs a reader follows, and the changelog. Not the plans: a plan records what was true when
+ * it was built.
+ */
 const DOCS = [
   ...tracked.filter((file) => /^(?:README|AGENTS)\.md$|^docs\/.*\.md$/.test(file)),
   "plans/README.md",
+  "CHANGELOG.md",
   ".claude/implement-plan.md",
 ].toSorted((a, b) => a.localeCompare(b));
 

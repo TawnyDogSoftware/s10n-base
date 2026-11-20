@@ -1,118 +1,129 @@
 # Changelog
 
-Scaffold-level changes to S10N Base, newest first. Projects created from an earlier version of the scaffold do not receive these changes automatically; use this file to decide what to port.
+Scaffold-level changes to S10N Base, newest first.
 
-## Unreleased
+**How a project uses this file.** A project made from the base is a copy, not a fork: nothing here reaches it by merging ([decision 009](docs/adr/009-a-template-not-an-upstream.md)). Note the base commit your project started from; the entries after it are what the base has changed since. Read them, decide what is worth having, and port it by hand, following the plan or doc each entry points to. Entries say what changed and why, and call out what a project on the earlier scaffold has to change.
 
-### Added: the deployment kit (one container image, two database roles, a deployment guide)
+Versions and dates are set by the owner when a release is tagged. Until then everything is under "Unreleased".
 
-A project can build one image and run it anywhere that runs containers. Details and reasons are in `plans/008-deployment-kit.md`; how to deploy is in `docs/deployment.md`, which names no host.
+## Unreleased: the hosted starter rework
 
-- **The image:** `docker/Dockerfile`, built from the repository root (`bun run docker:build`). Bases pinned by tag and digest: the official bun image for building and the Node slim image to run on, at the versions in `packageManager` and `.nvmrc`, checked during the build. It holds the bundled server, the built web app and only the server's run-time packages (63, copied out of a frozen production install in bun's own layout by `scripts/container/runtime-dependencies.ts`), and no sources, tests, `.env` files, development tools, mobile app, docs or package manager. It runs as `node`, needs no writable filesystem, stops on `SIGTERM`, has a Node `HEALTHCHECK` on `/health`, and takes `APP_VERSION` as a build argument. `.dockerignore` lets in only the build's inputs. Three commands: the server, `apps/server/dist/migrate.mjs up` and `apps/server/dist/set-role.mjs`.
-- **Two database roles:** `migrate` connects with `MIGRATION_DATABASE_URL` when set (the server never reads it), and with `DATABASE_APP_ROLE` set it grants that role row access on the schema's tables, now and for tables later migrations create, and nothing that changes the schema. Development and CI keep one role.
-- **Changed: the server refuses to start on a database that misses a migration** in its build (`MigrationsPendingError`, exit 1). Better Auth checks its schema only on the first auth request, and kept failing after a later migration until a restart.
-- **`APP_VERSION`:** `/config` reports it when set, and the package version otherwise.
-- **Checks:** `bun run docker:smoke` runs the image in production mode against the local Postgres: migrate as the owner, the server as the app role with a read-only root filesystem, the health check, security headers, version, a bad config refused without printing a secret, the image's files, and exit 0 on `SIGTERM`. CI runs it in a fourth job, "Container image", with the build cached in the workflow's own cache.
-- **Versions stay single-sourced:** `scripts/version-sources.test.ts` also fails when the Dockerfile's Node or bun tag disagrees with `.nvmrc` or `packageManager`; the daily dependency update moves the tags and their digests with the versions; Dependabot's new `docker` entry refreshes digests only.
-- **Docs:** `docs/deployment.md` (environment tables tested against the config module, the two roles, migrating before a rollout, health and shutdown, proxies, several instances, email, the first admin, what is not included); README and `docs/setup.md` gain the two commands; `.env.example` lists the three new optional variables.
-- No dependency was added.
+The scaffold was a local desktop app in disguise: an Electron host, SQLite, settings and logs in the home directory, no auth and wildcard CORS. Every project built on it spent its first days undoing that and adding the same things. This release does that work once, in the base. It is now a hosted, multi-user starter: a Node server on Postgres with Better Auth, a React web app and an Expo mobile app on shared packages, with quality gates, CI, a container image, written conventions and a rename script. The plan and its ten decisions are in [plans/000-hosted-starter-rework.md](plans/000-hosted-starter-rework.md) and [docs/adr/](docs/adr/README.md); each area below names the plan with the details.
 
-### Added: quality gates (`bun run agent:check`), 100% coverage and browser journeys
+### For a project on the earlier scaffold
 
-Every change now passes the same gates locally and in CI, with no way to switch one off from a comment. Details and reasons are in `plans/007-quality-gates.md`; each gate, how to run it alone and how to fix a failure are in `docs/quality.md`.
+What changed under existing names, so a port does not miss it:
 
-- **One command:** `bun run agent:check` runs the directive check, oxlint, ESLint, the format check, typecheck, boundaries, dead code, the coverage exclusion check, coverage and the audit, in order, stopping at the first failure. CI's first job runs it instead of its own list of steps (a test checks), and a third CI job runs the browser journeys.
-- **Lint:** `.oxlintrc.json` (correctness, suspicious and perf as errors, React hook rules, jsx-a11y, import and Vitest plugins, `--deny-warnings`), and `eslint.config.mjs` with `typescript-eslint` strict and `strictTypeChecked`, sonarjs, the size limits (complexity 10, cognitive complexity 15, depth 3, 4 parameters, no nested ternary) and `i18next/no-literal-string` in the web and mobile components. Every allowance is in the config with its reason. `bun run lint:directives` fails on any `eslint-disable`, `oxlint-disable`, `@ts-ignore`, `@ts-nocheck`, coverage pragma, or `@ts-expect-error` outside a `*.types.test.ts` file; there are none. `lint:eslint` generates Expo's typed routes first, since the result depended on gitignored files.
-- **Boundaries and dead code:** `.dependency-cruiser.cjs` (no cycles, no build output, packages never import apps, apps never import each other, and which packages each app and package may use), with a test that makes each rule fire; `knip.jsonc`, a normal and a production pass. Every import must resolve, so a workspace package an app does not declare cannot slip past the rules. knip checks package entry files too (`includeEntryExports`); it removed 52 exports nothing used, among them `PUBLIC_META`, `SESSION_PATH` and `useSessionClient` from `@s10n-base/client/session` (docs/client.md says when to export `PUBLIC_META` again), the web app's unused `effect` dependency and `services.origin`, and `AuthFailure`'s export.
-- **Coverage:** one merged v8 report over `apps/*/src`, `packages/*/src` and `scripts`, at 100% for lines, branches, functions and statements, with the database stopped. The 12 excluded patterns (tests, test support, type declarations, generated database types, and entry points) are listed with reasons in `scripts/quality/coverage-exclusions.ts`, and `bun run coverage:exclusions` fails when the config differs or an excluded entry point holds more than wiring. Server code that queries the database is unit-tested against a scripted Kysely driver (`apps/server/src/test/scripted-db.ts`).
-- **Entry points:** every script now runs from a one-line `*.main.ts` over a tested module (`scripts/dev.main.ts`, `scripts/with-env.main.ts`, `scripts/ses-local/run.main.ts` and the rest); the package.json scripts and CI call the new paths. The web app mounts through `apps/web/src/mount.tsx`, and the server's `bin.ts` passes the process to `nodeRuntime`.
-- **Audit:** `bun run deps:audit` runs `bun audit` against `dependency-audit-triage.json` (id, package, reason, expiry date), failing on an untriaged advisory, an expired acceptance or a stale entry. It is empty: nothing is reported.
-- **Browser journeys:** `bun run test:e2e` builds and runs two Playwright journeys in Chromium against the built server: sign up, confirm by email, sign in and out; and add a passkey with a virtual authenticator, sign in with it and remove it. Each page gets an axe check (serious and critical fail), and any console error, a CSP violation included, fails. No trace, video or screenshot is recorded or uploaded.
-- **Fixed, found by the gates:** the client's email check used a regular expression with super-linear backtracking; seven tests accepted any thrown error rather than the one expected; the web and mobile resend actions rethrew into an unhandled rejection; the theme check's error message printed a stray backslash; four copies of the bare-origin check became `parseBareOrigin` in `packages/shared`; the mobile config left Expo's over-the-air updates on by default (now `updates.enabled: false`); `fetchQuery`, deprecated, became `query()`; the dependency update crashed with an uncaught EPIPE when a command exited without reading its input.
-- **Dependencies (dev):** `eslint` 10.15.0, `@eslint/js` 10.0.1, `typescript-eslint` 8.73.0, `eslint-plugin-sonarjs` 4.2.2, `eslint-plugin-i18next` 6.1.5, `knip` 6.45.1, `dependency-cruiser` 18.8.0, `@playwright/test` 1.65.1 and `@axe-core/playwright` 4.14.0. The `minimatch` override now also covers `eslint-plugin-sonarjs`. vitest stays at 5.1.0.
-
-### Added: the mobile blank slate (Expo app); first boot on a Mac pending
-
-`apps/mobile` is an Expo app with the same signed-in blank slate as the web app. **It was written and tested on Linux and has not been booted on any simulator or device yet**: the first boot on a Mac from a fresh clone is pending, with its checklist in `docs/mobile-first-boot.md`. Details and reasons are in `plans/006-mobile-blank-slate.md`; how to work on it is in `docs/mobile-dev.md`.
-
-- **The app:** Expo SDK 58 (`expo` 58.0.25, React Native 0.88.1, expo-router 58.0.31, `expo-dev-client`), Uniwind 1.13.2 on `packages/theme`, every string from `packages/i18n` in the device's language. Screens: sign up, sign in, forgot password, home, profile (name, email, sign-out) and the admin user list; no passkeys on mobile. Email links open the web app in the browser, and the app says to come back and sign in.
-- **Auth:** Better Auth's Expo client keeps the session cookie in SecureStore under a key prefix derived from the API origin, and the RPC and session clients from `packages/client` send it themselves (`credentials: "omit"`). TanStack Query's focus and online managers follow `AppState` and `expo-network`, so a session ended elsewhere is noticed when the app returns to the foreground. A sign-out always signs the phone out, even when its answer is lost, because the Expo client forgets the cookie before it sends.
-- **Config:** `app.config.ts` over a tested `buildExpoConfig`: `APP_VARIANT` picks name, URL scheme and bundle identifier from `packages/shared/src/app-variants.ts`, which gained placeholder bundle identifiers under `com.example`; `EXPO_PUBLIC_API_BASE_URL` must be a bare origin, https and present for preview and production (checked at config time); optional `EAS_PROJECT_ID`; light and dark; typed routes. `eas.json` has development, development-simulator, preview and production profiles, with no update channels.
-- **Shared code:** the auth cookie prefix moved to `packages/shared/src/auth.ts`, read by the server and the app. The auth result helpers, form validation, error-message keys, the form check and the pending guard moved from `apps/web` to `packages/client` (which may now import `packages/i18n`), and the web tests' fake server moved there too, with a cookie mode for the app. `checkFields` no longer reports success when an invalid field is not mounted. `packages/theme` exports its token reader (`./tokens`).
-- **Checks:** `bun run mobile:export` bundles both platforms and `scripts/mobile-bundle/check.ts` checks the source maps (one React, the workspace from source, no test code). CI checks the Expo-managed versions against the installed SDK, and a second job exports, checks the bundle, generates the native projects and checks their identifiers.
-- **Dependencies:** the Expo family through `expo install` (against the installed SDK's own version map, so the 3-day rule holds), `uniwind`, and `react-native-web` for the tests. The lockfile went from 375 to 956 packages. New override `minimatch` `^11.0.8` for GHSA-g3hv-75wg-m249 in Expo's fingerprint tool; `bun audit` is clean.
-- **Fixed: active sessions are renewed.** `GET /api/app-auth/session` now passes on the session cookie Better Auth renews once a session is a day old; before, an active user was signed out seven days after signing in. The mobile app stores the renewal in SecureStore. Also fixed: a connection that drops while an auth answer's body is read counts as a lost answer (`NetworkError`), not a failure.
-- **Not in this phase:** mobile passkeys (findings in `docs/mobile-dev.md`), universal and app links, over-the-air updates, store submission, and device end-to-end tests.
-
-### Added: the web blank slate (auth screens, profile, admin user list) and the client, theme and i18n packages
-
-A new project starts with a working web app: sign up, verify the email, sign in with a password or a passkey, reset a password, a signed-in home, a profile page and an admin-only user list. Details and reasons are in `plans/005-web-blank-slate.md`; how the client state works is in `docs/client.md`, translations in `docs/i18n.md`.
-
-- **RPC methods:** `profile.get` and `profile.update` (session; a trimmed name of 1 to 100 characters, saved through Better Auth's adapter so the session shows it at once) and `admin.listUsers` (admin role; newest first, keyset pagination on `(created_at, id)` with an opaque cursor, 1 to 100 per page). New error code `rpc.invalid_cursor`. `rpcHandlers` became `createRpcHandlers({db, auth})`.
-- **Email links** open the web app's `/verify-email?token=…` and `/reset-password?token=…` pages instead of Better Auth's routes, and Better Auth's `GET /reset-password/:token` is no longer exposed. The email text moved from `apps/server/src/auth/email/text.ts` (deleted) to `packages/i18n`.
-- **`packages/client`:** `createRpcClient({baseUrl})` with an explicit origin (relative URLs are gone) and three failure kinds, `RpcError`, `DecodeError` and `NetworkError` (no answer: the outcome is unknown); a session client and `useSession()`; and a session gate that keys protected queries by user, purges every non-public query and mutation when the user changes, discards answers that arrive for a previous user, re-reads the session after `auth.unauthenticated`, and settles security actions by re-reading the session, even offline.
-- **`packages/theme`:** one Tailwind 4 token file (semantic colours for light and dark, radii, font stack) in the format Uniwind requires, with Tailwind's default palette cleared and a test that checks WCAG AA contrast for every pair the components use.
-- **`packages/i18n`:** i18next 27.1.3 and react-i18next 18.0.2, English catalogs in six namespaces with typed keys (a mistyped key fails `typecheck`), `createTranslator` for emails, `createReactI18n` for the apps, `resolveLocale`, and a message for every `AppError` code (a test checks).
-- **Web app:** `VITE_API_BASE_URL` (optional bare origin, checked at build), Better Auth's browser client with the passkey plugin, `beforeLoad` guards with a same-origin redirect check, search params that stay strings, accessible forms, and a "could not confirm" state for every security action whose answer is lost. `apps/web/src/lib/http.ts` and `apps/web/src/rpc/` are gone, and the footer no longer shows the version from `/config` (the endpoint remains).
-- **Dependencies:** `i18next` and `react-i18next` (new); `apps/web` also depends on `better-auth` and `@better-auth/passkey` at the catalog's 1.7.25. The lockfile gained three third-party packages: `i18next`, `react-i18next` and its dependency `html-parse-stringify`.
-- A real headless browser ran the whole journey once against the built server with the local inbox, passkeys included through a virtual authenticator, with no CSP violation.
-
-### Added: auth (Better Auth, our own SES sender, a local inbox)
-
-Users can sign up, verify their email, sign in, reset their password and add passkeys, over HTTP; there is no UI yet. Details and reasons are in `plans/004-auth.md`; how it works is in `docs/auth.md`.
-
-- **Better Auth 1.7.25** with `@better-auth/expo` and `@better-auth/passkey` at the same exact version, and `better-call` 1.4.5 declared directly (a test checks it equals the version `better-auth` depends on). Email and password with verification required, the `expo` plugin, the `admin` plugin (roles `user` and `admin`, the stock `/admin/remove-user` off) and passkeys. Telemetry off.
-- **Options** are built by one tested function (`apps/server/src/auth/options.ts`): `ba_*` tables with snake_case columns and UUID ids, both kinds of email link valid for one hour, sessions revoked on password reset, rate limits on in every environment and kept in the database, cookies prefixed `s10n-base.` and `Secure` under https, trusted origins `APP_URL`, the app variant's URL scheme and (development only) `exp://`. Better Auth's origin and CSRF checks are set on explicitly, since Better Auth turns them off when `NODE_ENV` is `test`.
-- **Migration `001_auth`:** the six tables, with foreign keys that cascade from the user. A live test compares them with Better Auth's schema for our options, both ways.
-- **`/api/auth/*`** goes through a route guard matched with Better Auth's own router, admitting only the routes `apps/server/src/auth/allowed-routes.ts` exposes (404 JSON otherwise, before the body is read), then a Node-to-Fetch bridge that builds the URL from `APP_URL`, applies the body limit, passes the resolved client address in an internal header and keeps every `Set-Cookie`. A test fails when Better Auth serves a route nobody decided about.
-- **`GET /api/app-auth/session`** returns the app-owned `AppSession` (new in `packages/contracts`), or `null`.
-- **RPC:** the caller comes from the session, looked up only for methods that need it; handlers call `context.getActor()` (this replaces `context.actor`). `/rpc` and `/api/app-auth/*` refuse a request whose `Origin` is not trusted (403).
-- **Email:** our own Amazon SES v2 client (a SigV4 signer verified against the AWS test suite, one `fetch` per email, retries only when SES certainly did not accept it, typed errors without secrets) behind `AuthEmailSender`. No AWS SDK.
-- **Local inbox:** `bun run ses:local`, our own capture server, which `bun dev` also starts. It checks each request's signature, keeps the last 200 emails, and serves an inbox at `http://127.0.0.1:8005/` and the emails as JSON at `/store`. It replaces the SES emulator package.
-- **New variables:** `BETTER_AUTH_SECRET`, `APP_VARIANT`, `EMAIL_FROM`, `SUPPORT_EMAIL`, `SES_REGION`, `SES_ENDPOINT`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`. Production refuses the example secret, `SES_ENDPOINT` and the placeholder keys, and requires `APP_VARIANT`.
-- **`bun run auth:set-role <email> <role>`** (and `dist/set-role.mjs`) makes the first admin.
-- **`packages/shared/app-variants`:** the mobile app variants' URL schemes and display names, with placeholder values.
-- **Formatter:** the generated database types and the SigV4 test-suite fixtures are excluded from oxfmt, so they stay exactly as generated or published.
-
-### Added: hosted server core (Postgres, config, hardened HTTP, graceful shutdown, RPC auth levels)
-
-The server can now run as a multi-instance hosted service, with no auth yet. Details and reasons are in `plans/003-hosted-server-core.md`; setup is in `docs/setup.md`.
-
-- **Config:** one module built on Effect `Config` reads `NODE_ENV`, `APP_URL` (the single public origin; `https` in production), `HOST` (default `0.0.0.0`), `PORT`, `DATABASE_URL`, `DATABASE_POOL_MAX`, `TRUSTED_PROXY_HOPS`, `REQUEST_BODY_LIMIT_BYTES`, `SHUTDOWN_TIMEOUT_MS` and `LOG_LEVEL`. Startup fails with one log line listing every invalid or missing variable; a value of `DATABASE_URL` is never printed. `.env.example` lists them all.
-- **Removed:** `S10N_BASE_PORT`; use `PORT`. The server's default bind address is now `0.0.0.0` (it was `127.0.0.1`).
-- **Changed:** `GET /config` returns `APP_URL`'s origin as `apiBaseUrl`; it no longer reads the `Host` or `X-Forwarded-Proto` headers.
-- **Postgres:** `pg` 8.23.1 and Kysely 0.29.9, a pool with timeouts and an error listener, and generated database types (`kysely-codegen` 0.20.0, `bun run db:generate`). Migrations are numbered TypeScript files in an explicit list (empty for now), run by a separate entry point (`apps/server/dist/migrate.mjs`, `bun run db:migrate`) under an advisory lock. The server never migrates on startup.
-- **HTTP:** CORS allows only `APP_URL`'s origin; request bodies are limited (413) and `/rpc` requires JSON (415); every response has an `X-Request-Id` and security headers (a CSP on HTML, HSTS on https); a 500 never contains the error's message; unknown API paths answer 404 JSON and a wrong method 405; the client address honours `X-Forwarded-For` only behind `TRUSTED_PROXY_HOPS` proxies; static files are streamed with a containment check that no longer accepts a sibling directory with the same name prefix.
-- **Health:** `GET /health` is liveness only. New `GET /ready` checks the database and answers 503 while shutting down.
-- **Lifecycle:** config, logger, database and HTTP server are Effect layers. SIGTERM or SIGINT stops accepting connections, lets requests in flight finish for up to `SHUTDOWN_TIMEOUT_MS`, then closes the pool. Exit code 0 after a clean stop, 1 after a forced one or a failed startup.
-- **Logging:** one JSON object per line on stdout at every level (`at`, `level`, `message`, fields), filtered by `LOG_LEVEL`, with one access-log line per request.
-- **RPC:** `defineRpc` takes one object with a required `auth` (`"public"`, `"session"` or `{ role }`), and contracts carry separate encoded and decoded types. A dispatcher checks the method (404), the caller (401 or 403) before the payload (400), and encodes the result. Error codes are constants in `ERROR_CODES`. A test fails when a contract has no handler.
-- **Removed from `packages/shared`:** `json.ts` (`decodeUnknown`, `encode`, `safeJsonParse`), which had no caller.
-- **Local development:** `docker-compose.local.yml` runs Postgres 18.7 on `127.0.0.1:54320`. `bun dev` starts it, migrates, and runs the server and web app; the Vite dev server listens on `APP_URL`.
-- **Tests:** a live-Postgres lane (`*.live.test.ts`, `bun run test:live`) with a throwaway schema per suite, a guard that `TEST_DATABASE_URL` names a `_test` database, and `bun run db:test:sweep`. CI runs it against a Postgres service, and the smoke test also checks `/ready`, the web app and a clean exit on SIGTERM.
-
-### Changed: toolchain and packages, CI, and daily dependency updates
-
-Every package and tool moved to the newest stable release that is at least 3 days old, and that rule is now enforced. Details and reasons are in `plans/002-toolchain-upgrade-and-ci.md`.
-
-- **Versions:** Node 26.13.1 (was `>=24`), bun 1.4.4 (was 1.3.9), TypeScript ~6.0.3 (from ^5.9.3; held below 6.1 for typescript-eslint), turbo 2.11.11, effect 4.1.4 stable (from 4.0.0-beta.45), Vite 8.3.8 with `@vitejs/plugin-react` 6.3.0, Vitest 5.1.0 with `@vitest/coverage-v8` 5.1.0, tsdown 0.23.7, jsdom 31.0.1, `@testing-library/jest-dom` 7.0.1 (with `@testing-library/dom` 10.4.2 as its peer), Tailwind 4.3.5, TanStack Router 1.170.46 and Query 5.107.1, React 19.3.0 exactly (held for Expo SDK 58), oxlint 1.93.0 and oxfmt 0.78.0 exactly. The lockfile advisories in `ws`, vite, vitest, turbo and effect are gone, and `bun audit` reports nothing.
-- **One place per version:** `.nvmrc` holds Node and `packageManager` holds bun; `engines` and `@types/node` follow, and a test fails if they disagree. Every catalog entry, including oxlint and oxfmt, is in the root catalog.
-- **3-day rule:** `bunfig.toml` sets `minimumReleaseAge`. How to take a bug-fix release early is in `docs/dependencies.md`.
-- **The built server starts:** `apps/server/tsdown.config.ts` bundles `@s10n-base/*` packages, which export TypeScript source (`deps.alwaysBundle`), and no longer emits declarations. Before this, `node apps/server/dist/bin.mjs` failed with `ERR_MODULE_NOT_FOUND`. `bun run smoke` starts the built server and checks `/health`.
-- **Tests:** `vitest.workspace.ts` is replaced by a root `vitest.config.ts` with `test.projects`, and `bun run test` runs it. Vitest 5 clears mocks before each test and fails on un-awaited async assertions. `packages/shared` has tests and no longer passes with none. The web test setup stubs `window.scrollTo`.
-- **CI:** `.github/workflows/ci.yml` runs a frozen install, format check, lint, typecheck, tests, build and the smoke test on every pull request and push to `main`. Dependabot updates GitHub Actions weekly with a 3-day cooldown.
-- **Daily dependency updates:** `.github/workflows/dependency-updates.yml` opens one PR a day with every update the rule allows, including bun and Node, except packages held in `dependency-holds.json`. It needs a GitHub App and two secrets; see `docs/dependencies.md`. `bun run deps:update --dry-run` previews it.
+- **Removed environment variables:** `S10N_BASE_HOME`, `S10N_BASE_SERVER_URL`, `VITE_DEV_SERVER_URL` and `S10N_BASE_PORT` (use `PORT`). The server now requires `APP_URL`, `DATABASE_URL`, `BETTER_AUTH_SECRET`, the email addresses and the SES settings, and binds to `0.0.0.0` by default (it was `127.0.0.1`).
+- **`GET /config`** returns `APP_URL`'s origin as `apiBaseUrl` and no longer reads the `Host` or `X-Forwarded-Proto` headers; `websocketUrl` and `desktopHost` are gone from `BootstrapConfig`.
+- **`POST /rpc`** answers 400 `rpc.invalid_request` for a body that is not a `{method, payload}` envelope (invalid JSON was a 500), requires `application/json` (415), and checks each method's auth level (401 or 403) before decoding its payload (400 `rpc.invalid_payload`). `defineRpc` takes one object with a required `auth`, and handlers read the caller with `await context.getActor()`.
+- **The web client** takes an explicit base URL; relative URLs, `apps/web/src/lib/http.ts` and `apps/web/src/rpc/` are gone.
+- **Removed:** the desktop app, SQLite, the WebSocket hub and `/ws`, the file logger, `settings.json`, the demo domain, `zustand`, `packages/shared/src/json.ts`, `CUSTOMIZATION_GUIDE.md` and `EXTRACTION_REPORT.md`.
 
 ### Removed: the desktop and local-first layer
 
-The scaffold no longer assumes it runs as a local desktop app. Nothing replaces these yet; Postgres, auth and a new example domain come in later changes (see `plans/000-hosted-starter-rework.md`).
+[plans/001-strip-desktop-and-local-first.md](plans/001-strip-desktop-and-local-first.md)
 
 - **Desktop app:** `apps/desktop` (Electron), `scripts/wait-for-http.mjs`, the `dev:desktop` and `start:desktop` scripts, and every `dist-electron` entry in `.gitignore`, `.oxlintrc.json`, `turbo.json` and the `clean` script.
-- **Local data:** the SQLite database (`better-sqlite3`), the `settings.json` file, the file logger, and the `S10N_BASE_HOME` runtime directory with its `data/` and `logs/` folders. The server no longer writes any file; logs are JSON lines on stdout.
+- **Local data:** the SQLite database (`better-sqlite3`), the `settings.json` file, the file logger, and the `S10N_BASE_HOME` runtime directory with its `data/` and `logs/` folders. The server writes no file; logs are JSON lines on stdout.
 - **WebSocket:** the activity hub, the `/ws` endpoint and its Vite proxy entry, and the `ws` dependency.
-- **Demo domain:** the projects, notes, settings and activity contracts, services, RPC methods, web routes and stores, and `zustand`. `rpcContracts` is now an empty registry.
-- **Contracts:** `DeleteResult`, `RPC_METHODS`, `EmptyPayload`, and the `websocketUrl` and `desktopHost` fields of `BootstrapConfig`. `defineRpc` is now exported, and a new `RpcRequest` schema describes the `{method, payload}` envelope.
-- **Server:** the `bin` entry in `apps/server/package.json`. `POST /rpc` now answers 400 `rpc.invalid_request` for a body that is not a valid envelope (it was a 500 for invalid JSON), and 404 `rpc.method_not_found` for any method.
-- **Environment variables:** `S10N_BASE_HOME`, `S10N_BASE_SERVER_URL` and `VITE_DEV_SERVER_URL`.
-- **Build info:** the committed `tsconfig.tsbuildinfo` files; `*.tsbuildinfo` is now ignored.
-- **Docs:** `EXTRACTION_REPORT.md`, and the desktop, settings, WebSocket, runtime-files and example-domain sections of the README and customization guide.
+- **Demo domain:** the projects, notes, settings and activity contracts, services, RPC methods, web routes and stores, and `zustand`.
+- **Contracts:** `DeleteResult`, `RPC_METHODS`, `EmptyPayload`, and `BootstrapConfig`'s `websocketUrl` and `desktopHost`. A new `RpcRequest` schema describes the `{method, payload}` envelope.
+- **Server:** the `bin` entry in `apps/server/package.json`.
+- **Build info:** the committed `tsconfig.tsbuildinfo` files; `*.tsbuildinfo` is ignored.
+
+### Changed: toolchain, packages and the 3-day rule
+
+[plans/002-toolchain-upgrade-and-ci.md](plans/002-toolchain-upgrade-and-ci.md), [docs/dependencies.md](docs/dependencies.md), [decision 006](docs/adr/006-toolchain.md)
+
+- **Versions:** Node 26.13.1 (was `>=24`), bun 1.4.4 (was 1.3.9), TypeScript ~6.0.3 (held below 6.1 for typescript-eslint), turbo 2.11.11, effect 4.1.4 stable (from 4.0.0-beta.45), Vite 8.3.8 with `@vitejs/plugin-react` 6.3.0, Vitest 5.1.0 with `@vitest/coverage-v8` 5.1.0, tsdown 0.23.7, jsdom 31.0.1, `@testing-library/jest-dom` 7.0.1 (with `@testing-library/dom` 10.4.2), Tailwind 4.3.5, TanStack Router 1.170.46 and Query 5.107.1, React 19.3.0 exactly (held for Expo SDK 58), oxlint 1.93.0 and oxfmt 0.78.0 exactly. The lockfile advisories in `ws`, vite, vitest, turbo and effect are gone.
+- **One place per version:** `.nvmrc` holds Node and `packageManager` holds bun; `engines`, `@types/node`, CI and the Dockerfile follow, and a test fails when they disagree. Every package version is in the root catalog.
+- **The 3-day rule:** `bunfig.toml` sets `minimumReleaseAge`, so every install takes the newest release at least three days old. `dependency-holds.json` lists the packages held back, each with its reason.
+- **Daily updates:** `.github/workflows/dependency-updates.yml` opens one pull request a day with every update the rule allows, including bun, Node and the Dockerfile's base images, and supersedes the previous one. It needs a GitHub App and two secrets (`DEPS_UPDATE_APP_CLIENT_ID`, `DEPS_UPDATE_APP_PRIVATE_KEY`); `bun run deps:update --dry-run` previews it. Dependabot updates GitHub Actions and refreshes image digests, with the same cooldown.
+- **Fixed: the built server starts.** `apps/server/tsdown.config.ts` bundles the workspace packages, which export TypeScript source; before, `node apps/server/dist/bin.mjs` failed with `ERR_MODULE_NOT_FOUND`.
+- **Tests:** a root `vitest.config.ts` with `test.projects` replaces `vitest.workspace.ts`, and `packages/shared` has tests.
+- **Packages added over the rework**, each the newest the rule allowed: `pg`, `kysely` and `kysely-codegen` (server); `better-auth`, `@better-auth/expo`, `@better-auth/passkey` and `better-call` (auth); `i18next` 27.1.3 and `react-i18next` 18.0.2; the Expo SDK 58 family through `expo install`, `uniwind` 1.13.2 and `react-native-web` (mobile); and, for development only, `eslint` 10.15.0, `@eslint/js`, `typescript-eslint` 8.73.0, `eslint-plugin-sonarjs` 4.2.2, `eslint-plugin-i18next`, `knip`, `dependency-cruiser`, `@playwright/test` 1.65.1 and `@axe-core/playwright`. No AWS SDK, SES emulator or mail library.
+- **Overrides:** `effect`, so one copy serves every workspace; `minimatch` `^11.0.8`, for an advisory in the version Expo's fingerprint tool and sonarjs ask for. `bun audit` reports nothing.
+
+### Added: the hosted server core
+
+[plans/003-hosted-server-core.md](plans/003-hosted-server-core.md), [docs/setup.md](docs/setup.md), [decision 001](docs/adr/001-effect-core-on-the-server.md)
+
+- **Config:** one module built on Effect `Config` validates every variable at startup and reports every problem in one log line, never printing a secret. `.env.example` lists them all with development values.
+- **Postgres:** `pg` and Kysely 0.29, a pool with timeouts and an error listener, generated database types (`kysely-codegen`, `bun run db:generate`). Migrations are numbered TypeScript files in an explicit list, run by a separate entry point (`apps/server/dist/migrate.mjs`, `bun run db:migrate`) under an advisory lock. The server never migrates, and refuses to start while a migration in its build is pending.
+- **HTTP:** CORS only for `APP_URL`'s origin; a request body limit (413) and JSON required on `/rpc` (415); `X-Request-Id` and security headers on every response (a CSP on HTML, HSTS under https); a 500 never contains the error's message; unknown API paths answer 404 JSON and a wrong method 405; the client address honours `X-Forwarded-For` only behind `TRUSTED_PROXY_HOPS` proxies; static files are streamed with a containment check.
+- **Health:** `GET /health` (liveness) and `GET /ready` (the database, and 503 while shutting down).
+- **Lifecycle:** config, logger, database and HTTP server are Effect layers. SIGTERM drains requests for up to `SHUTDOWN_TIMEOUT_MS`, then closes the pool; exit 0 after a clean stop, 1 after a forced one or a failed start.
+- **Logging:** one JSON object per line on stdout, filtered by `LOG_LEVEL`, with an access-log line per request.
+- **RPC:** every method declares an auth level (`"public"`, `"session"` or `{ role }`) that one dispatcher enforces; error codes are constants in `ERROR_CODES`; a test fails when a contract has no handler.
+- **Local development:** `docker-compose.local.yml` runs Postgres 18.7 on `127.0.0.1:54320`; `bun dev` starts it, migrates, and runs the server, the web app and the local inbox.
+- **Tests:** a live-Postgres lane (`*.live.test.ts`, `bun run test:live`) with a throwaway schema per suite and a guard that `TEST_DATABASE_URL` names a `_test` database.
+
+### Added: auth and email
+
+[plans/004-auth.md](plans/004-auth.md), [docs/auth.md](docs/auth.md), decisions [002](docs/adr/002-better-auth-behind-an-allow-list.md) and [003](docs/adr/003-auth-features-on-by-default.md)
+
+- **Better Auth 1.7.25** with `@better-auth/expo` and `@better-auth/passkey` on the same exact version, and `better-call` 1.4.5 declared directly (a test checks it equals the version `better-auth` uses). Email and password with verification, the `expo` plugin, the `admin` plugin (roles `user` and `admin`, the stock remove-user endpoint off) and passkeys. Its origin and CSRF checks are set on explicitly, since Better Auth turns them off when `NODE_ENV` is `test`.
+- **Options** are built by one tested function: `ba_*` tables with snake_case columns and UUID ids, email links valid for one hour, sessions revoked on password reset, rate limits on in every environment and kept in the database, cookies prefixed `s10n-base.` and `Secure` under https.
+- **Migration `001_auth`**, compared with Better Auth's own schema by a live test, both ways.
+- **`/api/auth/*`** passes a route guard matched with Better Auth's own router, admitting only the routes `allowed-routes.ts` exposes, then a Node-to-Fetch bridge. A test fails when Better Auth serves a route nobody decided about.
+- **`GET /api/app-auth/session`** returns the app-owned `AppSession`, and passes on the session cookie Better Auth renews once a session is a day old. `/rpc` and `/api/app-auth/*` refuse an untrusted `Origin` (403).
+- **Email:** our own Amazon SES v2 client (a SigV4 signer verified against the AWS test suite, retries only when SES certainly did not accept the email, typed errors without secrets) behind `AuthEmailSender`. No AWS SDK.
+- **Local inbox:** `bun run ses:local`, our own capture server, which `bun dev` starts: it checks each request's signature, keeps the last 200 emails, and serves an inbox at `http://127.0.0.1:8005/` and the emails as JSON at `/store`.
+- **`bun run auth:set-role <email> <role>`** (and `dist/set-role.mjs` in the image) makes the first admin.
+
+### Added: the web blank slate and the shared client, theme and i18n packages
+
+[plans/005-web-blank-slate.md](plans/005-web-blank-slate.md), [docs/client.md](docs/client.md), [docs/i18n.md](docs/i18n.md), decisions [007](docs/adr/007-uniwind-and-a-shared-theme.md) and [008](docs/adr/008-example-domain.md)
+
+- **Screens:** sign up, confirm the email, sign in with a password or a passkey, reset a password, a signed-in home, a profile page with passkey management, and an admin-only user list. Email links open these pages.
+- **RPC methods:** `profile.get`, `profile.update` and `admin.listUsers` (admin role, keyset pagination with an opaque cursor; new error code `rpc.invalid_cursor`).
+- **`packages/client`:** `createRpcClient({baseUrl})` with three failure kinds (`RpcError`, `DecodeError`, and `NetworkError`: no answer, outcome unknown), a session client, and a session gate that keys protected queries by user, purges cached data when the user changes, discards late answers, and settles security actions by re-reading the session.
+- **`packages/theme`:** one Tailwind 4 token file for light and dark, in the format Uniwind requires, with a WCAG AA contrast test.
+- **`packages/i18n`:** i18next with typed keys (a mistyped key fails `typecheck`), English catalogs in six namespaces, and a message for every error code.
+- **Web app:** `VITE_API_BASE_URL` (optional, checked at build), `beforeLoad` guards with a same-origin redirect check, search params that stay strings, accessible forms, and a "could not confirm" state for every security action whose answer is lost.
+
+### Added: the mobile blank slate (first boot on a Mac pending)
+
+[plans/006-mobile-blank-slate.md](plans/006-mobile-blank-slate.md), [docs/mobile-dev.md](docs/mobile-dev.md)
+
+**Written and tested on Linux; it has not been booted on any simulator or device.** The first boot on a Mac from a fresh clone is pending, with its checklist in [docs/mobile-first-boot.md](docs/mobile-first-boot.md).
+
+- **The app:** Expo SDK 58 (React Native 0.88.1, expo-router, `expo-dev-client`), Uniwind on `packages/theme`, every string from `packages/i18n` in the device's language. The web app's screens except passkeys; email links open in the browser.
+- **Auth:** Better Auth's Expo client keeps the session cookie in SecureStore under a key derived from the API origin; the session is re-read when the app returns to the foreground.
+- **Config:** `app.config.ts` over a tested `buildExpoConfig`: `APP_VARIANT` picks name, URL scheme and bundle identifier from `packages/shared/src/app-variants.ts`, the one table the server reads too; `EXPO_PUBLIC_API_BASE_URL` must be https for preview and production. `eas.json` has development, simulator, preview and production profiles.
+- **Shared code:** the auth helpers, form validation, error-message keys and the fake server for screen tests moved from `apps/web` to `packages/client`; the cookie prefix moved to `packages/shared/src/auth.ts`.
+- **Checks:** `bun run mobile:export` bundles both platforms and checks the source maps (one React, the workspace from source, no test code); CI also generates the native projects and checks their identifiers.
+- **Not included:** mobile passkeys (what they would need is in `docs/mobile-dev.md`), universal links, over-the-air updates and store submission.
+
+### Added: quality gates
+
+[plans/007-quality-gates.md](plans/007-quality-gates.md), [docs/quality.md](docs/quality.md), decisions [004](docs/adr/004-lint-stack.md) and [005](docs/adr/005-full-coverage.md)
+
+- **One command:** `bun run agent:check` runs every gate that needs no database or browser, in order, stopping at the first failure. CI's first job runs it.
+- **Lint:** oxlint with correctness, suspicious and performance rules as errors; ESLint with `typescript-eslint` strict and type-checked rules, sonarjs, size limits (complexity 10, cognitive complexity 15, depth 3, 4 parameters, no nested ternary) and `i18next/no-literal-string` in components. No suppression comment is allowed anywhere (`bun run lint:directives`).
+- **Boundaries and dead code:** dependency-cruiser rules for which package may import which, each proved able to fire; knip in a normal and a production pass.
+- **Coverage:** 100% of lines, branches, functions and statements in one merged report, with the database stopped; exclusions are a reviewed list, and an excluded entry point must be wiring only.
+- **Audit:** `bun run deps:audit` compares `bun audit` with `dependency-audit-triage.json`.
+- **Browser journeys:** `bun run test:e2e` runs two Playwright journeys in Chromium against the built server (sign up to sign out; a passkey with a virtual authenticator), with an axe check on every page and no console error allowed. Nothing is recorded or uploaded.
+- **Fixed, found by the gates:** regular expressions with super-linear backtracking, tests that accepted any thrown error, unhandled rejections in the resend actions, Expo's over-the-air updates left on by default, a deprecated TanStack Query call, an uncaught EPIPE in the dependency update, and 52 unused exports.
+
+### Added: the deployment kit
+
+[plans/008-deployment-kit.md](plans/008-deployment-kit.md), [docs/deployment.md](docs/deployment.md), [decision 010](docs/adr/010-no-infrastructure-code.md)
+
+- **The image:** `docker/Dockerfile`, with bases pinned by tag and digest at the versions in `.nvmrc` and `packageManager`. It holds the bundled server, the web build and only the server's run-time packages, runs as `node` on a read-only filesystem, and has three commands: the server, `migrate.mjs up` and `set-role.mjs`. `bun run docker:build` builds it; `bun run docker:smoke` runs it in production mode and checks it.
+- **Two database roles:** `migrate` connects with `MIGRATION_DATABASE_URL` when set and grants `DATABASE_APP_ROLE` row access only, now and for later tables.
+- **`APP_VERSION`:** a build argument `/config` reports.
+- **The guide** names no host: environment tables tested against the config module, roles, migrating before a rollout, health and shutdown, proxies, several instances, email, the first admin.
+
+### Added: conventions, docs and the rename script
+
+[plans/009-conventions-and-docs.md](plans/009-conventions-and-docs.md), [docs/new-project.md](docs/new-project.md)
+
+- **`AGENTS.md`** states the rules for changing the repository, naming the gate that enforces each; `CLAUDE.md` imports it, and `.claude/implement-plan.md` holds the notes for turning a plan into a pull request.
+- **Commit attribution gate:** `bun run commits:attribution`, first in `agent:check`, fails when a commit message on the branch, or in CI the pull request's title or description, credits an AI tool. CI's first job checks out the whole history for it. `bun run hooks:install` runs the same check as a `commit-msg` hook, with no hook manager.
+- **Rename script:** `bun run rename` gives a project its own names in one pass and checks the result; `bun run rename:proof` renames a copy and runs the install, `agent:check`, the build and the mobile export in it, as a fifth CI job. It replaces `CUSTOMIZATION_GUIDE.md`. The lockfile's root workspace now carries the repository's name, and a test that required the placeholder bundle domain now checks the variant table's shape.
+- **Plans and decisions:** `plans/README.md` indexes the plans; `docs/adr/` holds a record for each of the ten decisions of the rework. A test keeps both indexes complete and numbers unique.
+- **Docs:** a new README and `docs/README.md`; `docs/new-project.md`; the existing guides corrected where they no longer matched the code; and a test that every `bun run` command, relative link and anchor in the docs exists.
+- **Fixed:** the dependency update's dry run left an empty temporary directory when git could not make its worktree; Vite warned on every build about an extensionless import in its config.
