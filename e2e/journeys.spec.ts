@@ -137,7 +137,9 @@ test.describe("the admin user list", () => {
     await expectAccessible(page);
 
     await page.getByRole("button", { name: "Load more" }).click();
-    await expect(rows).toHaveCount(2 * ADMIN_USERS_PAGE_SIZE + 1);
+    // The second page holds whatever is left: a full page on a database other runs have used,
+    // only a few users on a fresh one.
+    await expect.poll(() => rows.count()).toBeGreaterThan(ADMIN_USERS_PAGE_SIZE + 1);
     const loaded = await rows.count();
 
     await page.getByRole("navigation").getByRole("link", { name: "Profile" }).click();
