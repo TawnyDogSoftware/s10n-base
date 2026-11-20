@@ -1,6 +1,6 @@
 # 000: Rework s10n-base into a hosted web and mobile starter
 
-> Status: approved by the owner on 2026-11-18. Phase 1 implemented on 2026-11-19 ([001](001-strip-desktop-and-local-first.md)). Phase 2 implemented on 2026-11-19 ([002](002-toolchain-upgrade-and-ci.md)). Phase 3 implemented on 2026-11-19 ([003](003-hosted-server-core.md)). Phase 4 implemented on 2026-11-19 ([004](004-auth.md)). Phase 5 implemented on 2026-11-19 ([005](005-web-blank-slate.md)). Phase 6 implemented on 2026-11-19 ([006](006-mobile-blank-slate.md)), first boot on a Mac pending.
+> Status: approved by the owner on 2026-11-18. Phase 1 implemented on 2026-11-19 ([001](001-strip-desktop-and-local-first.md)). Phase 2 implemented on 2026-11-19 ([002](002-toolchain-upgrade-and-ci.md)). Phase 3 implemented on 2026-11-19 ([003](003-hosted-server-core.md)). Phase 4 implemented on 2026-11-19 ([004](004-auth.md)). Phase 5 implemented on 2026-11-19 ([005](005-web-blank-slate.md)). Phase 6 implemented on 2026-11-19 ([006](006-mobile-blank-slate.md)), first boot on a Mac pending. Phase 7 implemented on 2026-11-19 ([007](007-quality-gates.md)).
 
 Written 2026-11-18 from a review of three private projects built on this base (called Project A, B and C here), of s10n-base itself, of T3 Code upstream, and of the npm registry.
 
@@ -271,6 +271,7 @@ Copy from Project B `[S7]`; it is the only one of our projects with verified nat
 - `eslint-plugin-i18next`'s `no-literal-string` rule, moved here from phase 5 (plan 005, section 2): no hard-coded user-visible string in a component.
 - One Playwright journey (sign up, verify, sign in, sign out) with an axe check, at 1.65.1.
 - `bun audit` step with a triage file, and the `deepmerge` patch and overrides Project B needed `[S2]`, if they still apply.
+- **Phase 7 outcome (2026-11-19):** done as planned, with the departures and the verification recorded in plan 007, section 11. Corrections to this section: there are two Playwright journeys, not one (the passkey journey deferred by plans 004 and 005 is the second); `@playwright/test` is 1.65.1 and `@axe-core/playwright` 4.14.0. None of the `deepmerge` patch and the overrides `[S2]` applies here: `deepmerge`, `nodemailer`, `glob`, `uuid` and `unzipper` are not in the lockfile, `zod` has one copy with no advisory, and `node-forge` 1.4.3 has none; the only override is phase 6's `minimatch`, which `eslint-plugin-sonarjs` 4.2.2 now needs too. vitest stays on 5.1.0, since 5.1.1's coverage fix does not apply to these projects. `eslint-plugin-sonarjs` 4.2.2 also caps TypeScript below 6.1, a second reason for D6. To re-check on the day (section above): knip 6.46.x was still too young (6.45.1 used), dependency-cruiser 18.8.0 became eligible the same day and is used, and typescript-eslint 8.73.0 is used.
 
 ### Phase 8: deployment kit
 
