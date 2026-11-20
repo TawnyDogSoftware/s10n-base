@@ -112,7 +112,7 @@ From Postgres 15 on, the `public` schema of a new database belongs to the databa
 
 Then:
 
-- `migrate` runs with `MIGRATION_DATABASE_URL` set to `app_owner`'s URL and `DATABASE_APP_ROLE=app_runtime`. After applying migrations, every `up` grants `app_runtime` what the server needs: use of the schema, reading and writing rows in its tables, use of its sequences, and the same on tables later migrations create (through default privileges). The migrator's own tables are read-only to it.
+- `migrate` runs with `MIGRATION_DATABASE_URL` set to `app_owner`'s URL and `DATABASE_APP_ROLE=app_runtime`. After applying migrations, every `up` grants `app_runtime` what the server needs: use of the schema, reading and writing rows in its tables, use of its sequences, and the same on tables later migrations create (through default privileges). The migrator's own tables are read-only to it. The grants run in one transaction, so a failure part way grants nothing, and the next `up` grants again.
 - The server runs with `DATABASE_URL` set to `app_runtime`'s URL. It can read and write rows; it cannot create, alter, drop or truncate a table (`apps/server/src/infra/postgres/app-role.live.test.ts` shows each).
 
 With neither variable set, `migrate` and the server share `DATABASE_URL`'s role, as local development does.

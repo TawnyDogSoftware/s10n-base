@@ -158,8 +158,10 @@ export async function withMigrationLock<T>(
  * its tables and to use its sequences, and the same on tables and sequences that later
  * migrations create (default privileges belong to the role running this, the one that migrates).
  * Nothing that changes the schema. The migrator's own tables are read-only to it: the server
- * reads them at startup to refuse a database that misses a migration. Every statement is
- * idempotent, so it runs after every `up`.
+ * reads them at startup to refuse a database that misses a migration, so the grant to write
+ * names every other table rather than granting on all of them and revoking. Every statement runs
+ * in one transaction, so a failure part way grants nothing, and each is idempotent, so it runs
+ * after every `up`.
  */
 async function grantAppRole(
   connection: Kysely<unknown>,
@@ -168,15 +170,33 @@ async function grantAppRole(
 ): Promise<void> {
   const inSchema = sql.id(schema);
   const to = sql.id(role);
-  const statements = [
-    sql`grant usage on schema ${inSchema} to ${to}`,
-    sql`grant select, insert, update, delete on all tables in schema ${inSchema} to ${to}`,
-    sql`grant usage on all sequences in schema ${inSchema} to ${to}`,
-    sql`alter default privileges in schema ${inSchema} grant select, insert, update, delete on tables to ${to}`,
-    sql`alter default privileges in schema ${inSchema} grant usage on sequences to ${to}`,
-    sql`revoke insert, update, delete on ${sql.id(schema, MIGRATION_TABLE)}, ${sql.id(schema, MIGRATION_LOCK_TABLE)} from ${to}`,
-  ];
-  for (const statement of statements) await statement.execute(connection);
+  const bookkeeping = sql.join([
+    sql.id(schema, MIGRATION_TABLE),
+    sql.id(schema, MIGRATION_LOCK_TABLE),
+  ]);
+  await connection.transaction().execute(async (trx) => {
+    // What `all tables in schema` covers: tables, views, materialized views and foreign tables.
+    const tables = await sql<{ name: string }>`
+      select c.relname as name
+      from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = ${schema} and c.relkind in ('r', 'p', 'v', 'm', 'f')
+        and c.relname not in (${MIGRATION_TABLE}, ${MIGRATION_LOCK_TABLE})
+      order by c.relname`.execute(trx);
+    const names = tables.rows.map((row) => sql.id(schema, row.name));
+    const statements = [
+      sql`grant usage on schema ${inSchema} to ${to}`,
+      ...(names.length === 0
+        ? []
+        : [sql`grant select, insert, update, delete on ${sql.join(names)} to ${to}`]),
+      sql`grant select on ${bookkeeping} to ${to}`,
+      // Removes write access a default privilege or an earlier version of this grant gave.
+      sql`revoke insert, update, delete, truncate on ${bookkeeping} from ${to}`,
+      sql`grant usage on all sequences in schema ${inSchema} to ${to}`,
+      sql`alter default privileges in schema ${inSchema} grant select, insert, update, delete on tables to ${to}`,
+      sql`alter default privileges in schema ${inSchema} grant usage on sequences to ${to}`,
+    ];
+    for (const statement of statements) await statement.execute(trx);
+  });
 }
 
 /** Applies every pending migration, then grants the app role. Returns the names applied. */

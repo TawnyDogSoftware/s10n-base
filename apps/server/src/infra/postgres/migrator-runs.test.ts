@@ -41,6 +41,8 @@ const migrations = { "001_widget": table("widget"), "002_gadget": table("gadget"
 function database(applied: readonly string[] = []) {
   return scriptedDb<unknown>((query) => {
     if (query.sql === CURRENT_SCHEMA) return [{ schema: "app" }];
+    if (query.sql.includes("from pg_catalog.pg_class"))
+      return [{ name: "gadget" }, { name: "widget" }];
     return query.sql.startsWith('select "name", "timestamp" from')
       ? applied.map((name, index) => ({ name, timestamp: `2026-11-1${String(index)}` }))
       : [];
@@ -217,11 +219,12 @@ const grants = (queries: ReadonlyArray<{ sql: string }>) =>
 describe("granting the app role", () => {
   const EXPECTED_GRANTS = [
     'grant usage on schema "app" to "app_runtime"',
-    'grant select, insert, update, delete on all tables in schema "app" to "app_runtime"',
+    'grant select, insert, update, delete on "app"."gadget", "app"."widget" to "app_runtime"',
+    'grant select on "app"."kysely_migration", "app"."kysely_migration_lock" to "app_runtime"',
+    'revoke insert, update, delete, truncate on "app"."kysely_migration", "app"."kysely_migration_lock" from "app_runtime"',
     'grant usage on all sequences in schema "app" to "app_runtime"',
     'alter default privileges in schema "app" grant select, insert, update, delete on tables to "app_runtime"',
     'alter default privileges in schema "app" grant usage on sequences to "app_runtime"',
-    'revoke insert, update, delete on "app"."kysely_migration", "app"."kysely_migration_lock" from "app_runtime"',
   ];
 
   it("grants what the server needs after the migrations, inside the lock", async () => {
@@ -241,6 +244,18 @@ describe("granting the app role", () => {
 
     expect(await migrateUp({ db, schema: "app", migrations, appRole: "app_runtime" })).toEqual([]);
     expect(grants(queries)).toEqual(EXPECTED_GRANTS);
+  });
+
+  it("lists the schema's tables but the migrator's, and grants writing on no table when there is none", async () => {
+    const { db, queries } = scriptedDb<unknown>((query) =>
+      query.sql === CURRENT_SCHEMA ? [{ schema: "app" }] : [],
+    );
+
+    await migrateUp({ db, schema: "app", migrations: {}, appRole: "app_runtime" });
+
+    const listing = queries.find((query) => query.sql.includes("from pg_catalog.pg_class"));
+    expect(listing?.parameters).toEqual(["app", "kysely_migration", "kysely_migration_lock"]);
+    expect(grants(queries)).toEqual(EXPECTED_GRANTS.filter((text) => !text.includes('"gadget"')));
   });
 
   it("grants nothing without an app role", async () => {

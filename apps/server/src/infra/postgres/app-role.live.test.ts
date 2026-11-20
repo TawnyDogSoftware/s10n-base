@@ -175,4 +175,45 @@ describe("the app role", () => {
       await client.end();
     }
   });
+
+  it("gets no write access to the migrator's records when granting fails part way", async () => {
+    // A fresh schema, and an event trigger that fails the owner's first ALTER DEFAULT PRIVILEGES:
+    // a failure in the middle of granting, after the grant on the schema's tables.
+    const second = `${schema}_b`;
+    const trigger = `${schema}_fail_grants`;
+    await admin.query(`create schema "${second}" authorization "${owner.name}"`);
+    await admin.query(`
+      create function "${trigger}"() returns event_trigger language plpgsql as $$
+      begin
+        if current_user = '${owner.name}' then raise exception 'injected grant failure'; end if;
+      end $$`);
+    await admin.query(
+      `create event trigger "${trigger}" on ddl_command_start when tag in ('ALTER DEFAULT PRIVILEGES') execute function "${trigger}"()`,
+    );
+    try {
+      const code = await runMigrateCli({
+        args: ["up"],
+        env: { MIGRATION_DATABASE_URL: owner.url, DATABASE_APP_ROLE: appRole.name },
+        schema: second,
+        migrations,
+        write: () => {},
+      });
+      expect(code).toBe(1);
+
+      const client = await connectAs(appRole);
+      try {
+        await expect(
+          client.query(
+            `insert into "${second}".kysely_migration (name, timestamp) values ('999_x', 'now')`,
+          ),
+        ).rejects.toThrow(/permission denied/);
+      } finally {
+        await client.end();
+      }
+    } finally {
+      await admin.query(`drop event trigger if exists "${trigger}"`);
+      await admin.query(`drop function if exists "${trigger}"()`);
+      await admin.query(`drop schema if exists "${second}" cascade`);
+    }
+  });
 });
