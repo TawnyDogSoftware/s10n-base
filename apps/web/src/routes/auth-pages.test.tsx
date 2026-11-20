@@ -628,6 +628,47 @@ describe("/reset-password", () => {
     expect(backend.users.get("sam@example.com")?.password).toBe("a brand new one");
   });
 
+  it("does not offer the same form again after a reset whose answer was lost", async () => {
+    const backend = backendWith("sam@example.com");
+    const token = backend.issueToken("sam@example.com", "reset");
+    renderApp(`/reset-password?token=${token}`, backend);
+    await screen.findByRole("heading", { name: "Choose a new password" });
+    backend.failNext("/api/auth/reset-password", { kind: "network", afterHandling: true });
+
+    type(/^New password/, "a brand new one");
+    click("Save the new password");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Your password may have changed" }),
+    ).toBeInTheDocument();
+    // Sending the same token again would be refused as used, and read as "this link does not work".
+    expect(screen.queryByLabelText(/^New password/)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/sign-in");
+    expect(screen.getByRole("link", { name: "Ask for a new link" })).toHaveAttribute(
+      "href",
+      "/forgot-password",
+    );
+  });
+
+  it("starts clean when a new link opens the page", async () => {
+    const backend = backendWith("sam@example.com");
+    const first = backend.issueToken("sam@example.com", "reset");
+    const app = renderApp(`/reset-password?token=${first}`, backend);
+    await screen.findByRole("heading", { name: "Choose a new password" });
+    backend.failNext("/api/auth/reset-password", { kind: "network" });
+    type(/^New password/, "a brand new one");
+    click("Save the new password");
+    await screen.findByRole("heading", { level: 1, name: "Your password may have changed" });
+
+    const second = backend.issueToken("sam@example.com", "reset");
+    await act(() => app.router.navigate({ to: "/reset-password", search: { token: second } }));
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Choose a new password" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/^New password/)).toHaveValue("");
+  });
+
   it("keeps a numeric-looking token a string", async () => {
     const backend = backendWith("sam@example.com");
     renderApp("/reset-password?token=000123", backend);
@@ -686,17 +727,15 @@ describe("/reset-password", () => {
     backend.failNext("/api/auth/reset-password", { kind: "network", afterHandling: true });
     renderApp(`/reset-password?token=${token}`, backend);
     await screen.findByRole("heading", { name: "Choose a new password" });
+    // The reads so far are the page's own; the one that settles the reset comes after.
+    const readsBefore = backend.calls("/api/app-auth/session").length;
 
     type(/^New password/, "a brand new one");
     click("Save the new password");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "We could not confirm whether that worked",
-    );
-    await act(async () => {
-      await waitFor(() => {
-        expect(backend.calls("/api/app-auth/session").length).toBeGreaterThan(0);
-      });
-    });
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Your password may have changed" }),
+    ).toBeInTheDocument();
+    expect(backend.calls("/api/app-auth/session").length).toBeGreaterThan(readsBefore);
   });
 });

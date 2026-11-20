@@ -15,11 +15,27 @@ import { optionalString } from "../lib/search";
 import { useServices } from "../services";
 import { rootRoute } from "./root";
 
+/** The page for one link: a new token in the address starts it again, clean. */
 function ResetPasswordPage() {
+  const { t } = useTranslation("auth");
+  const { token } = resetPasswordRoute.useSearch();
+  if (token === undefined) {
+    return (
+      <PageShell title={t("resetPassword.missingTitle")} intro={t("resetPassword.missingBody")}>
+        <Link to="/forgot-password" className={linkClass}>
+          {t("resetPassword.requestNew")}
+        </Link>
+      </PageShell>
+    );
+  }
+  return <ResetPasswordForm key={token} token={token} />;
+}
+
+function ResetPasswordForm(props: { readonly token: string }) {
   const { t } = useTranslation("auth");
   const { t: tCommon } = useTranslation("common");
   const { auth, gate } = useServices();
-  const { token } = resetPasswordRoute.useSearch();
+  const { token } = props;
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | undefined>(undefined);
   const [outcome, setOutcome] = useState<SettledAction<AuthResult> | null>(null);
@@ -28,12 +44,19 @@ function ResetPasswordPage() {
   const ref = useRef<HTMLInputElement>(null);
   const focusAfterRender = useFocusAfterRender();
 
-  if (token === undefined) {
+  // The reset may have happened, and its token is then used: sending it again would be
+  // refused and read as a dead link. Offer the two ways forward instead of the form.
+  if (outcome?.kind === "unknown") {
     return (
-      <PageShell title={t("resetPassword.missingTitle")} intro={t("resetPassword.missingBody")}>
-        <Link to="/forgot-password" className={linkClass}>
-          {t("resetPassword.requestNew")}
-        </Link>
+      <PageShell title={t("resetPassword.unknownTitle")} intro={t("resetPassword.unknownBody")}>
+        <div className="flex flex-wrap gap-4">
+          <Link to="/sign-in" className={linkClass}>
+            {t("resetPassword.signIn")}
+          </Link>
+          <Link to="/forgot-password" className={linkClass}>
+            {t("resetPassword.requestNew")}
+          </Link>
+        </div>
       </PageShell>
     );
   }

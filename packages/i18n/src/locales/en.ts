@@ -135,6 +135,9 @@ export const en = {
       missingTitle: "This link is incomplete",
       missingBody: "Open the link from the email again, or ask for a new one.",
       requestNew: "Ask for a new link",
+      unknownTitle: "Your password may have changed",
+      unknownBody:
+        "The connection dropped before the server answered, so the new password may or may not be saved. Try signing in with it; if that does not work, ask for a new link.",
     },
   },
   profile: {

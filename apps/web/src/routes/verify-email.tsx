@@ -70,12 +70,18 @@ function Resend() {
   );
 }
 
+/** The page for one link: a new token in the address starts it again, clean. */
 function VerifyEmailPage() {
+  const { token } = verifyEmailRoute.useSearch();
+  return <VerifyEmail key={token ?? ""} token={token} />;
+}
+
+function VerifyEmail(props: { readonly token: string | undefined }) {
   const { t } = useTranslation("auth");
   const { t: tCommon } = useTranslation("common");
   const { t: tError } = useTranslation("errors");
   const { auth, gate } = useServices();
-  const { token } = verifyEmailRoute.useSearch();
+  const { token } = props;
   const [state, setState] = useState<State>(
     token === undefined ? { kind: "missing" } : { kind: "pending" },
   );
