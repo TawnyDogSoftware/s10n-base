@@ -30,3 +30,4 @@ Decisions that outlive a plan are also written up as decision records in [docs/a
 | 008 | [Deployment kit](008-deployment-kit.md) | Implemented |
 | 009 | [Conventions and docs](009-conventions-and-docs.md) | Implemented |
 | 010 | [Recheck the session inside the profile update](010-recheck-session-in-profile-update.md) | Implemented |
+| 011 | [Address the findings of the full-branch review](011-review-findings.md) | Not started |
