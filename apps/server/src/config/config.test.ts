@@ -552,14 +552,15 @@ describe("the documented requirement and default of every variable", () => {
 
   it.each(all.map((entry) => [entry.name, entry] as const))("%s", (_name, entry) => {
     const result = Effect.runSync(Effect.result(entry.config.parse(empty)));
-    if (entry.defaultText !== undefined) {
-      expect(result._tag === "Success" && String(result.success)).toBe(entry.defaultText);
-    } else if (entry.optional === true) {
+    if (entry.optional === true) {
+      // Any default (APP_VARIANT's) is applied by the config; "defaults APP_VARIANT" checks it.
       expect(
         result._tag === "Success" &&
           Option.isOption(result.success) &&
           Option.isNone(result.success),
       ).toBe(true);
+    } else if (entry.defaultText !== undefined) {
+      expect(result._tag === "Success" && String(result.success)).toBe(entry.defaultText);
     } else {
       expect(result._tag).toBe("Failure");
     }

@@ -92,7 +92,7 @@ interface Variable<A> {
   readonly config: Config.Config<A>;
   /** For the environment table in docs/deployment.md: the default, as text. */
   readonly defaultText?: string;
-  /** May be left unset, with no default. */
+  /** May be left unset: read as an option, with any default applied by the config itself. */
   readonly optional?: true;
 }
 
@@ -268,7 +268,7 @@ const appVariant = variable(
   "APP_VARIANT",
   "be development, preview or production",
   Config.option(Config.Literals(APP_VARIANTS, "APP_VARIANT")),
-  { optional: true },
+  { optional: true, defaultText: "development" },
 );
 const emailFrom = variable(
   "EMAIL_FROM",
