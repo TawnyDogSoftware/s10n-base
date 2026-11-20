@@ -93,6 +93,7 @@ export const en = {
       or: "or",
       passkey: "Sign in with a passkey",
       passkeyPending: "Waiting for your passkey…",
+      passkeyUnsupported: "This browser cannot use passkeys.",
       forgotPassword: "Forgot your password?",
       noAccount: "New here?",
       signUpLink: "Create an account",

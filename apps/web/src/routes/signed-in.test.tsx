@@ -235,6 +235,29 @@ describe("/profile", () => {
     ).toMatch(/^Passkey added /);
   });
 
+  it("says which passkey is being removed, and not that a device is awaited", async () => {
+    vi.stubGlobal("PublicKeyCredential", function PublicKeyCredential() {});
+    const backend = signedIn();
+    const sam = backend.users.get("sam@example.com");
+    if (sam === undefined) throw new Error("no user");
+    sam.passkeys = [
+      { id: "pk1", name: "Laptop", createdAt: "2026-11-01T10:00:00.000Z" },
+      { id: "pk2", name: "Phone", createdAt: "2026-11-02T10:00:00.000Z" },
+    ];
+    renderApp("/profile", backend);
+    await screen.findByText("Laptop");
+    const release = backend.hold("/api/auth/passkey/delete-passkey");
+
+    click(/^Remove passkey Laptop, added /);
+
+    expect(await screen.findByRole("button", { name: "Removing…" })).toBeDisabled();
+    expect(screen.queryByText("Waiting for your device…")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add a passkey" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Remove passkey Phone/ })).toBeDisabled();
+    release();
+    expect(await screen.findByText("Passkey removed.")).toBeInTheDocument();
+  });
+
   it("says when the browser cannot use passkeys", async () => {
     renderApp("/profile", signedIn());
 

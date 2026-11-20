@@ -25,6 +25,11 @@ import { rootRoute } from "./root";
 
 type Name = "email" | "password";
 
+/** Whether this browser can use passkeys at all; if not, the button would only fail. */
+function passkeysSupported(): boolean {
+  return typeof window.PublicKeyCredential === "function";
+}
+
 function SignInPage() {
   useLeaveWhenSignedIn();
   const { t } = useTranslation("auth");
@@ -163,18 +168,24 @@ function SignInPage() {
             </Link>
           </div>
         </form>
-        <p className="text-muted">{t("signIn.or")}</p>
-        <div>
-          <Button
-            variant="secondary"
-            pending={passkeyPending}
-            pendingLabel={t("signIn.passkeyPending")}
-            disabled={pending}
-            onClick={() => void signInWithPasskey()}
-          >
-            {t("signIn.passkey")}
-          </Button>
-        </div>
+        {passkeysSupported() ? (
+          <>
+            <p className="text-muted">{t("signIn.or")}</p>
+            <div>
+              <Button
+                variant="secondary"
+                pending={passkeyPending}
+                pendingLabel={t("signIn.passkeyPending")}
+                disabled={pending}
+                onClick={() => void signInWithPasskey()}
+              >
+                {t("signIn.passkey")}
+              </Button>
+            </div>
+          </>
+        ) : (
+          <p className="text-muted">{t("signIn.passkeyUnsupported")}</p>
+        )}
       </Card>
       <p>
         {t("signIn.noAccount")}{" "}

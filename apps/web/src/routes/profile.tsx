@@ -96,9 +96,12 @@ function usePasskeyLabels(passkeys: readonly Passkey[]) {
   });
 }
 
+/** What the passkey card is doing: adding, removing one passkey, or nothing. */
+type PasskeyBusy = { readonly kind: "add" } | { readonly kind: "remove"; readonly id: string };
+
 function PasskeyList(props: {
   readonly passkeys: readonly Passkey[];
-  readonly pending: boolean;
+  readonly busy: PasskeyBusy | null;
   readonly onRemove: (passkey: Passkey) => void;
 }) {
   const { t } = useTranslation("profile");
@@ -117,7 +120,9 @@ function PasskeyList(props: {
           </div>
           <Button
             variant="secondary"
-            disabled={props.pending}
+            disabled={props.busy !== null}
+            pending={props.busy?.kind === "remove" && props.busy.id === passkey.id}
+            pendingLabel={t("passkeys.removing")}
             aria-label={removeLabel}
             onClick={() => {
               props.onRemove(passkey);
@@ -159,15 +164,20 @@ function Passkeys() {
   const [message, setMessage] = useState<PasskeyMessage | null>(null);
   const supported = typeof window.PublicKeyCredential === "function";
 
+  const [busy, setBusy] = useState<PasskeyBusy | null>(null);
+
   /** Adds or removes a passkey, then reads the list again: it is the truth either way. */
-  const change = (action: () => Promise<AuthResult>, doneText: string) =>
+  const change = (what: PasskeyBusy, action: () => Promise<AuthResult>, doneText: string) =>
     run(async () => {
+      setBusy(what);
       setMessage(null);
       const result = await gate.settle(action);
       await query.refetch();
       if (result.kind === "unknown") setMessage({ kind: "unknown", outcome: result });
       else if (result.value.ok) setMessage({ kind: "done", text: doneText });
       else setMessage({ kind: "error", text: tError(errorMessageKey(result.value)) });
+    }).finally(() => {
+      setBusy(null);
     });
 
   return (
@@ -176,9 +186,13 @@ function Passkeys() {
       {query.isSuccess ? (
         <PasskeyList
           passkeys={query.data}
-          pending={pending}
+          busy={pending ? busy : null}
           onRemove={(passkey) =>
-            void change(() => auth.deletePasskey(passkey.id), t("passkeys.removed"))
+            void change(
+              { kind: "remove", id: passkey.id },
+              () => auth.deletePasskey(passkey.id),
+              t("passkeys.removed"),
+            )
           }
         />
       ) : (
@@ -187,10 +201,12 @@ function Passkeys() {
       {supported ? (
         <div>
           <Button
-            pending={pending}
+            pending={pending && busy?.kind === "add"}
+            disabled={pending}
             pendingLabel={t("passkeys.adding")}
             onClick={() =>
               void change(
+                { kind: "add" },
                 () =>
                   auth.addPasskey(
                     t("passkeys.defaultName", {

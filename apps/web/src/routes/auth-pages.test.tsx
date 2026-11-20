@@ -1,5 +1,5 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createFakeBackend } from "@s10n-base/client/testing/fake-backend";
 
@@ -10,6 +10,10 @@ function backendWith(...emails: string[]) {
   for (const email of emails) backend.addUser({ email, name: "Sam" });
   return backend;
 }
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("/sign-up", () => {
   it("shows every field error, tied to its field, and moves focus to the first", async () => {
@@ -295,7 +299,16 @@ describe("/sign-in", () => {
     expect(app.backend.calls("/api/auth/sign-in/email")).toHaveLength(1);
   });
 
+  it("explains, instead of offering, passkey sign-in where the browser has no passkeys", async () => {
+    renderApp("/sign-in", backendWith());
+    await screen.findByRole("heading", { name: "Sign in" });
+
+    expect(screen.queryByRole("button", { name: "Sign in with a passkey" })).toBeNull();
+    expect(screen.getByText("This browser cannot use passkeys.")).toBeInTheDocument();
+  });
+
   it("reports a passkey sign-in that did not complete", async () => {
+    vi.stubGlobal("PublicKeyCredential", function PublicKeyCredential() {});
     const app = renderApp("/sign-in", backendWith());
     await screen.findByRole("heading", { name: "Sign in" });
 
