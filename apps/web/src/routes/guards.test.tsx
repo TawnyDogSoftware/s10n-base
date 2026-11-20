@@ -122,3 +122,26 @@ describe("visitor-only pages", () => {
     await waitForLocation(app, target);
   });
 });
+
+describe("links between the visitor pages", () => {
+  it.each([
+    ["/sign-in", "Create an account"],
+    ["/sign-in", "Forgot your password?"],
+    ["/sign-up", "Sign in"],
+    ["/forgot-password", "Back to sign in"],
+  ])("from %s, %s keeps where to go after signing in", async (path, link) => {
+    renderApp(`${path}?redirect=%2Fprofile`, backendWith());
+
+    const anchor = await screen.findByRole("link", { name: link });
+
+    expect(anchor.getAttribute("href")).toMatch(/\?redirect=%2Fprofile$/);
+  });
+
+  it("drops a redirect that is not a path on this site", async () => {
+    renderApp("/sign-in?redirect=https%3A%2F%2Fexample.com", backendWith());
+
+    const anchor = await screen.findByRole("link", { name: "Create an account" });
+
+    expect(anchor.getAttribute("href")).toBe("/sign-up");
+  });
+});

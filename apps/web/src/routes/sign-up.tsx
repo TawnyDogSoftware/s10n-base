@@ -23,6 +23,7 @@ import { CheckEmail } from "../components/CheckEmail";
 import { ActionOutcome } from "../components/UnknownOutcome";
 import { Button, Card, Field, linkClass, Notice, PageShell } from "../components/ui";
 import type { AuthResult } from "../lib/auth";
+import { redirectSearch } from "../lib/redirect";
 import { optionalString } from "../lib/search";
 import { useServices } from "../services";
 import { redirectSignedIn, useLeaveWhenSignedIn } from "./guards";
@@ -35,6 +36,7 @@ function SignUpPage() {
   const { t } = useTranslation("auth");
   const { t: tCommon } = useTranslation("common");
   const { auth, gate } = useServices();
+  const { redirect } = signUpRoute.useSearch();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -151,7 +153,7 @@ function SignUpPage() {
       </Card>
       <p>
         {t("signUp.haveAccount")}{" "}
-        <Link to="/sign-in" className={linkClass}>
+        <Link to="/sign-in" search={redirectSearch(redirect)} className={linkClass}>
           {t("signUp.signInLink")}
         </Link>
       </p>

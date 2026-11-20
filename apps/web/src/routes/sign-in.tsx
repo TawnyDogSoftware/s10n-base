@@ -17,7 +17,7 @@ import { CheckEmail } from "../components/CheckEmail";
 import { ActionOutcome } from "../components/UnknownOutcome";
 import { Button, Card, Field, linkClass, Notice, PageShell } from "../components/ui";
 import type { AuthResult } from "../lib/auth";
-import { safeRedirect } from "../lib/redirect";
+import { redirectSearch, safeRedirect } from "../lib/redirect";
 import { optionalString } from "../lib/search";
 import { useServices } from "../services";
 import { redirectSignedIn, useLeaveWhenSignedIn } from "./guards";
@@ -175,7 +175,7 @@ function SignInPage() {
             >
               {t("signIn.submit")}
             </Button>
-            <Link to="/forgot-password" className={linkClass}>
+            <Link to="/forgot-password" search={redirectSearch(redirect)} className={linkClass}>
               {t("signIn.forgotPassword")}
             </Link>
           </div>
@@ -201,11 +201,7 @@ function SignInPage() {
       </Card>
       <p>
         {t("signIn.noAccount")}{" "}
-        <Link
-          to="/sign-up"
-          search={redirect === undefined ? {} : { redirect }}
-          className={linkClass}
-        >
+        <Link to="/sign-up" search={redirectSearch(redirect)} className={linkClass}>
           {t("signIn.signUpLink")}
         </Link>
       </p>
