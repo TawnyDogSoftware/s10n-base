@@ -150,7 +150,7 @@ The server speaks plain HTTP on `PORT`. TLS ends at a proxy or load balancer in 
 
 ## More than one instance
 
-Any number of instances can run side by side. Sessions and rate-limit counters are kept in Postgres, and nothing is held in memory between requests or written to local disk, so any instance can answer any request. Each instance opens up to `DATABASE_POOL_MAX` connections: keep instances × pool size below the database's connection limit, leaving room for `migrate`.
+Any number of instances can run side by side. Sessions and rate-limit counters are kept in Postgres, and nothing is held in memory between requests or written to local disk, so any instance can answer any request. Each instance opens up to `DATABASE_POOL_MAX` connections: keep instances × pool size below the database's connection limit, leaving room for `migrate`. Keep the instances' clocks synchronised (NTP, as any host provides): each instance judges session and ban expiry by its own clock, so instances whose clocks disagree disagree about whether a session has ended.
 
 What a project must keep true as it adds features: no state in memory that another instance would need (use Postgres), no files on local disk (use object storage), and no background work in the request process (the worker recipe in plan 000 is the way to add it).
 
