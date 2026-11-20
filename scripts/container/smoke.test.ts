@@ -44,6 +44,10 @@ interface Scenario {
   write: CommandResult;
   stop: { exits: boolean; code: number };
   failCommand?: string;
+  /** psql fails on any input that contains this text. */
+  failSql?: string;
+  /** `docker rm` fails. */
+  failRemove?: boolean;
   responses: Record<string, (init?: RequestInit) => Response>;
 }
 
@@ -118,6 +122,11 @@ class FakeSmoke implements SmokeIo {
     if (this.scene.failCommand !== undefined && line.startsWith(this.scene.failCommand)) {
       return Promise.resolve({ code: 125, stdout: "", stderr: "no such image\n" });
     }
+    if (args.includes("psql") && this.scene.failSql !== undefined) {
+      if (input?.includes(this.scene.failSql) === true) {
+        return Promise.resolve({ code: 3, stdout: "", stderr: "ERROR:  something broke\n" });
+      }
+    }
     return Promise.resolve(this.answer(args));
   }
 
@@ -134,6 +143,9 @@ class FakeSmoke implements SmokeIo {
     exec: (args) => this.exec(args),
     kill: (args) => this.kill(args[3] ?? ""),
     rm: (args) => {
+      if (this.scene.failRemove === true) {
+        return { code: 1, stdout: "", stderr: "Error: cannot remove container\n" };
+      }
       this.removed.push(args[2] ?? "");
       return ok();
     },
@@ -272,14 +284,12 @@ describe("runContainerSmoke", () => {
     expect(io.removed.toSorted((left, right) => left.localeCompare(right))).toEqual(
       [...io.containers.keys()].toSorted((left, right) => left.localeCompare(right)),
     );
-    expect(io.inputs.at(-1)).toBe(
-      [
-        'drop database if exists "smoke_05ababababab" with (force);',
-        'drop role if exists "smoke_05ababababab_app";',
-        'drop role if exists "smoke_05ababababab_owner";',
-        "",
-      ].join("\n"),
-    );
+    expect(io.inputs.slice(-3)).toEqual([
+      'drop database if exists "smoke_05ababababab" with (force);\n',
+      'drop role if exists "smoke_05ababababab_app";\n',
+      'drop role if exists "smoke_05ababababab_owner";\n',
+    ]);
+    expect(io.logs.some((line) => line.startsWith("cleanup failed"))).toBe(false);
   });
 
   it("creates the two roles and a database the owner owns", async () => {
@@ -287,14 +297,11 @@ describe("runContainerSmoke", () => {
 
     await runContainerSmoke(io, options);
 
-    expect(io.inputs[0]).toBe(
-      [
-        `create role "smoke_05ababababab_owner" login password '03${"ab".repeat(15)}';`,
-        `create role "smoke_05ababababab_app" login password '04${"ab".repeat(15)}';`,
-        'create database "smoke_05ababababab" owner "smoke_05ababababab_owner";',
-        "",
-      ].join("\n"),
-    );
+    expect(io.inputs.slice(0, 3)).toEqual([
+      `create role "smoke_05ababababab_owner" login password '03${"ab".repeat(15)}';\n`,
+      `create role "smoke_05ababababab_app" login password '04${"ab".repeat(15)}';\n`,
+      'create database "smoke_05ababababab" owner "smoke_05ababababab_owner";\n',
+    ]);
   });
 
   it("migrates as the owner, granting the app role, and runs the server as the app role in production shape", async () => {
@@ -405,7 +412,47 @@ describe("runContainerSmoke", () => {
 
     expect(await failure(io)).toBe("migrate up as the owner failed (exit 1):\nmigrate_failed\n");
     expect(io.removed).toEqual(["smoke_05ababababab_migrate"]);
-    expect(io.inputs.at(-1)).toContain("drop database");
+    expect(io.inputs.at(-3)).toContain("drop database");
+  });
+
+  it("drops the roles it made when creating the database fails", async () => {
+    const io = fake((scene) => (scene.failSql = "create database"));
+
+    expect(await failure(io)).toMatch(
+      /^docker run --rm failed \(exit 3\): ERROR: {2}something broke/,
+    );
+    expect(io.inputs.slice(-2)).toEqual([
+      'drop role if exists "smoke_05ababababab_app";\n',
+      'drop role if exists "smoke_05ababababab_owner";\n',
+    ]);
+    expect(io.inputs.join("")).not.toContain("drop database");
+  });
+
+  it("reports a failed cleanup without hiding the failure that came first", async () => {
+    const io = fake((scene) => {
+      scene.migrate = { code: 1, logs: "migrate_failed\n", exits: true };
+      scene.failSql = "drop database";
+      scene.failRemove = true;
+    });
+
+    expect(await failure(io)).toBe("migrate up as the owner failed (exit 1):\nmigrate_failed\n");
+    expect(io.logs).toContain(
+      "cleanup failed: docker rm -f smoke_05ababababab_migrate failed (exit 1): Error: cannot remove container",
+    );
+    expect(io.logs.some((line) => line.startsWith("cleanup failed: docker run --rm failed"))).toBe(
+      true,
+    );
+    // The roles are still dropped after the database could not be.
+    expect(io.inputs.slice(-2)).toEqual([
+      'drop role if exists "smoke_05ababababab_app";\n',
+      'drop role if exists "smoke_05ababababab_owner";\n',
+    ]);
+  });
+
+  it("fails when only the cleanup fails", async () => {
+    const io = fake((scene) => (scene.failSql = 'drop role if exists "smoke_05ababababab_app"'));
+
+    expect(await failure(io)).toMatch(/^cleanup failed: docker run --rm failed \(exit 3\)/);
   });
 
   it("fails when migrate exits 0 without granting the app role", async () => {
