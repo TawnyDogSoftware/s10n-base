@@ -21,6 +21,7 @@
  */
 import {
   hashKey,
+  CancelledError,
   type QueryClient,
   QueryClientProvider,
   type QueryFunctionContext,
@@ -92,7 +93,8 @@ export interface SessionGate {
   readonly ensure: () => Promise<AppSession | null>;
   /**
    * Reads the session from the server now, after cancelling any read already in flight (which
-   * may have started before the state changed). Undefined when the read fails.
+   * may have started before the state changed); a read cancelled that way answers with the newer
+   * one's result. Undefined when the read fails.
    */
   readonly refresh: () => Promise<AppSession | null | undefined>;
   readonly protectedQueryOptions: <T>(
@@ -211,13 +213,25 @@ export function createSessionGate(options: {
     accept(event.query.state.data as AppSession | null);
   });
 
-  const refresh = async () => {
+  /** The newest read `refresh` started: a read it cancels answers with this one's result. */
+  let latest: { readonly result: Promise<AppSession | null | undefined> } | undefined;
+  const read = async (own: () => typeof latest): Promise<AppSession | null | undefined> => {
+    // A read in flight started before this one, maybe before the state changed: it is
+    // cancelled, and answers with this one's result.
     await queryClient.cancelQueries({ queryKey: SESSION_QUERY_KEY });
     try {
       return await queryClient.query({ ...sessionOptions(), staleTime: 0 });
-    } catch {
-      return undefined;
+    } catch (error) {
+      const newer = latest === own() ? undefined : latest;
+      return error instanceof CancelledError ? newer?.result : undefined;
     }
+  };
+  const refresh = (): Promise<AppSession | null | undefined> => {
+    const reading: { result: Promise<AppSession | null | undefined> } = {
+      result: read(() => reading),
+    };
+    latest = reading;
+    return reading.result;
   };
 
   const stopListening = channel?.subscribe(() => void refresh());

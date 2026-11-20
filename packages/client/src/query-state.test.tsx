@@ -498,6 +498,46 @@ describe("browserSessionChannel", () => {
   });
 });
 
+describe("overlapping session reads", () => {
+  it("give a read superseded by a newer one the newer one's answer, not unknown", async () => {
+    const { gate, server } = setup();
+    const first = deferred<AppSession | null>();
+    const second = deferred<AppSession | null>();
+    server.fetchSession
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+
+    const one = gate.settle(() => Promise.resolve("first"));
+    await waitFor(() => {
+      expect(server.fetchSession).toHaveBeenCalledTimes(1);
+    });
+    const two = gate.settle(() => Promise.resolve("second"));
+    await waitFor(() => {
+      expect(server.fetchSession).toHaveBeenCalledTimes(2);
+    });
+    second.resolve(bob);
+
+    await expect(one).resolves.toEqual({ kind: "done", value: "first", session: bob });
+    await expect(two).resolves.toEqual({ kind: "done", value: "second", session: bob });
+  });
+});
+
+describe("a session read cancelled with no newer read", () => {
+  it("is a failed read", async () => {
+    const { gate, server, queryClient } = setup();
+    const never = deferred<AppSession | null>();
+    server.fetchSession.mockImplementationOnce(() => never.promise);
+
+    const reading = gate.refresh();
+    await waitFor(() => {
+      expect(server.fetchSession).toHaveBeenCalledTimes(1);
+    });
+    await queryClient.cancelQueries({ queryKey: SESSION_QUERY_KEY });
+
+    await expect(reading).resolves.toBeUndefined();
+  });
+});
+
 describe("confirmSignedOut", () => {
   it("installs signed-out and purges, for a sign-out the server confirmed when the read after it failed", () => {
     const { gate, queryClient } = setup(alice);
