@@ -120,7 +120,11 @@ export function processGit(cwd: string, git = "git"): Git {
   };
 }
 
-const DEFAULT_BRANCHES = ["origin/HEAD", "origin/main", "main"];
+/**
+ * `origin/main` comes before `origin/HEAD`: a clone of a local checkout points `origin/HEAD` at
+ * whatever branch that checkout had, which may be the branch under check.
+ */
+const DEFAULT_BRANCHES = ["origin/main", "origin/HEAD", "main"];
 
 function resolves(git: Git, ref: string): boolean {
   try {
@@ -133,7 +137,7 @@ function resolves(git: Git, ref: string): boolean {
 
 /**
  * The default branch to compare with: `ATTRIBUTION_BASE` when set, otherwise the first of
- * `origin/HEAD`, `origin/main` and `main` that exists.
+ * `origin/main`, `origin/HEAD` and `main` that exists.
  *
  * @throws {Error} when none exists.
  */

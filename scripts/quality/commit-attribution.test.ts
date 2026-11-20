@@ -149,14 +149,14 @@ describe("processGit", () => {
 });
 
 describe("baseRef", () => {
-  const known = new Set(["origin/main", "main", "develop"]);
+  const known = new Set(["origin/HEAD", "origin/main", "main", "develop"]);
   const git: Git = (args) => {
     const ref = String(args.at(-1)).replace("^{commit}", "");
     if (!known.has(ref)) throw new Error("unknown");
     return "sha\n";
   };
 
-  it("takes the first default branch that exists", () => {
+  it("takes origin/main first, since a local clone's origin/HEAD may be this branch", () => {
     expect(baseRef(git, {})).toBe("origin/main");
     expect(baseRef(git, { ATTRIBUTION_BASE: " " })).toBe("origin/main");
   });
@@ -271,7 +271,7 @@ describe("commitAttribution", () => {
     expect(run.lines).toEqual([
       "commit attribution: --message-file needs the path of the message",
       "commit attribution: unknown arguments: --all",
-      "commit attribution: cannot find the default branch (tried origin/HEAD, origin/main, main); fetch it, or set ATTRIBUTION_BASE",
+      "commit attribution: cannot find the default branch (tried origin/main, origin/HEAD, main); fetch it, or set ATTRIBUTION_BASE",
     ]);
   });
 
