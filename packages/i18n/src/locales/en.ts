@@ -198,6 +198,7 @@ export const en = {
     empty: "No users yet.",
     loadMore: "Load more",
     loadingMore: "Loading more…",
+    refreshFailed: "We could not refresh the list.",
     notAllowedTitle: "You do not have access to this page",
     notAllowedBody: "Only admins can see the user list.",
   },

@@ -15,6 +15,7 @@ export const ADMIN_USERS_PAGE_SIZE = 25;
 function UserList() {
   const { t, i18n } = useTranslation("admin");
   const { t: tError } = useTranslation("errors");
+  const { t: tCommon } = useTranslation("common");
   const { rpc, gate } = useServices();
   const session = useSession();
   const query = useInfiniteQuery({
@@ -58,6 +59,14 @@ function UserList() {
           ))}
         </View>
       ))}
+      {query.isRefetchError ? (
+        <Notice tone="danger" announce={t("refreshFailed")}>
+          <Body>{t("refreshFailed")}</Body>
+          <Button variant="secondary" onPress={() => void query.refetch()}>
+            {tCommon("routeError.retry")}
+          </Button>
+        </Notice>
+      ) : null}
       {query.isFetchNextPageError ? (
         <Notice tone="danger">{tError(errorMessageKey(query.error))}</Notice>
       ) : null}

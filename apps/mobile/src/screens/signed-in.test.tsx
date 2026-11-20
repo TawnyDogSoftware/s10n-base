@@ -174,6 +174,23 @@ describe("UsersScreen", () => {
     expect(backend.calls("/rpc")).toHaveLength(0);
   });
 
+  it("keeps the list and says so when reading it again fails, with a retry", async () => {
+    const { backend, services } = await signedIn("admin");
+    backend.addUser({ email: "robin@example.com", name: "Robin" });
+    renderScreen(<UsersScreen />, { backend, services });
+    await screen.findByText("Robin");
+    backend.failNext("/rpc", { kind: "network" });
+
+    await act(() => services.gate.queryClient.refetchQueries({ queryKey: ["user"] }));
+
+    expect(await screen.findByText("We could not refresh the list.")).toBeInTheDocument();
+    expect(screen.getByText("Robin")).toBeInTheDocument();
+    press("Try again");
+    await waitFor(() => {
+      expect(screen.queryByText("We could not refresh the list.")).toBeNull();
+    });
+  });
+
   it("lists users for an admin, a page at a time", async () => {
     const { backend, services } = await signedIn("admin");
     for (let index = 0; index < ADMIN_USERS_PAGE_SIZE; index += 1) {

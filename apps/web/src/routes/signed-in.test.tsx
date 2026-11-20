@@ -477,6 +477,22 @@ describe("/admin/users", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps the list and says so when reading it again fails, with a retry", async () => {
+    const backend = withUsers(3);
+    const app = renderApp("/admin/users", backend);
+    await screen.findByRole("cell", { name: "User 0" });
+    backend.failNext("/rpc", { kind: "network" });
+
+    await act(() => app.services.gate.queryClient.refetchQueries({ queryKey: ["user"] }));
+
+    expect(await screen.findByText("We could not refresh the list.")).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "User 0" })).toBeInTheDocument();
+    click("Try again");
+    await waitFor(() => {
+      expect(screen.queryByText("We could not refresh the list.")).not.toBeInTheDocument();
+    });
+  });
+
   it("shows a signed-in non-admin a not-allowed page, not a redirect, and asks for nothing", async () => {
     const app = renderApp("/admin/users", signedIn());
 
