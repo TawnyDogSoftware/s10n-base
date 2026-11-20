@@ -1,18 +1,40 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalEnv": [
+    "NODE_ENV",
+    "APP_URL",
     "HOST",
     "PORT",
-    "S10N_BASE_HOME",
-    "S10N_BASE_PORT",
-    "S10N_BASE_SERVER_URL",
+    "DATABASE_URL",
+    "DATABASE_POOL_MAX",
+    "TRUSTED_PROXY_HOPS",
+    "REQUEST_BODY_LIMIT_BYTES",
+    "SHUTDOWN_TIMEOUT_MS",
+    "LOG_LEVEL",
+    "BETTER_AUTH_SECRET",
+    "APP_VARIANT",
+    "EMAIL_FROM",
+    "SUPPORT_EMAIL",
+    "SES_REGION",
+    "SES_ENDPOINT",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "APP_VERSION",
+    "MIGRATION_DATABASE_URL",
+    "DATABASE_APP_ROLE",
+    "TEST_DATABASE_URL",
     "VITE_SERVER_URL",
-    "VITE_DEV_SERVER_URL"
+    "WEB_DEV_HOST",
+    "WEB_DEV_PORT",
+    "VITE_API_BASE_URL",
+    "EXPO_PUBLIC_API_BASE_URL",
+    "EAS_PROJECT_ID"
   ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", "dist-electron/**"]
+      "outputs": ["dist/**"]
     },
     "dev": {
       "cache": false,

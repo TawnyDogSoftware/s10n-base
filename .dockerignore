@@ -1,0 +1,36 @@
+# The image's build context (docker/Dockerfile). Deny by default: everything is left out, then
+# each build input is let in, then secrets, generated files and tests are left out again even
+# inside an allowed directory.
+**
+
+!package.json
+!bun.lock
+!bunfig.toml
+!tsconfig.base.json
+!apps/server/package.json
+!apps/server/tsconfig.json
+!apps/server/tsdown.config.ts
+!apps/server/src/**
+!apps/web/package.json
+!apps/web/tsconfig.json
+!apps/web/vite.config.ts
+!apps/web/index.html
+!apps/web/src/**
+!packages/*/package.json
+!packages/*/tsconfig.json
+!packages/*/src/**
+!packages/theme/theme.css
+!scripts/container/runtime-dependencies.ts
+!scripts/container/runtime-dependencies.main.ts
+!scripts/container/bundle-imports.ts
+!scripts/container/bundle-imports.main.ts
+
+**/.env*
+**/node_modules
+**/dist
+**/.turbo
+**/*.tsbuildinfo
+**/*.test.*
+**/src/test
+**/src/testing
+**/coverage

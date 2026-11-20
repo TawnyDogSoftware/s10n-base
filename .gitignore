@@ -1,11 +1,15 @@
 node_modules/
 .turbo/
 dist/
-dist-electron/
 coverage/
 apps/*/dist/
-apps/*/dist-electron/
 packages/*/dist/
-apps/server/.data/
-apps/server/.logs/
 *.log
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+
+# Playwright output. Traces, videos and screenshots stay off: email links carry tokens.
+e2e/test-results/
+playwright-report/

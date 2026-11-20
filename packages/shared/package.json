@@ -4,13 +4,29 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./app-variants": {
+      "types": "./src/app-variants.ts",
+      "import": "./src/app-variants.ts"
+    },
+    "./auth": {
+      "types": "./src/auth.ts",
+      "import": "./src/auth.ts"
+    },
     "./id": {
       "types": "./src/id.ts",
       "import": "./src/id.ts"
     },
-    "./json": {
-      "types": "./src/json.ts",
-      "import": "./src/json.ts"
+    "./local-endpoint": {
+      "types": "./src/local-endpoint.ts",
+      "import": "./src/local-endpoint.ts"
+    },
+    "./origin": {
+      "types": "./src/origin.ts",
+      "import": "./src/origin.ts"
+    },
+    "./web-dev-server": {
+      "types": "./src/web-dev-server.ts",
+      "import": "./src/web-dev-server.ts"
     },
     "./time": {
       "types": "./src/time.ts",
@@ -18,12 +34,9 @@
     }
   },
   "scripts": {
-    "build": "tsdown src/id.ts src/json.ts src/time.ts --format esm,cjs --dts --clean",
+    "build": "tsdown src/app-variants.ts src/auth.ts src/id.ts src/local-endpoint.ts src/origin.ts src/time.ts src/web-dev-server.ts --format esm,cjs --dts --clean",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts"
-  },
-  "dependencies": {
-    "effect": "catalog:"
   },
   "devDependencies": {
     "tsdown": "catalog:",

@@ -1,0 +1,41 @@
+{
+  "$comment": "Packages the daily dependency-update workflow must not move freely. No range or group: never updated by the workflow. range: moves only inside it. group: members move only when they all land on the same version. See docs/dependencies.md.",
+  "holds": [
+    {
+      "packages": [
+        "react",
+        "react-dom",
+        "react-native",
+        "react-native-*",
+        "expo",
+        "expo-*",
+        "@expo/*"
+      ],
+      "reason": "Owned by the Expo SDK. Change them with `bunx expo install` when the SDK moves, so web and mobile resolve one React and native modules match the SDK's list."
+    },
+    {
+      "packages": ["@types/react", "@types/react-dom"],
+      "range": "~19.3.0",
+      "reason": "Types for React 19.3, the version the Expo SDK pins. Move them with React."
+    },
+    {
+      "packages": ["typescript"],
+      "range": "<6.1.0",
+      "reason": "typescript-eslint supports TypeScript below 6.1 only (plan 000, decisions D4 and D6)."
+    },
+    {
+      "packages": ["better-auth", "@better-auth/expo", "@better-auth/passkey"],
+      "group": "better-auth",
+      "reason": "Released together and must stay on one version."
+    },
+    {
+      "packages": ["better-call"],
+      "reason": "Must equal the exact version better-auth depends on, which is not better-auth's own version. Change it by hand when the better-auth group moves."
+    },
+    {
+      "packages": ["kysely"],
+      "range": "0.29.x",
+      "reason": "The range Better Auth supports; 0.30 is not stable."
+    }
+  ]
+}

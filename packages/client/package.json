@@ -1,0 +1,79 @@
+{
+  "name": "@s10n-base/client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./auth": {
+      "types": "./src/auth.ts",
+      "import": "./src/auth.ts"
+    },
+    "./form": {
+      "types": "./src/form.ts",
+      "import": "./src/form.ts"
+    },
+    "./messages": {
+      "types": "./src/messages.ts",
+      "import": "./src/messages.ts"
+    },
+    "./profile-name": {
+      "types": "./src/profile-name.ts",
+      "import": "./src/profile-name.ts"
+    },
+    "./query-state": {
+      "types": "./src/query-state.ts",
+      "import": "./src/query-state.ts"
+    },
+    "./rpc": {
+      "types": "./src/rpc.ts",
+      "import": "./src/rpc.ts"
+    },
+    "./session": {
+      "types": "./src/session.ts",
+      "import": "./src/session.ts"
+    },
+    "./testing/fake-backend": {
+      "types": "./src/testing/fake-backend.ts",
+      "import": "./src/testing/fake-backend.ts"
+    },
+    "./use-pending": {
+      "types": "./src/use-pending.ts",
+      "import": "./src/use-pending.ts"
+    },
+    "./user-list": {
+      "types": "./src/user-list.ts",
+      "import": "./src/user-list.ts"
+    },
+    "./validation": {
+      "types": "./src/validation.ts",
+      "import": "./src/validation.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@s10n-base/contracts": "workspace:*",
+    "@s10n-base/i18n": "workspace:*",
+    "@s10n-base/shared": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "catalog:",
+    "@testing-library/dom": "catalog:",
+    "@testing-library/react": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "i18next": "catalog:",
+    "jsdom": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "catalog:",
+    "react": "catalog:"
+  }
+}

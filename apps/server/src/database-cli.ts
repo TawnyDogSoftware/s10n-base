@@ -1,0 +1,78 @@
+/**
+ * What the database command-line tools (`migrate`, `set-role`) share: reading the database
+ * config from the environment, and opening a one-connection database.
+ */
+import { Effect, Redacted } from "effect";
+import type { Kysely } from "kysely";
+
+import {
+  type DatabaseConfig,
+  databaseConfigFromEnv,
+  type MigrationConfig,
+  migrationConfigFromEnv,
+  type ServerConfigError,
+} from "./config";
+import type { DB } from "./infra/postgres/generated/db";
+import { createDb, createPool, warnOnIdleError } from "./infra/postgres/pool";
+import type { Logger } from "./observability/logger";
+
+/** The config `load` reads, or undefined after logging why it is invalid. */
+function readConfig<C>(load: Effect.Effect<C, ServerConfigError>, logger: Logger): C | undefined {
+  const result = Effect.runSync(Effect.result(load));
+  if (result._tag === "Success") return result.success;
+  // The message lists every problem and never a value; the stack would only add noise.
+  logger.error("config_invalid", {
+    error: { name: result.failure._tag, message: result.failure.message },
+  });
+  return undefined;
+}
+
+/** The database config (`set-role`) from `env`, or undefined after logging why it is invalid. */
+export function readDatabaseConfig(
+  env: Record<string, string | undefined>,
+  logger: Logger,
+): DatabaseConfig | undefined {
+  return readConfig(databaseConfigFromEnv(env), logger);
+}
+
+/** The `migrate` config from `env`, or undefined after logging why it is invalid. */
+export function readMigrationConfig(
+  env: Record<string, string | undefined>,
+  logger: Logger,
+): MigrationConfig | undefined {
+  return readConfig(migrationConfigFromEnv(env), logger);
+}
+
+/**
+ * A database on one connection, made when the first query runs. `schema`, when given, is the
+ * search path, as the live tests use it.
+ */
+export function openCliDatabase(
+  config: DatabaseConfig,
+  logger: Logger,
+  schema: string | undefined,
+): Kysely<DB> {
+  return createDb(
+    createPool({
+      connectionString: Redacted.value(config.databaseUrl),
+      max: 1,
+      ...(schema === undefined ? {} : { searchPath: schema }),
+      onIdleError: warnOnIdleError(logger),
+    }),
+  );
+}
+
+/**
+ * Closes a database the command opened. A failure to close is logged and not thrown, so it never
+ * replaces the command's own result or error.
+ */
+export async function closeCliDatabase(
+  db: { readonly destroy: () => Promise<void> },
+  logger: Logger,
+): Promise<void> {
+  try {
+    await db.destroy();
+  } catch (error) {
+    logger.warn("database_close_failed", { error });
+  }
+}

@@ -1,0 +1,31 @@
+# Local Postgres for development and the live tests. Start it with `bun run db:up`
+# (or `bun dev`, which also starts the server and web app). Development only: the
+# password is in this file and the port is published on 127.0.0.1 alone.
+name: s10n-base-local
+
+services:
+  postgres:
+    # Keep this tag equal to the CI service container's (a test compares them).
+    image: postgres:18.7
+    environment:
+      POSTGRES_USER: s10n_base
+      POSTGRES_PASSWORD: s10n_base
+      POSTGRES_DB: s10n_base
+    ports:
+      # 54320 rather than 5432, so it does not clash with another local Postgres.
+      - "127.0.0.1:54320:5432"
+    volumes:
+      # Postgres 18 images keep their data under /var/lib/postgresql/18/docker.
+      - postgres-data:/var/lib/postgresql
+      # Runs once, when the data volume is first created: adds the s10n_base_test database.
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # Over TCP, so the check fails until the server accepts network connections.
+      test: ["CMD", "pg_isready", "--host=127.0.0.1", "--username=s10n_base", "--dbname=s10n_base"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+volumes:
+  postgres-data:

@@ -1,0 +1,188 @@
+# Setup
+
+How to run the app locally, configure it, change the database and run the tests.
+
+## Prerequisites
+
+- **Node** 26.13.1, the version in `.nvmrc` (`nvm use` picks it up).
+- **bun** 1.4.4, the version in `packageManager` in `package.json`.
+- **Docker** with Compose v2, for the local Postgres. `docker compose version` must work.
+
+Then install dependencies:
+
+```bash
+bun install
+```
+
+## Run it
+
+```bash
+bun dev
+```
+
+`bun dev` (`scripts/dev.ts`, started by `scripts/dev.main.ts`):
+
+1. starts Postgres from `docker-compose.local.yml` and waits until it is healthy,
+2. applies migrations (`db:migrate`),
+3. runs the local SES capture server (when `SES_ENDPOINT` is set, as in `.env.example`), the API server in watch mode and the Vite dev server,
+4. stops them all when you press Ctrl-C, or when any of them exits.
+
+Open `APP_URL` (`http://localhost:5173` by default). You land on the sign-in page: create an account, open the verification link from the inbox, and sign in to reach the signed-in home page, your profile (name, passkeys, sign-out) and, as an admin, the user list. Emails the server sends (verification, password reset) are captured, not delivered: read them in the local inbox at `http://127.0.0.1:8005/`, which `bun dev` prints when it starts. [docs/auth.md](auth.md) explains how auth works. The browser talks only to Vite, which proxies `/rpc`, `/api`, `/config`, `/health` and `/ready` to the API server on `PORT`. The database keeps running after `bun dev` stops; `bun run db:down` stops it.
+
+To run the parts on their own: `bun run dev:server`, `bun run dev:web` and `bun run ses:local`. Start the database first with `bun run db:up`, and apply migrations with `bun run db:migrate`: only `bun dev` migrates for you, and the server refuses to start while a migration in its build is pending.
+
+The mobile app runs separately, against the server `bun dev` starts: `bun run dev:mobile` for Metro, and `bun run ios:simulator` on a Mac for the first build. See [mobile-dev.md](mobile-dev.md).
+
+## Environment variables
+
+The server reads these once at startup and refuses to start if any is invalid, listing every problem in one log line. The value of a secret (`DATABASE_URL`, `BETTER_AUTH_SECRET`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`) is never printed.
+
+| Variable                   | Rule                                                                                                                                                                                                         | Default             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- |
+| `NODE_ENV`                 | `development`, `test` or `production`                                                                                                                                                                        | `development`       |
+| `APP_URL`                  | The single public origin users see: scheme, host and optional port, with no path, query or credentials. `https` is required in production.                                                                   | required            |
+| `HOST`                     | Bind address                                                                                                                                                                                                 | `0.0.0.0`           |
+| `PORT`                     | Integer 0 to 65535                                                                                                                                                                                           | `4210`              |
+| `DATABASE_URL`             | A `postgres://` or `postgresql://` URL. A secret.                                                                                                                                                            | required            |
+| `DATABASE_POOL_MAX`        | Integer 1 to 100: connections in the pool                                                                                                                                                                    | `10`                |
+| `TRUSTED_PROXY_HOPS`       | Integer 0 to 10: how many reverse proxies sit in front of the server                                                                                                                                         | `0`                 |
+| `REQUEST_BODY_LIMIT_BYTES` | Integer, at least 1024                                                                                                                                                                                       | `1048576`           |
+| `SHUTDOWN_TIMEOUT_MS`      | Integer 1000 to 60000: how long a shutdown waits for requests in flight                                                                                                                                      | `10000`             |
+| `LOG_LEVEL`                | `debug`, `info`, `warn` or `error`                                                                                                                                                                           | `info`              |
+| `BETTER_AUTH_SECRET`       | At least 32 characters. A secret. Production refuses the value in `.env.example`.                                                                                                                            | required            |
+| `APP_VARIANT`              | `development`, `preview` or `production`: the mobile app build this server serves. Must be set in production.                                                                                                | `development`       |
+| `EMAIL_FROM`               | A plain email address, the sender of every email                                                                                                                                                             | required            |
+| `SUPPORT_EMAIL`            | A plain email address, shown in email footers and used as the reply-to                                                                                                                                       | required            |
+| `SES_REGION`               | An AWS region name such as `us-east-1`                                                                                                                                                                       | required            |
+| `SES_ENDPOINT`             | The local capture server's address, which replaces the AWS endpoint: an http loopback origin with a port, such as `http://127.0.0.1:8005`. `bun dev` starts the capture server there. Refused in production. | unset               |
+| `AWS_ACCESS_KEY_ID`        | The SES sender's access key. Production refuses the placeholder `local`.                                                                                                                                     | required            |
+| `AWS_SECRET_ACCESS_KEY`    | Its secret. A secret. Production refuses the placeholder `local`.                                                                                                                                            | required            |
+| `AWS_SESSION_TOKEN`        | For temporary credentials. A secret.                                                                                                                                                                         | unset               |
+| `APP_VERSION`              | The build's version, reported by `/config`. The container image sets it.                                                                                                                                     | the package version |
+
+The live tests also read `TEST_DATABASE_URL` (below). `migrate` also reads `MIGRATION_DATABASE_URL` and `DATABASE_APP_ROLE`, for a deployment where the server's database role may not change the schema; development leaves both unset. [deployment.md](deployment.md#environment) has every variable of each command, checked against the code.
+
+The web app reads one variable at build time (Vite exposes `VITE_*` variables to the browser, so never put a secret in one):
+
+| Variable            | Rule                                                                                                                | Default               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| `VITE_API_BASE_URL` | The API's origin (`https://api.example.com`), with no path, query or credentials. The build fails on anything else. | the page's own origin |
+
+The Vite dev server reads two more, both optional, for where it listens when that is not where the browser reaches it:
+
+| Variable       | Rule                                                      | Default                                                               |
+| -------------- | --------------------------------------------------------- | --------------------------------------------------------------------- |
+| `WEB_DEV_HOST` | The address Vite listens on, such as `0.0.0.0`            | `APP_URL`'s host when `APP_URL` is http; `127.0.0.1` when it is https |
+| `WEB_DEV_PORT` | The port Vite listens on, 1 to 65535; anything else fails | `APP_URL`'s port when `APP_URL` is http; `5173` when it is https      |
+
+The mobile app reads `APP_VARIANT`, `EXPO_PUBLIC_API_BASE_URL` and `EAS_PROJECT_ID` when it builds, from your shell or `apps/mobile/.env.local` (copy `apps/mobile/.env.example`). Its table, and how to point a phone at this server, are in [mobile-dev.md](mobile-dev.md#environment). The server's `APP_VARIANT` must match the app's, since the server trusts only that variant's URL scheme.
+
+Leave `VITE_API_BASE_URL` unset when the server serves the web app (the built server does) or, in development, when Vite proxies the API. Set it when the web app is hosted on its own origin. The server then has to accept that page: its `APP_URL` must be the web app's origin (CORS and Better Auth's origin checks allow only `APP_URL`), the session cookie must reach the API (same site, or `SameSite=None` with `Secure`), and the HTML's Content-Security-Policy, which allows `connect-src 'self'`, must list the API origin if the server still serves the page.
+
+`.env.example` lists all of them with values that work with the compose file. `bun dev` and the `db:*`, `test:live` and `smoke` scripts read `.env` if it exists and `.env.example` otherwise; a variable set in your shell wins over both. To change a value, copy `.env.example` to `.env` and edit it. `.env` is ignored by git.
+
+Notes:
+
+- **`APP_URL`** is also what `GET /config` returns as `apiBaseUrl`, and the only origin allowed by CORS. In development it is the origin the browser opens the Vite dev server at. When it is http, Vite listens on its host and port. When it is https, a forwarder in front of Vite ends TLS, so Vite listens on `127.0.0.1:5173` for the forwarder to point at, and answers requests for `APP_URL`'s host name. `WEB_DEV_HOST` and `WEB_DEV_PORT` change where Vite listens in either case.
+- **`TRUSTED_PROXY_HOPS`** decides which `X-Forwarded-For` entry is the client's address: with one proxy, the last entry; with two, the one before it. With `0` the header is ignored and the socket's address is used. Set it to exactly the number of proxies you run, or clients can choose their own address.
+- **`SHUTDOWN_TIMEOUT_MS`:** on SIGTERM or SIGINT the server stops accepting connections, answers `/ready` with 503, waits up to this long for requests in flight, then closes what is left and the database pool. It exits 0 after a clean stop and 1 when it had to force anything.
+- **`SES_ENDPOINT`, `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`:** `.env.example` points the server at the local capture server with the placeholder keys `local`/`local`, so email works on a fresh clone with no AWS account. In production, leave `SES_ENDPOINT` unset and give real keys for an IAM user allowed to call `ses:SendEmail`; `EMAIL_FROM` must be a verified SES identity.
+
+## The local inbox
+
+`bun run ses:local` (started by `bun dev`) captures the emails the server sends. Open `http://127.0.0.1:8005/` to read them, newest first, with their links clickable. `GET /store` returns them as JSON and `POST /clear-store` empties the store. It keeps the last 200 emails in memory and listens on loopback only. Details are in [docs/auth.md](auth.md#the-local-inbox).
+
+## The first admin
+
+Sign up, follow the link in the inbox, then run `bun run auth:set-role you@example.com admin`. Reload the app: the header shows **Users**, which opens the admin user list at `/admin/users`. A signed-in user who is not an admin sees a "no access" page there.
+
+## Health checks
+
+- `GET /health` is liveness: 200 whenever the process is serving. It never touches the database.
+- `GET /ready` is readiness: 200 when `select 1` answers within two seconds, otherwise 503. It also answers 503 once shutdown has started.
+
+## The database
+
+Postgres 18 runs in Docker on `127.0.0.1:54320` (not 5432, so it does not clash with another local Postgres). The compose file creates two databases: `s10n_base` for the app and `s10n_base_test` for the live tests. Its data lives in a named volume.
+
+| Command                     | What it does                                                                                                          |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `bun run db:up`             | Starts Postgres and waits until it is healthy                                                                         |
+| `bun run db:down`           | Stops it (the data volume stays; `docker compose -f docker-compose.local.yml down -v` deletes it)                     |
+| `bun run db:migrate`        | Applies pending migrations                                                                                            |
+| `bun run db:status`         | Lists applied, pending and unknown migrations; changes nothing                                                        |
+| `bun run db:reset`          | Drops the `public` schema with everything in it, then migrates again. Refuses to run when `NODE_ENV` is `production`. |
+| `bun run db:generate`       | Regenerates `apps/server/src/infra/postgres/generated/db.ts` from the migrated database                               |
+| `bun run db:generate:check` | Fails if that file differs from what the database produces; CI runs it                                                |
+
+The built `migrate` entry point (`node apps/server/dist/migrate.mjs [up|status|down|reset]`) is what a deployment runs before starting new server instances. The server never migrates on startup. `down` reverts the latest migration; `down` and `reset` refuse to run in production. The first connection is retried for up to 30 seconds, so it can start next to a database that is still booting. Two migrate processes started together take turns on a Postgres advisory lock.
+
+### Adding a migration
+
+1. Create `apps/server/src/infra/postgres/migrations/NNN_short_name.ts`, numbered after the last one, exporting a Kysely `Migration`:
+
+   ```ts
+   import { type Kysely, sql } from "kysely";
+   import type { Migration } from "kysely/migration";
+
+   export const createProfiles: Migration = {
+     async up(db: Kysely<unknown>) {
+       await db.schema
+         .createTable("profiles")
+         .addColumn("id", "uuid", (column) => column.primaryKey().defaultTo(sql`gen_random_uuid()`))
+         .addColumn("created_at", "timestamptz", (column) => column.notNull().defaultTo(sql`now()`))
+         .execute();
+     },
+     async down(db: Kysely<unknown>) {
+       await db.schema.dropTable("profiles").execute();
+     },
+   };
+   ```
+
+2. Add it to the map in `migrations/index.ts`: `"001_create_profiles": createProfiles`. The map is explicit so the bundled `migrate.mjs` contains every migration.
+3. Run `bun run db:migrate`, then `bun run db:generate`, and commit the migration with the regenerated `generated/db.ts`.
+
+Migrations are append-only: once merged, a migration file is never edited or removed. A change is always a new migration. All pending migrations run in one transaction, so if one fails, none of that run is applied.
+
+## Tests
+
+```bash
+bun run agent:check     # every gate that needs no database: commit attribution, lint, format, types, boundaries, dead code, coverage, audit
+bun run test            # unit tests; no database needed
+bun run test:coverage   # the same, with the 100% coverage thresholds
+bun run test:live       # tests against Postgres
+bun run test:e2e        # builds, then the browser journeys in Chromium
+```
+
+[quality.md](quality.md) explains each gate and what to do when one fails.
+
+The live tests are files named `*.live.test.ts` under `apps/server/src`, run by `apps/server/vitest.live.config.ts`. They are not part of `bun run test`.
+
+- The auth tests start the server on a free port with the capture server in the same process, and read emails from it. Nothing else needs to be running except Postgres.
+- They need `TEST_DATABASE_URL`, which never falls back to `DATABASE_URL`. Before any change to the database, the fixture checks that the URL names a database ending in `_test` and that the open connection reports that same database.
+- Each suite works in its own throwaway schema (`fixture_<time>_<random>`), passed to the pool as its `searchPath`, and drops it afterwards.
+- A run that is killed can leave a schema behind. `bun run db:test:sweep` drops fixture schemas more than ten minutes old.
+
+To write a live suite, call `createFixtureSchema()` from `apps/server/src/test/live-database.ts` in `beforeEach`, create the pool with `searchPath: fixture.schema`, and call `fixture.drop()` in `afterEach`.
+
+### The browser journeys
+
+Run `bunx playwright install chromium` once (and again after Playwright updates), with Docker running. `bun run test:e2e` builds, then Playwright starts the compose database, migrates its `s10n_base_test` database, and starts the email capture server on port 8025 and the built server on port 4310, so a running `bun dev` is left alone. Details are in [quality.md](quality.md#browser-journeys).
+
+## Checking a build
+
+```bash
+bun run build
+bun run smoke
+```
+
+`smoke` starts the built server with Node, checks `/health`, `/ready` and that `/` serves the web app, then sends SIGTERM and checks that the server exits with code 0. It needs the database running and migrated (`bun run db:up`, then `bun run db:migrate`), since the server refuses to start while a migration is pending.
+
+The container image is checked the same way, in production mode:
+
+```bash
+bun run docker:build
+bun run docker:smoke
+```
+
+`docker:build` builds `s10n-base:local` from `docker/Dockerfile`. `docker:smoke` creates a throwaway database with an owner role and an app role in the local Postgres, runs `migrate up` from the image as the owner, starts the server from the image as the app role with production settings and a read-only filesystem, checks it, and removes everything it created. It needs the database running and Docker's host networking (Linux, or Docker Desktop with host networking turned on). [deployment.md](deployment.md) explains the image and how to run it.
