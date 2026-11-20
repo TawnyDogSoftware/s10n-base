@@ -74,7 +74,12 @@ describe(".env.example", () => {
     "TEST_DATABASE_URL",
   ];
   // Optional variables with no development value: listed, commented out.
-  const optional = ["AWS_SESSION_TOKEN"];
+  const optional = [
+    "AWS_SESSION_TOKEN",
+    "APP_VERSION",
+    "MIGRATION_DATABASE_URL",
+    "DATABASE_APP_ROLE",
+  ];
 
   it("lists every variable", () => {
     expect(Object.keys(example).toSorted((left, right) => left.localeCompare(right))).toEqual(

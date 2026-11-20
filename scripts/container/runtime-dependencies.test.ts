@@ -67,7 +67,13 @@ beforeEach(async () => {
   );
   await storePackage(
     "@scope+beta@1.0.0",
-    { name: "@scope/beta", type: "module", exports: "./index.js", dependencies: { gamma: "1" } },
+    {
+      name: "@scope/beta",
+      type: "module",
+      exports: "./index.js",
+      peerDependencies: { gamma: "1", react: "^19.0.0" },
+      peerDependenciesMeta: { gamma: { optional: true }, react: { optional: true } },
+    },
     esm('export { gamma as beta } from "gamma";\n'),
   );
   await storePackage(
@@ -89,6 +95,7 @@ beforeEach(async () => {
   await link("node_modules/.bun/alpha@1.0.0/node_modules", "delta", "delta@2.0.0");
   await link("node_modules/.bun/alpha@1.0.0/node_modules", "react", "react@19.0.0");
   await link("node_modules/.bun/@scope+beta@1.0.0/node_modules", "gamma", "gamma@1.0.0");
+  await link("node_modules/.bun/@scope+beta@1.0.0/node_modules", "react", "react@19.0.0");
   await link("apps/server/node_modules", "alpha", "alpha@1.0.0");
   await link("apps/server/node_modules", "@scope/beta", "@scope+beta@1.0.0");
   await link("apps/server/node_modules", "tooling", "tooling@1.0.0");
@@ -167,6 +174,19 @@ describe("collectRuntimeClosure", () => {
     await expect(collectRuntimeClosure(root, "apps/server")).rejects.toThrow(
       /^alpha resolves to gamma@1\.0\.0\/node_modules\/gamma, outside bun's store/,
     );
+  });
+});
+
+describe("optional peers", () => {
+  it("keeps the link to one whose package is in the closure anyway, since a package may import it", async () => {
+    const closure = await collectRuntimeClosure(root, "apps/server");
+
+    expect(closure.links).toContainEqual({
+      from: "node_modules/.bun/@scope+beta@1.0.0/node_modules",
+      name: "gamma",
+      entry: "gamma@1.0.0",
+    });
+    expect(closure.links.map((link) => link.name)).not.toContain("react");
   });
 });
 

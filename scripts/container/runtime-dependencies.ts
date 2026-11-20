@@ -11,7 +11,9 @@
  * output runs from any directory: `<out>/node_modules` and `<out>/<workspace>/node_modules`.
  *
  * Optional peers are not followed: bun links one whenever the workspace happens to install it
- * (`better-auth` gets React and Vitest that way), but a package works without them. TypeScript
+ * (`better-auth` gets React and Vitest that way), and a package is meant to work without them.
+ * Their links are kept when the package is copied anyway, since a package may still import one
+ * (`better-call` imports `zod`, an optional peer). TypeScript
  * sources and declarations and source maps are left out: Node never loads them from
  * `node_modules`.
  */
@@ -74,8 +76,13 @@ export function runtimeStarts(manifest: Manifest): string[] {
     .toSorted();
 }
 
-/** What a package needs: dependencies and required peers always, optional ones if installed. */
-function needs(manifest: Manifest): Array<{ readonly name: string; readonly optional: boolean }> {
+interface Need {
+  readonly name: string;
+  readonly optional: boolean;
+}
+
+/** What a package needs: dependencies and required peers always, optional dependencies if installed. */
+function needs(manifest: Manifest): Need[] {
   const required = Object.keys(manifest.dependencies ?? {}).map((name) => ({
     name,
     optional: false,
@@ -85,9 +92,19 @@ function needs(manifest: Manifest): Array<{ readonly name: string; readonly opti
     optional: true,
   }));
   const peers = Object.keys(manifest.peerDependencies ?? {})
-    .filter((name) => manifest.peerDependenciesMeta?.[name]?.optional !== true)
+    .filter((name) => !isOptionalPeer(manifest, name))
     .map((name) => ({ name, optional: false }));
   return [...required, ...optional, ...peers];
+}
+
+function isOptionalPeer(manifest: Manifest, name: string): boolean {
+  return manifest.peerDependenciesMeta?.[name]?.optional === true;
+}
+
+function optionalPeers(manifest: Manifest): string[] {
+  return Object.keys(manifest.peerDependencies ?? {}).filter((name) =>
+    isOptionalPeer(manifest, name),
+  );
 }
 
 /** The store entry a link at `linkPath` resolves to, or an error naming what is wrong. */
@@ -109,6 +126,8 @@ export async function collectRuntimeClosure(
 ): Promise<RuntimeClosure> {
   const packages = new Map<string, RuntimePackage>();
   const links: Edge[] = [];
+  /** Optional peers bun linked, kept below when their package is in the closure anyway. */
+  const peerLinks: Edge[] = [];
 
   async function visit(from: string, name: string, optional: boolean): Promise<void> {
     const linkPath = path.join(root, from, name);
@@ -124,6 +143,16 @@ export async function collectRuntimeClosure(
     packages.set(entry, { name, version: manifest.version, entry });
     const siblings = path.join(STORE, entry, "node_modules");
     for (const need of needs(manifest)) await visit(siblings, need.name, need.optional);
+    for (const peer of optionalPeers(manifest)) {
+      const peerPath = path.join(root, siblings, peer);
+      if (await exists(peerPath)) {
+        peerLinks.push({
+          from: siblings,
+          name: peer,
+          entry: await storeEntryOf(root, peerPath, peer),
+        });
+      }
+    }
   }
 
   const workspaceModules = path.join(workspace, "node_modules");
@@ -132,7 +161,10 @@ export async function collectRuntimeClosure(
   }
   return {
     packages: [...packages.values()].toSorted((a, b) => a.entry.localeCompare(b.entry)),
-    links,
+    // A package may import an optional peer it does not declare as a dependency (better-call
+    // imports zod), so the link stays wherever its package is copied for another reason. Linking
+    // it adds no package.
+    links: [...links, ...peerLinks.filter((link) => packages.has(link.entry))],
   };
 }
 
