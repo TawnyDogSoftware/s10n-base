@@ -29,7 +29,7 @@ The web app is built into the image and served by the server from `APP_URL`, its
 - What it holds: the bundled server (`apps/server/dist`), the built web app (`apps/web/dist`) and only the packages the server needs at run time, in `node_modules` (`scripts/container/runtime-dependencies.ts` picks them). No sources, tests, `.env` files, development tools, mobile app or docs, and no package manager.
 - It runs as the unprivileged `node` user (uid 1000), with `NODE_ENV=production`, `HOST=0.0.0.0` and `PORT=4210`, and writes nothing to its filesystem, so it runs with a read-only root filesystem. No shell is needed to start it.
 - `STOPSIGNAL` is `SIGTERM`, and its `HEALTHCHECK` asks `/health` with Node every 10 seconds.
-- Logs are JSON lines on stdout. Nothing is written anywhere else.
+- Logs are JSON lines on stdout. Nothing is written anywhere else. Each request gets one access line (`"message":"request"`) at `info`, so a `LOG_LEVEL` of `warn` or `error` leaves the access lines out.
 
 ## Environment
 

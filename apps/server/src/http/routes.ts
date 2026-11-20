@@ -1,7 +1,8 @@
 /**
  * The request handler: a thin router over the modules in this directory. Every response carries
- * an `X-Request-Id` and the security headers, every request gets one access-log line, and an
- * unexpected error is logged with its stack and answered with a fixed 500 body.
+ * an `X-Request-Id` and the security headers, every request gets one access-log line (at `info`,
+ * so a `LOG_LEVEL` of `warn` or `error` leaves it out), and an unexpected error is logged with its
+ * stack and answered with a fixed 500 body.
  */
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
