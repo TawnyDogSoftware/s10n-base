@@ -81,6 +81,29 @@ describe("runSetRoleCli with a database", () => {
     expect(queries[0]?.parameters).toContain("Sam@Example.com");
   });
 
+  it("follows LOG_LEVEL: at error it prints no role_set line, but still prints a failure", async () => {
+    const quiet = { ...env, LOG_LEVEL: "error" };
+    const success = capture();
+    const failure = capture();
+
+    const set = await runSetRoleCli({
+      args: ["sam@example.com", "admin"],
+      env: quiet,
+      write: success.write,
+      db: scriptedDb<DB>(() => [{ id: "u1" }]).db,
+    });
+    const unknown = await runSetRoleCli({
+      args: ["nobody@example.com", "admin"],
+      env: quiet,
+      write: failure.write,
+      db: scriptedDb<DB>(() => []).db,
+    });
+
+    expect([set, unknown]).toEqual([0, 1]);
+    expect(success.lines).toEqual([]);
+    expect(failure.lines).toMatchObject([{ message: "set_role_failed" }]);
+  });
+
   it("exits 1 when no user has the email", async () => {
     const { db } = scriptedDb<DB>(() => []);
     const output = capture();

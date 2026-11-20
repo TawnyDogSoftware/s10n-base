@@ -64,16 +64,18 @@ export interface SetRoleCliOptions {
 
 /** Runs the command and returns the exit code. Output is JSON lines on stdout. */
 export async function runSetRoleCli(options: SetRoleCliOptions): Promise<number> {
-  const logger = createLogger({ level: "info", write: options.write });
+  // Usage and configuration problems print whatever the level; after that, LOG_LEVEL applies.
+  const startupLogger = createLogger({ level: "info", write: options.write });
   let parsed: { email: string; role: Role };
   try {
     parsed = parseSetRoleArgs(options.args);
   } catch (error) {
-    logger.error("set_role_usage", { usage: (error as Error).message });
+    startupLogger.error("set_role_usage", { usage: (error as Error).message });
     return 2;
   }
-  const config = readDatabaseConfig(options.env, logger);
+  const config = readDatabaseConfig(options.env, startupLogger);
   if (config === undefined) return 1;
+  const logger = createLogger({ level: config.logLevel, write: options.write });
   const db = options.db ?? openCliDatabase(config, logger, options.schema);
   try {
     const userId = await setUserRole(db, parsed.email, parsed.role);
