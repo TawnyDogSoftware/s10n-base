@@ -186,6 +186,28 @@ describe("session renewal", () => {
     expect(new Date(row.expires_at).getTime()).toBeGreaterThan(aged.getTime());
   });
 
+  it("leaves a session due for renewal unchanged when an RPC reads it, since the RPC sends no cookie", async () => {
+    const browser = await signedInUser(email("rpc-renewal"));
+    const session = (await browser.session()) as { userId: string };
+    const aged = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+    await app.schema.db
+      .updateTable("ba_session")
+      .set({ expires_at: aged })
+      .where("user_id", "=", session.userId)
+      .execute();
+
+    const response = await rpc(browser, "fixture.whoami");
+
+    expect(response.status).toBe(200);
+    expect(response.headers.getSetCookie()).toEqual([]);
+    const row = await app.schema.db
+      .selectFrom("ba_session")
+      .select("expires_at")
+      .where("user_id", "=", session.userId)
+      .executeTakeFirstOrThrow();
+    expect(new Date(row.expires_at).getTime()).toBe(aged.getTime());
+  });
+
   it("sends no cookie when the session is fresh", async () => {
     const browser = await signedInUser(email("fresh"));
 
