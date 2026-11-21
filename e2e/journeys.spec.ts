@@ -138,7 +138,9 @@ test.describe("passkeys", () => {
 test.describe("the admin user list", () => {
   test.use({ extraHTTPHeaders: { "x-forwarded-for": "198.51.100.12" } });
 
-  test("pages through the users, and keeps the pages after going Back", async ({ page }) => {
+  test("pages through the users, and keeps the pages and the scroll position after going Back", async ({
+    page,
+  }) => {
     const errors = watchConsole(page);
     const email = freshEmail("admin");
     await signUpAndSignIn(page, "Admin Example", email, PASSWORD);
@@ -164,9 +166,35 @@ test.describe("the admin user list", () => {
     await page.goBack();
 
     await expect(page.getByRole("heading", { level: 1, name: "Users" })).toBeVisible();
-    // Both pages are still there. Where the page was scrolled is not restored (the router's
-    // scrollRestoration is off); see plan 011, lead L2.
+    // Both pages are still there.
     await expect(rows).toHaveCount(loaded);
+
+    // Where the list was scrolled comes back too. The header's link is at the top of the page,
+    // so leaving by it saves the top; Forward leaves the list where it was scrolled.
+    await page.mouse.wheel(0, 400);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    const scrolled = await page.evaluate(() => window.scrollY);
+    // Note where the app next asks the window to scroll. With the router's scroll restoration
+    // off it asks for the top on every arrival, and the position comes back only where the
+    // browser's own restoration happens to run after that.
+    await page.evaluate(() => {
+      const scrollTo = window.scrollTo.bind(window);
+      window.scrollTo = (target?: ScrollToOptions | number) => {
+        const top = typeof target === "object" ? target.top : target;
+        document.documentElement.dataset.askedTop = String(top);
+        scrollTo({ top: top ?? 0 });
+      };
+    });
+    await page.goForward();
+    await expect(page.getByRole("heading", { level: 1, name: "Your profile" })).toBeVisible();
+    await page.goBack();
+
+    await expect(page.getByRole("heading", { level: 1, name: "Users" })).toBeVisible();
+    await expect(rows).toHaveCount(loaded);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrolled);
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.dataset.askedTop))
+      .toBe(String(scrolled));
 
     expect(errors).toEqual([]);
   });

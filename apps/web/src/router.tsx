@@ -42,7 +42,10 @@ export function getRouter(history: RouterHistory, dependencies: RouterDependenci
     // Every search value stays the string in the URL; see lib/search.ts.
     parseSearch,
     stringifySearch,
-    scrollRestoration: false,
+    // The router puts the scroll position back on Back and Forward, and scrolls to the top on a
+    // new page. Off, it scrolls to the top on every arrival, Back included, and the position
+    // returns only where the browser's own restoration runs after that.
+    scrollRestoration: true,
     defaultErrorComponent: RouteError,
     defaultNotFoundComponent: NotFound,
     Wrap: ({ children }: { readonly children: ReactNode }) => (
