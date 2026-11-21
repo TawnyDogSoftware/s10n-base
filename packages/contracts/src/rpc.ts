@@ -1,92 +1,55 @@
 import { Schema } from "effect";
 
-import { DeleteResult } from "./base";
-import {
-  CreateNoteInput,
-  CreateProjectInput,
-  DeleteNoteResult,
-  Note,
-  Project,
-  ProjectDetail,
-  ProjectList,
-  ProjectLookupInput,
-  UpdateNoteInput,
-  UpdateProjectInput,
-} from "./domain";
-import { AppSettings } from "./settings";
+/** The roles a signed-in user can have. */
+export const Role = Schema.Literals(["user", "admin"]);
+export type Role = typeof Role.Type;
 
-export interface RpcContract<Payload, Success> {
+/**
+ * Who may call an RPC method: anyone (`"public"`), any signed-in user (`"session"`), or a
+ * signed-in user with the given role (`{ role }`). The server checks it before it decodes the
+ * payload.
+ */
+export const RpcAuth = Schema.Union([
+  Schema.Literals(["public", "session"]),
+  Schema.Struct({ role: Role }),
+]);
+export type RpcAuth = typeof RpcAuth.Type;
+
+/**
+ * One RPC method: its name, who may call it, and the schemas for its payload and result. The
+ * type parameters are the decoded and encoded (JSON) types, which differ for schemas such as
+ * `Schema.NumberFromString`.
+ */
+export interface RpcContract<
+  Payload = unknown,
+  Success = unknown,
+  PayloadEncoded = unknown,
+  SuccessEncoded = unknown,
+> {
   readonly method: string;
-  readonly payload: Schema.Schema<Payload>;
-  readonly success: Schema.Schema<Success>;
+  readonly auth: RpcAuth;
+  readonly payload: Schema.Codec<Payload, PayloadEncoded>;
+  readonly success: Schema.Codec<Success, SuccessEncoded>;
 }
 
-function defineRpc<Payload, Success>(
-  method: string,
-  payload: Schema.Schema<Payload>,
-  success: Schema.Schema<Success>,
-): RpcContract<Payload, Success> {
+/** Declares an RPC method. `auth` is required: there is no default level. */
+export function defineRpc<Payload, Success, PayloadEncoded, SuccessEncoded>(contract: {
+  readonly method: string;
+  readonly auth: RpcAuth;
+  readonly payload: Schema.Codec<Payload, PayloadEncoded>;
+  readonly success: Schema.Codec<Success, SuccessEncoded>;
+}): RpcContract<Payload, Success, PayloadEncoded, SuccessEncoded> {
   return {
-    method,
-    payload,
-    success,
+    method: contract.method,
+    auth: contract.auth,
+    payload: contract.payload,
+    success: contract.success,
   };
 }
 
-const EmptyInput = Schema.Struct({});
-
-export const RPC_METHODS = {
-  projectsList: "projects.list",
-  projectsGet: "projects.get",
-  projectsCreate: "projects.create",
-  projectsUpdate: "projects.update",
-  projectsDelete: "projects.delete",
-  notesCreate: "notes.create",
-  notesUpdate: "notes.update",
-  notesDelete: "notes.delete",
-  settingsGet: "settings.get",
-  settingsUpdate: "settings.update",
-} as const;
-
-export const EmptyPayload = {} as const;
-
-export const ProjectsListRpc = defineRpc(RPC_METHODS.projectsList, EmptyInput, ProjectList);
-
-export const ProjectGetRpc = defineRpc(RPC_METHODS.projectsGet, ProjectLookupInput, ProjectDetail);
-
-export const ProjectCreateRpc = defineRpc(RPC_METHODS.projectsCreate, CreateProjectInput, Project);
-
-export const ProjectUpdateRpc = defineRpc(RPC_METHODS.projectsUpdate, UpdateProjectInput, Project);
-
-export const ProjectDeleteRpc = defineRpc(
-  RPC_METHODS.projectsDelete,
-  ProjectLookupInput,
-  DeleteResult,
-);
-
-export const NoteCreateRpc = defineRpc(RPC_METHODS.notesCreate, CreateNoteInput, Note);
-
-export const NoteUpdateRpc = defineRpc(RPC_METHODS.notesUpdate, UpdateNoteInput, Note);
-
-export const NoteDeleteRpc = defineRpc(
-  RPC_METHODS.notesDelete,
-  ProjectLookupInput,
-  DeleteNoteResult,
-);
-
-export const SettingsGetRpc = defineRpc(RPC_METHODS.settingsGet, EmptyInput, AppSettings);
-
-export const SettingsUpdateRpc = defineRpc(RPC_METHODS.settingsUpdate, AppSettings, AppSettings);
-
-export const rpcContracts = [
-  ProjectsListRpc,
-  ProjectGetRpc,
-  ProjectCreateRpc,
-  ProjectUpdateRpc,
-  ProjectDeleteRpc,
-  NoteCreateRpc,
-  NoteUpdateRpc,
-  NoteDeleteRpc,
-  SettingsGetRpc,
-  SettingsUpdateRpc,
-] as const;
+/** The body of every `POST /rpc` request. The payload is decoded later by the method's contract. */
+export const RpcRequest = Schema.Struct({
+  method: Schema.String,
+  payload: Schema.Unknown,
+});
+export type RpcRequest = typeof RpcRequest.Type;

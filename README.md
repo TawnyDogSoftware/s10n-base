@@ -1,141 +1,98 @@
 # S10N Base
 
-S10N Base is a Bun + Turbo monorepo scaffold for a local-first app with a typed server boundary, web client, and optional desktop host.
+A starter for hosted, multi-user web and mobile apps. It gives a new project a working server, web app and mobile app on day one: people can sign up, confirm their email, sign in, manage their profile, and an admin can list users. Behind that are the parts every project would otherwise build again: Postgres with migrations, auth, email, typed contracts between server and clients, strict quality gates, CI and a container image. It is meant for small teams, and for coding agents working under their review, who want to start on product work instead of scaffolding. A project starts from it as a template and renames it in one command.
 
-It was derived from [`t3code`](https://github.com/pingdotgg/t3code), keeping the overall repo shape and developer workflow while removing product-specific coding-agent behavior.
+## What is built in
 
-## Current Stack
+- **Server** (`apps/server`): Node `node:http` with validated configuration, an ordered startup and graceful shutdown on Effect's core, health and readiness checks, and an RPC endpoint where every method declares who may call it.
+- **Web** (`apps/web`): React 19, Vite, TanStack Router and Query, Tailwind 4: sign-up, sign-in with a password or a passkey, email confirmation, password reset, a profile page and an admin user list.
+- **Mobile** (`apps/mobile`): Expo SDK 58 with expo-router and Uniwind: the same screens except passkeys. Written and tested on Linux; the first boot on a Mac is pending ([docs/mobile-first-boot.md](docs/mobile-first-boot.md)).
+- **Auth**: Better Auth with email and password, passkeys on the web, roles, and the native app's session, behind a route allow-list.
+- **Email**: a small Amazon SES client of our own, and a local capture server with an inbox, so every email flow works on a fresh clone with no account.
+- **Database**: Postgres 18 with Kysely, numbered migrations run by their own command, generated types, and a live-database test lane.
+- **Shared packages**: contracts, an API client with per-user query state, a theme both apps style with, and typed translations.
+- **Gates**: one command runs commit-attribution, lint with no suppressions, type-checked ESLint, format, typecheck, layering, dead-code, 100% coverage and audit checks; browser journeys with an accessibility check run separately.
+- **CI**: five jobs on every pull request, and a daily pull request with every dependency update at least three days old.
+- **Image**: one hosting-neutral container image with the server, the web build and a separate migrate command.
 
-- Bun workspaces + Turbo
-- Strict TypeScript across apps and packages
-- `apps/server`: Node HTTP server with typed RPC, WebSocket activity stream, and SQLite persistence via `better-sqlite3`
-- `apps/web`: React 19 + Vite + Tailwind CSS v4 + TanStack Router + TanStack Query
-- `apps/desktop`: thin Electron wrapper around the server and web UI
-- `packages/contracts`: shared Effect schemas and RPC contracts
-- `packages/shared`: small cross-runtime helpers
-- Oxlint + Oxfmt + Vitest
+## Quick start
 
-## Monorepo Layout
-
-```text
-apps/
-  desktop/
-  server/
-  web/
-packages/
-  contracts/
-  shared/
-scripts/
-```
-
-## Requirements
-
-- Bun `>=1.3.0`
-- Node `>=24`
-
-## Commands
-
-Install dependencies:
+You need Node (the version in `.nvmrc`), bun (the version in `packageManager` in `package.json`) and Docker with Compose v2.
 
 ```bash
 bun install
+bun dev
 ```
 
-Run the server and web app in development:
+`bun dev` starts Postgres, applies the migrations, and runs the server, the web app and the local email inbox until you press Ctrl-C.
 
-```bash
-bun run dev
-```
+- Open the app at [http://localhost:5173](http://localhost:5173) and create an account.
+- Emails are captured, not sent: open the confirmation link from the inbox at [http://127.0.0.1:8005/](http://127.0.0.1:8005/).
+- Make yourself an admin, then open **Users** in the header:
 
-Run individual apps:
+  ```bash
+  bun run auth:set-role you@example.com admin
+  ```
 
-```bash
-bun run dev:server
-bun run dev:web
-bun run dev:desktop
-```
+The mobile app runs against the same server: `bun run dev:mobile`, and on a Mac `bun run ios:simulator` for the first build ([docs/mobile-dev.md](docs/mobile-dev.md)).
 
-Build everything:
-
-```bash
-bun run build
-```
-
-Start built apps:
-
-```bash
-bun run start:server
-bun run start:web
-bun run start:desktop
-```
-
-Run checks:
-
-```bash
-bun run fmt
-bun run fmt:check
-bun run lint
-bun run typecheck
-bun run test
-```
-
-Clean generated output:
-
-```bash
-bun run clean
-```
-
-## Default URLs And Ports
-
-- Server: `http://127.0.0.1:4210`
-- Web dev server: `http://127.0.0.1:5173`
-
-In development, the Vite app proxies `/health`, `/config`, `/rpc`, and `/ws` to the server.
-
-## Environment Variables
-
-- `HOST`: host for the server and Vite dev server. Default: `127.0.0.1`
-- `PORT`: fallback server port. Default: `4210`
-- `S10N_BASE_PORT`: preferred server port override
-- `S10N_BASE_HOME`: runtime directory for server data and logs. Default: `~/.s10n-base`
-- `VITE_SERVER_URL`: server URL used by the Vite dev proxy. Default: `http://127.0.0.1:4210`
-- `S10N_BASE_SERVER_URL`: server URL the desktop app should connect to. Default: `http://127.0.0.1:4210`
-- `VITE_DEV_SERVER_URL`: web dev server URL the desktop app should load in development. Default: `http://127.0.0.1:5173`
-
-## Runtime Files
-
-The server creates and uses this runtime layout under `S10N_BASE_HOME`:
+## Layout
 
 ```text
-~/.s10n-base/
-  data/
-    app.db
-    settings.json
-  logs/
-    server.log
+apps/
+  server/      the API, auth and migrations; serves the web build in production
+  web/         the web app
+  mobile/      the Expo app
+packages/
+  contracts/   schemas shared by server and clients: RPC methods, sessions, error codes
+  client/      the API client, session state and screen logic both apps share
+  shared/      small helpers that import nothing
+  theme/       the design tokens both apps style with
+  i18n/        translations for both apps and the server's emails
+scripts/       development, quality gates, dependency updates, rename, checks
+e2e/           browser journeys
+docker/        the Dockerfile and the local database's init script
+docs/          how-to guides and decision records
+plans/         numbered plans: how the base was built and why
 ```
 
-## Server Surface
+## Commands
 
-The server currently exposes:
+| Command                                          | What it does                                                               |
+| ------------------------------------------------ | -------------------------------------------------------------------------- |
+| `bun dev`                                        | Database, migrations, server, web app and inbox, in development            |
+| `bun run agent:check`                            | Every gate that needs no database or browser; run it before every push     |
+| `bun run test:live`                              | The server's tests against Postgres (`bun run db:up` first)                |
+| `bun run test:e2e`                               | Builds, then the browser journeys in Chromium                              |
+| `bun run build`, `bun run smoke`                 | Builds everything, then starts the built server, checks it and stops it    |
+| `bun run mobile:export`                          | Bundles the mobile app for both platforms and checks the bundle            |
+| `bun run docker:build`, `bun run docker:smoke`   | Builds the image and runs it in production mode against the local database |
+| `bun run db:migrate`, `db:status`, `db:generate` | Applies migrations, lists them, regenerates the database types             |
+| `bun run auth:set-role <email> <role>`           | Changes a user's role                                                      |
+| `bun run rename`, `bun run rename:proof`         | Gives a new project its names; proves a renamed copy still passes          |
+| `bun run deps:update --dry-run`                  | Previews the daily dependency update                                       |
+| `bun run fmt`, `bun run clean`                   | Formats; removes installed packages and build output                       |
 
-- `GET /health`
-- `GET /config`
-- `POST /rpc`
-- `GET /ws` via WebSocket upgrade
+[docs/setup.md](docs/setup.md) has every command, the environment variables and the database; [docs/quality.md](docs/quality.md) has each gate.
 
-When `apps/web/dist` exists, the server also serves the built web app.
+## Starting a new project
 
-## Example Domain
+Use the repository as a template, run `bun run rename` with your names, and follow [docs/new-project.md](docs/new-project.md) for what to keep, the secrets to add and the first deployment.
 
-The scaffold currently proves the stack with a small example domain:
+## Docs
 
-- projects
-- notes within projects
-- server-persisted app settings
-- live activity events over WebSocket
-- a few client-only UI settings persisted with Zustand
+[docs/README.md](docs/README.md) lists every guide. The main ones: [setup](docs/setup.md), [quality gates](docs/quality.md), [auth](docs/auth.md), [the client package](docs/client.md), [translations](docs/i18n.md), [mobile development](docs/mobile-dev.md), [dependencies](docs/dependencies.md), [deployment](docs/deployment.md), and the [decision records](docs/adr/README.md).
 
-## Customizing
+## Conventions
 
-If you are turning this into a new product, start with `CUSTOMIZATION_GUIDE.md`.
+- Run `bun run agent:check` before every push; fix the code, never the gate.
+- Every RPC method declares its auth level; migrations are numbered and append-only; clients never import the server.
+- A new dependency needs a reason; packages stay at least three days old; Expo's packages move only with `expo install`.
+- Changes start as numbered plans in `plans/`, and every scaffold-level change gets a `CHANGELOG.md` entry.
+- Commit messages say what changed and why, with no tool attribution.
+
+The full rules are in [AGENTS.md](AGENTS.md).
+
+## Credit
+
+Derived from [T3 Code](https://github.com/pingdotgg/t3code), keeping its repository shape and developer workflow while removing its product-specific behaviour.

@@ -1,12 +1,25 @@
 # 000: Rework s10n-base into a hosted web and mobile starter
 
-> Status: approved by the owner on 2026-11-18. Not started.
+> Status: approved by the owner on 2026-11-18. **Phases 1 to 9 are implemented** on one pull request (PR #1), each recorded in its own plan:
+>
+> - Phase 1 implemented on 2026-11-19 ([001](001-strip-desktop-and-local-first.md)).
+> - Phase 2 implemented on 2026-11-19 ([002](002-toolchain-upgrade-and-ci.md)).
+> - Phase 3 implemented on 2026-11-19 ([003](003-hosted-server-core.md)).
+> - Phase 4 implemented on 2026-11-19 ([004](004-auth.md)).
+> - Phase 5 implemented on 2026-11-19 ([005](005-web-blank-slate.md)).
+> - Phase 6 implemented on 2026-11-19 ([006](006-mobile-blank-slate.md)); **first boot on a Mac pending** ([docs/mobile-first-boot.md](../docs/mobile-first-boot.md)), so not done.
+> - Phase 7 implemented on 2026-11-19 ([007](007-quality-gates.md)).
+> - Phase 8 implemented on 2026-11-20 ([008](008-deployment-kit.md)).
+> - Phase 9 implemented on 2026-11-20 ([009](009-conventions-and-docs.md)).
+> - Phase 10 **not started**: its backport plans are written in each existing project's own repository, not here.
+>
+> What remains is the owner's: boot the mobile app on a Mac from a fresh clone; create the dependency-update GitHub App, install it, add its two secrets and run the workflow once by hand ([docs/dependencies.md](../docs/dependencies.md#setting-up-the-github-app)); turn on the repository's "Template repository" setting; look at the web screens in light and dark mode; merge the pull request; and phase 10.
 
 Written 2026-11-18 from a review of three private projects built on this base (called Project A, B and C here), of s10n-base itself, of T3 Code upstream, and of the npm registry.
 
 **This is the public version of the plan.** The projects it draws on are private, so they are not named, and source references are given as labels such as `[S4]`. The full plan, the research reports, the key to the labels (which repo, file and commit each one points to) and the scrub denylist live in a private companion directory outside this repo, at `../s10n-base-private/` next to the checkout. Read `../s10n-base-private/README.md` before starting a phase. Nothing from that directory may be copied into this repo without scrubbing.
 
-**How far to trust this:** every finding comes from reading code, git history and the npm registry. Nobody installed, built or ran anything. Version numbers are registry data as of 2026-11-18 and must be re-checked on the day the upgrade is done.
+**How far to trust this:** every finding comes from reading code, git history and the npm registry. Nobody installed, built or ran anything. Version numbers are registry data as of 2026-11-18 and must be re-checked on the day the upgrade is done. Phase 1 recorded a real baseline on 2026-11-19 (plan 001, section 8): it confirmed defect 1 and found defect 10.
 
 ## 1. Summary
 
@@ -53,17 +66,18 @@ The target is a hosted, multi-user starter:
 
 ## 3. Defects in the base today
 
-These are bugs, separate from the desktop assumptions. The first one was found by reading the config, not by running it; Project B fixed the same thing in its first 48 hours.
+These are bugs, separate from the desktop assumptions. The first one was found by reading the config and confirmed by running it in phase 1; Project B fixed the same thing in its first 48 hours.
 
-1. **The built server probably doesn't start.** `apps/server/tsdown.config.ts` has no setting to bundle workspace packages, and `packages/contracts` exports TypeScript source, so `dist/bin.mjs` imports raw `.ts`.
+1. **The built server doesn't start** (confirmed 2026-11-19 on Node 26.12.1; **fixed in phase 2**, and CI's smoke test now checks it). `apps/server/tsdown.config.ts` has no setting to bundle workspace packages, and `packages/contracts` exports TypeScript source, so `dist/bin.mjs` imports raw `.ts`. Node 26 strips the types and loads that file, then exits with `ERR_MODULE_NOT_FOUND` on its extensionless relative import `./base`.
 2. **Five `tsconfig.tsbuildinfo` files are committed.** All three spin-offs inherited and later removed them.
-3. **No auth on `/rpc`, `/ws` or `/config`**, CORS is `*`, there is no request body limit, and 500 responses leak error messages.
-4. **The database closes before requests drain** on shutdown, and there is no shutdown deadline.
-5. **SQLite tables are created on every boot** with no migrations and no owner column.
-6. **The web client uses relative URLs**, which a mobile app can't use.
-7. **Lockfile versions carry known advisories:** `ws` 8.20.0, vite 7.3.2, vitest 4.1.4, turbo 2.9.6, effect beta.45 and electron 40.6.0.
-8. **Docs are wrong.** `EXTRACTION_REPORT.md` describes path helpers and log rotation that don't exist, and the rename checklist misses the `S10N_BASE_*` env vars, the localStorage key, the page title and the bin name.
-9. **Uses the deprecated `vitest.workspace` file** and leaves `packages/shared` out of it.
+3. **No auth on `/rpc`, `/ws` or `/config`**, CORS is `*`, there is no request body limit, and 500 responses leak error messages. **Partly fixed in phase 3:** CORS allows only `APP_URL`'s origin, bodies are limited, a 500 sends a fixed message, every RPC method declares an auth level that one dispatcher enforces, and `/config` no longer trusts request headers; `/ws` went in phase 1. **Fixed in phase 4:** the RPC caller comes from the Better Auth session, `/rpc` and `/api/app-auth/*` refuse untrusted `Origin` headers, and `/api/auth` sits behind a route allow-list.
+4. **The database closes before requests drain** on shutdown, and there is no shutdown deadline. **Fixed in phase 3:** Effect layers release the HTTP server (drain, then force-close at `SHUTDOWN_TIMEOUT_MS`) before the pool.
+5. **SQLite tables are created on every boot** with no migrations and no owner column. **Fixed in phases 1 and 3:** SQLite went in phase 1; Postgres has numbered migrations run by a separate entry point, and the server never migrates on startup. Owner columns arrive with the first tables (phase 4 onwards).
+6. **The web client uses relative URLs**, which a mobile app can't use. **Fixed in phase 5:** `packages/client` takes an explicit base URL (`VITE_API_BASE_URL` on the web, the page's origin by default), and the relative-URL client is gone.
+7. **Lockfile versions carry known advisories:** `ws` 8.20.0, vite 7.3.2, vitest 4.1.4, turbo 2.9.6, effect beta.45 and electron 40.6.0. **Fixed in phases 1 and 2:** electron went in phase 1; `ws` left the lockfile with jsdom 31; the rest moved past their advisories. Phase 2 also cleared a `source-map-js` advisory the old lockfile kept, and `bun audit` reports nothing.
+8. **Docs are wrong.** `EXTRACTION_REPORT.md` describes path helpers and log rotation that don't exist, and the rename checklist misses the `S10N_BASE_*` env vars, the localStorage key, the page title and the bin name. **Fixed in phases 1, 3 and 9:** the report, the bin entry, the persisted web store and two of the env vars went in phase 1, and `S10N_BASE_PORT` in phase 3; phase 9 replaced the checklist with `bun run rename`, which a CI job proves on a renamed copy, rewrote the README, and corrected the docs that had gone stale.
+9. **Uses the deprecated `vitest.workspace` file** and leaves `packages/shared` out of it. **Fixed in phase 2:** a root `vitest.config.ts` with `test.projects`, and `packages/shared` has tests.
+10. **`fmt:check` fails on the default branch** (found 2026-11-19). oxfmt also checks Markdown, and this plan's tables are not in its format. Fixed the same day: `plans/` is excluded from formatting in `.oxfmtrc.json` (owner decision), so plan files are never reformatted by the tool.
 
 ## 4. Decisions (settled with the owner, 2026-11-18)
 
@@ -159,12 +173,14 @@ Targets follow the 3-day rule as of 2026-11-18. The full table and changelog lin
 | oxlint / oxfmt | 1.55 / 0.40 | 1.93.0 / 0.78.0 exact | expect a repo-wide reformat; do it as its own commit |
 | React and react-dom | ^19.2.0 | 19.3.0, exact | **Deviation from the rule.** 19.3.1 is newest, but Expo SDK 58 pins 19.3.0, and one React across web and mobile avoids duplicates. Project B does this. |
 
+**Phase 2 outcome (2026-11-19):** the table held except for turbo (2.11.11) and vitest with coverage-v8 (5.1.0). Neither patch exception was taken: turbo 2.11.12 and 2.11.13 fix affected-task detection, watch mode and `turbo trace`, none of which this repo uses, and both releases become eligible on 2026-11-21 through the daily update. oxfmt 0.78.0 changed no file, so there was no reformat. The final table and every check are in plan 002, section 10.
+
 Also in this phase:
 
 - A minimal `ci.yml`: frozen install, format check, lint, typecheck, test, build, then start the built server and hit `/health`. That last step would have caught defect 1.
-- Dependabot for GitHub Actions and Docker only, since it cannot update a bun `catalog`. Set its `cooldown` to 3 days so it follows the same rule (confirm the option name against current Dependabot docs).
+- Dependabot for GitHub Actions and Docker only, since it cannot update a bun `catalog`. Set its `cooldown` to 3 days so it follows the same rule (confirmed in phase 2: `cooldown.default-days`). Docker entries arrive with the phases that add Docker files.
 - The daily dependency-update workflow described below.
-- Enforce the 3-day rule in the package manager: `[install] minimumReleaseAge = 259200` (seconds) in `bunfig.toml`. **Decided 2026-11-18.** Tested on bun 1.4.4 in a throwaway project: with the setting, `bun add knip` installed 6.45.1 (7 days old) instead of 6.46.0 (published that day). The patch exception then needs a per-package override or a temporary lift, documented in the README.
+- Enforce the 3-day rule in the package manager: `[install] minimumReleaseAge = 259200` (seconds) in `bunfig.toml`. **Decided 2026-11-18.** Tested on bun 1.4.4 in a throwaway project: with the setting, `bun add knip` installed 6.45.1 (7 days old) instead of 6.46.0 (published that day). The patch exception then needs a per-package override or a temporary lift, documented in the README. **Phase 2 found** the per-package setting is `minimumReleaseAgeExcludes` in `bunfig.toml`, and that it covers only the packages named: dependencies published with them must be listed too, and blocked platform binaries (oxlint, turbo) are skipped without an error. See `docs/dependencies.md`.
 - An `auth-stack` note in the docs: `better-auth`, `@better-auth/expo` and `better-call` move together.
 
 #### Daily dependency-update workflow
@@ -176,12 +192,13 @@ What the test showed:
 - `bun update` honours `minimumReleaseAge` from `bunfig.toml`, rewrites the root `catalog`, and stays inside each range. Exact pins are left alone.
 - `bun update --latest` also honours the age gate, crosses major versions, and moves exact pins while keeping them exact (`effect` 4.0.3 became 4.1.4; `jsdom` ^30 became ^31.0.1; `knip` stayed at 6.45.1 because 6.46.0 was a day old).
 - `bun outdated` marks versions held back by the age gate with `*`.
-- `--minimum-release-age-excludes=<pkg>` lifts the gate for named packages, which is how a bug-fix patch is taken early.
+- `--minimum-release-age-excludes=<pkg>` lifts the gate for named packages, which is how a bug-fix patch is taken early. (Phase 2: true, but only for the packages named, not their dependencies.)
+- (Phase 2, not in the original test) `bun update --latest <names>` and `bun update --latest '!<name>'` do **not** rewrite catalog entries on bun 1.4.4; only an unfiltered `bun update -r --latest` does.
 
 Design (`.github/workflows/dependency-updates.yml`), revised with the owner on 2026-11-18:
 
 - **Trigger:** `cron: "0 0 * * *"` plus `workflow_dispatch`. GitHub can start scheduled runs late at busy times such as the top of the hour, so "midnight UTC" means shortly after.
-- **One PR with everything the rule allows:** `bun update -r --latest` minus the hold list, so majors are included. When a major breaks CI, the fix is made on that PR's branch (by a person or an agent) and merged with it; the base is expected to keep up with majors.
+- **One PR with everything the rule allows:** `bun update -r --latest` minus the hold list, so majors are included. (Phase 2: bun's filters cannot exclude catalog entries, so the script updates everything, then restores held packages and reinstalls.) When a major breaks CI, the fix is made on that PR's branch (by a person or an agent) and merged with it; the base is expected to keep up with majors.
 - **Supersede, don't pile up.** Each run:
   1. Looks for an open PR with the `dependency-update` label.
   2. Builds today's result. If there is an open PR, the new branch starts from that PR's head with `main` merged in, so fix commits already pushed for a major carry forward. If that merge conflicts, it starts from `main` and says so.
@@ -195,12 +212,12 @@ Design (`.github/workflows/dependency-updates.yml`), revised with the owner on 2
 - **Hold list** in one checked-in file with a reason per entry, enforced by a test:
   - `react`, `react-dom`, `react-native` and every Expo-managed native module: owned by the Expo SDK. The job runs `bunx expo install --check` in `apps/mobile` and reports drift instead of taking npm latest. A new Expo SDK is flagged in the PR body.
   - `typescript`: held below 6.1 until typescript-eslint supports 7 (D4, D6).
-  - `better-auth`, `@better-auth/expo`, `@better-auth/passkey`, `better-call`: updated only together, as one group.
+  - `better-auth`, `@better-auth/expo`, `@better-auth/passkey`, `better-call`: updated only together, as one group. (Phase 2: `better-call` has its own version numbers, 1.4.5 against better-auth's 1.7.25, so it cannot share a same-version group. It is held on its own and moved by hand with the group; phase 4's version test covers it.)
   - `kysely`: held on 0.29.x, the range Better Auth supports.
 - **PR body:** version changes grouped as major, minor and patch; bun and Node changes; anything flagged but not applied; and the packages `bun outdated` shows as held back by the age gate. That last list is where a person applies the patch exception by hand with `--minimum-release-age-excludes`; judging whether a patch "fixes an actual bug" is not automated.
-- **Token:** a GitHub App installation token from `actions/create-github-app-token`. A PR opened with the default `GITHUB_TOKEN` does not trigger CI. App permissions: Contents read and write, Pull requests read and write, nothing else. Secrets: `DEPS_UPDATE_APP_ID` and `DEPS_UPDATE_APP_PRIVATE_KEY`.
+- **Token:** a GitHub App installation token from `actions/create-github-app-token`. A PR opened with the default `GITHUB_TOKEN` does not trigger CI. App permissions: Contents read and write, Pull requests read and write, nothing else. Secrets: `DEPS_UPDATE_APP_CLIENT_ID` and `DEPS_UPDATE_APP_PRIVATE_KEY` (phase 2 renamed the first from `DEPS_UPDATE_APP_ID`, because `app-id` is deprecated in `actions/create-github-app-token` 3.3.0 in favour of `client-id`).
 - **Hardening:** SHA-pinned actions, job `permissions: contents: read` (the app token does the writing), `bun install --ignore-scripts` during the update, a concurrency group.
-- **Not covered:** GitHub Actions versions and Docker image digests, which Dependabot handles.
+- **Not covered:** GitHub Actions versions, which Dependabot handles, and the digests of the container image's pinned base tags, which Dependabot refreshes. (Phase 8: the workflow moves the Dockerfile's Node and bun tags, with their digests, together with `.nvmrc` and `packageManager`, since a test requires them to agree; Dependabot ignores version moves of those two images.)
 - **Public-repo caveat:** s10n-base is a public repo, and GitHub disables scheduled workflows in public repos after 60 days without repository activity. Merging the update PRs counts as activity; a long quiet spell would need the workflow re-enabled.
 
 To re-check on the day: `expo` 58.0.26 (eligible from 2026-11-20), oxlint 1.94.0, oxfmt 0.79.0, react-query 5.108.0, knip 6.46.0, dependency-cruiser 18.8.0, typescript-eslint 8.73.0.
@@ -214,7 +231,8 @@ To re-check on the day: `expo` 58.0.26 (eligible from 2026-11-20), oxlint 1.94.0
 - **Lifecycle:** `/health` (liveness) and a readiness check that pings the database; SIGTERM drains requests before closing the pool, with a deadline. Built on Effect `Layer`/`Scope` (D1), so resources release in reverse order of acquisition.
 - **Logging:** structured JSON to stdout only.
 - **RPC:** keep `POST /rpc` with the `{method, payload}` envelope. Every contract method declares `auth` (`public`, `session`, or a role), enforced in one dispatcher before the payload is decoded, with typed `unauthenticated` and `forbidden` errors. An exhaustiveness test fails if a method has no handler.
-- **Tests:** a live-Postgres lane with a throwaway schema per suite, a guard that the test URL ends in `_test`, and a sweeper for leftover databases.
+- **Tests:** a live-Postgres lane with a throwaway schema per suite, a guard that the test URL ends in `_test`, and a sweeper for leftover schemas.
+- **Phase 3 outcome (2026-11-19):** done as planned, with the departures recorded in plan 003, section 11. Two findings matter beyond this phase: Effect 4.1's `Config` stops at the first invalid variable, so the config module collects errors itself on top of per-variable `Config`s; and Kysely creates its bookkeeping tables before taking its own migration lock, which is why the migrator holds a separate advisory lock.
 - **Local dev:** `docker-compose.local.yml` with Postgres, and one `bun dev` that starts the database, server and web.
 
 ### Phase 4: auth
@@ -231,6 +249,7 @@ Project B has the smallest clean versions of the options builder and the bridge 
 - An `AuthEmailSender` interface backed by **our own SES v2 sender** instead of `@aws-sdk/client-sesv2` (owner decision, 2026-11-18). All three repos use 1 of the SDK's 116 commands, and the SDK releases about every 1.6 days, which would put an AWS bump in nearly every daily update PR. About 150 lines plus tests: a SigV4 signer on `node:crypto`, the `SendEmail` request, error mapping, a timeout and a retry schedule. Static access keys only; a project that needs role assumption, SSO or instance credentials swaps the SDK back in behind the interface. Verify the signer against AWS's published SigV4 test vectors; the line estimate and signing details came from research, not from running code.
 - **SES local is part of the base, not optional** (owner decision, 2026-11-18). It is **our own capture server** of about 120 lines on `node:http`, replacing the `aws-ses-v2-local` package (owner decision, 2026-11-18), which brought 65 to 111 installed packages and the `nodemailer` advisories all three repos had to override. It serves `POST /v2/email/outbound-emails`, `/store`, `/health-check`, `/clear-store` and an inbox page, binds to loopback only, keeps a bounded store, and rejects raw MIME content loudly. `bun dev` starts it alongside Postgres, the server and web. `.env.example` points the server at it by default, so verification and reset emails work on a fresh clone with no AWS account, and its inbox viewer is linked from the README. The live tests and the Playwright journey read emails from its `/store`. Production config must refuse the local endpoint, as Project C's does.
 - A short `docs/auth.md` listing the pitfalls Project C's reviews found: read the clock after taking row locks, recheck the session inside transactions, and treat a lost response on a security action as an unknown outcome.
+- **Phase 4 outcome (2026-11-19):** done as planned, with the departures and findings recorded in plan 004, section 10. Corrections to this section: the size estimates were low (the SigV4 signer is about 150 lines and the SES client about 210, against "about 150" for both; the capture server about 250, against "about 120", mostly input validation and the inbox page); the signer passes the 38 v4 cases of the AWS SigV4 test suite, which AWS no longer offers as a download from its documentation and now keeps in `awslabs/aws-c-auth`; and Better Auth 1.7.25 differs from what our projects ran in ways that matter here: it turns its origin and CSRF checks off by default when `NODE_ENV` is `test`, accepts a `casing` option without using it, and leaves UUID ids to the database's default on Postgres.
 
 ### Phase 5: web blank slate
 
@@ -239,7 +258,8 @@ Project B has the smallest clean versions of the options builder and the bridge 
 - Route guards as `beforeLoad` (`requireSession`, `redirectSignedIn`) with a safe-redirect check.
 - Override TanStack Router's default search parsing so opaque tokens aren't turned into numbers.
 - `packages/theme`: one Tailwind 4 token file, with a contrast test.
-- `packages/i18n` (owner decision, 2026-11-18: every app will support multiple languages): `i18next` 27.1.5 and `react-i18next` 18.0.2 with typed keys so a mistyped key fails the build, English as the only locale to start, and `eslint-plugin-i18next` to stop hard-coded strings. Web, mobile and server emails all read from it. Copy the shape from Project B's i18n package `[S6]`.
+- `packages/i18n` (owner decision, 2026-11-18: every app will support multiple languages): `i18next` 27.1.5 and `react-i18next` 18.0.2 with typed keys so a mistyped key fails the build, English as the only locale to start. Web, mobile and server emails all read from it. Copy the shape from Project B's i18n package `[S6]`. **Moved to phase 7 (plan 005, section 2):** `eslint-plugin-i18next`, because ESLint itself arrives in phase 7 (D4). Phase 5 still ships no hard-coded user-visible string; phase 7 makes that a gate.
+- **Phase 5 outcome (2026-11-19):** done as planned, with the departures recorded in plan 005, section 11. Corrections to this section: `i18next` is 27.1.3, not 27.1.5 (27.1.4 and 27.1.5 were published on 2026-11-17, too young for the 3-day rule on 2026-11-19); TanStack Router 1.171's default search parsing does corrupt raw tokens (`1e5` becomes 100000, `null` becomes null, a 20-digit number is rounded), though its own write-then-read round trip is safe because it quotes such strings; and a real browser ran the whole journey, passkeys included, against the built server with no CSP violation and no header change.
 
 ### Phase 6: mobile blank slate
 
@@ -254,14 +274,17 @@ Copy from Project B `[S7]`; it is the only one of our projects with verified nat
 - Tests under Vitest with jsdom and `react-native-web`, so coverage merges into the root report. Metro block-lists test files.
 - `docs/mobile-dev.md`: simulator and device setup, pointing a phone at a local server, and a playbook for testing on a physical phone over a private network `[S7]`.
 - **Monorepo linking:** start with bun's default linker, as Project B does on bun 1.4.4. Project A needed `linker = "hoisted"` on bun 1.3.9. **This phase is not done until someone boots the app on a simulator from a fresh clone on a Mac**, because that has not been verified for a clean checkout in any report.
+- **Phase 6 outcome (2026-11-19): implemented, first boot on a Mac pending** (`docs/mobile-first-boot.md`). Done as planned on Linux, with the departures recorded in plan 006, section 12. What was proven: from a fresh clone under bun's default linker, Metro bundles both platforms with one React and the workspace packages from source, `expo prebuild` generates both native projects with each variant's identity, and Expo's autolinking resolves each native module once; nothing needed `linker = "hoisted"`. What was not: no simulator or device ran the app, and `pod install` and the native builds were not run. Corrections to this section: expo-router is 58.0.31, not 58.0.32 (published 2026-11-17, too young for the 3-day rule), and so are `expo` 58.0.25, `expo-dev-client` 58.0.20 and `expo-web-browser` 58.0.8, one patch behind Expo's newest map until 2026-11-20; `expo install` asks Expo's servers for those newest patches unless run with `EXPO_OFFLINE=1`. Mobile passkeys were investigated and not shipped (`docs/mobile-dev.md`).
 
 ### Phase 7: quality gates
 
 - One `agent:check` script that runs everything CI runs.
 - Root Vitest config with `test.projects` and one merged coverage report (100% threshold, D5).
-- oxlint with a real config and no-suppression check; type-checked ESLint with sonarjs (D4); knip; dependency-cruiser rules that keep clients to `contracts`, `shared`, `client` and `theme`.
+- oxlint with a real config and no-suppression check; type-checked ESLint with sonarjs (D4); knip; dependency-cruiser rules that keep clients to `contracts`, `shared`, `client`, `theme` and `i18n`.
+- `eslint-plugin-i18next`'s `no-literal-string` rule, moved here from phase 5 (plan 005, section 2): no hard-coded user-visible string in a component.
 - One Playwright journey (sign up, verify, sign in, sign out) with an axe check, at 1.65.1.
 - `bun audit` step with a triage file, and the `deepmerge` patch and overrides Project B needed `[S2]`, if they still apply.
+- **Phase 7 outcome (2026-11-19):** done as planned, with the departures and the verification recorded in plan 007, section 11. Corrections to this section: there are two Playwright journeys, not one (the passkey journey deferred by plans 004 and 005 is the second); `@playwright/test` is 1.65.1 and `@axe-core/playwright` 4.14.0. None of the `deepmerge` patch and the overrides `[S2]` applies here: `deepmerge`, `nodemailer`, `glob`, `uuid` and `unzipper` are not in the lockfile, `zod` has one copy with no advisory, and `node-forge` 1.4.3 has none; the only override is phase 6's `minimatch`, which `eslint-plugin-sonarjs` 4.2.2 now needs too. vitest stays on 5.1.0, since 5.1.1's coverage fix does not apply to these projects. `eslint-plugin-sonarjs` 4.2.2 also caps TypeScript below 6.1, a second reason for D6. To re-check on the day (section above): knip 6.46.x was still too young (6.45.1 used), dependency-cruiser 18.8.0 became eligible the same day and is used, and typescript-eslint 8.73.0 is used.
 
 ### Phase 8: deployment kit
 
@@ -269,6 +292,7 @@ Copy from Project B `[S7]`; it is the only one of our projects with verified nat
 - `.dockerignore`, and a CI step that builds the image and smoke-tests it.
 - `docs/deployment.md`: env matrix, migrations, health checks, proxy headers. Hosting-neutral, since the existing projects do not share a host.
 - No infrastructure code in the base. Projects that need it use Terraform (D10). The Alchemy evaluation is in the companion `[S10]`.
+- **Phase 8 outcome (2026-11-20):** done as planned, with the departures recorded in plan 008, section 9. Corrections to this plan and to plan 008: Better Auth 1.7.25 does not check the schema at startup but on the first auth request, and keeps a mismatch until the process restarts, so a server started on an unmigrated database came up and reported ready; the server now refuses to start when any migration in its build has not been applied. A production install of this workspace under bun's default linker holds 628 packages; the image copies only the server's 63 run-time packages out of it, in bun's own layout. The image is 394 MB on disk (91 MB compressed).
 
 ### Phase 9: conventions and docs
 
@@ -277,6 +301,8 @@ Copy from Project B `[S7]`; it is the only one of our projects with verified nat
 - Project notes for the `implement-plan` skill.
 - `CHANGELOG.md` recording each scaffold-level change, starting with this rework (D9).
 - A new README, and a rename script replacing the manual checklist: package scope, env var prefix, cookie prefix, URL schemes, bundle ids, page title.
+
+- **Phase 9 outcome (2026-11-20):** done as planned, with the departures recorded in plan 009, section 10. `AGENTS.md` (imported by `CLAUDE.md`) and project notes for implementing plans; a commit-attribution gate in `agent:check` and CI, with an optional `commit-msg` hook; `plans/README.md` and ten decision records in `docs/adr/`, with a test on both indexes; `bun run rename`, proved by a fifth CI job that renames a copy and runs the install, `agent:check`, the build and the mobile export in it; a new README, `docs/new-project.md` and `docs/README.md`; the changelog organised by area; and the stale docs corrected, with a test on the docs' commands, links and paths. Corrections to this section: the rename covers far more than the six names listed (the slug alone names the root package, the Expo slug and dev client scheme, the image, the compose project, the database, the client-IP header and the Effect service keys); there were no `S10N_BASE_*` env vars left to rename, phase 3 having removed the last.
 
 ### Phase 10: backport plans for existing projects
 
@@ -308,10 +334,10 @@ Not in the default template; documented so a project can add them the same way e
 
 ## 8. Open risks
 
-- **Nothing was executed.** Phase 2's CI smoke test is the first real evidence that the base builds and starts.
+- **Little was executed.** Phase 1 ran the gates locally and confirmed defect 1; phase 2's CI smoke test is the first evidence that the built server starts.
 - **s10n-base is public and the three spin-offs are private.** The scrub check before phase 1 is the control; a missed term in a pushed commit is public and stays in history.
-- **Fresh-clone Expo build under bun's default linker** is unverified (phase 6 gate).
+- **Fresh-clone Expo build under bun's default linker:** the Metro bundles and generated native projects are verified on Linux (phase 6); `pod install`, the native build and a boot on a simulator are not, until the owner's first boot on a Mac.
 - **Better Auth 1.7.25, jsdom 31 and vitest 5.1.1** are newer than anything our repos run.
 - **React pinned at 19.3.0** means holding back a patch on web until Expo moves.
 - **Effect core adoption (D1)** has not been tried in any of our repos.
-- **Passkeys on mobile** have no verified pattern in our repos.
+- **Passkeys on mobile** have no verified pattern in our repos. Phase 6 found what a native flow needs (a native passkey module, associated domains and the server's association files, Android's key-hash origins, an https domain for development) and shipped none of it.

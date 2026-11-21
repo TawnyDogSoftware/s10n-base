@@ -1,15 +1,6 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
-import { RouterProvider, createBrowserHistory } from "@tanstack/react-router";
-
+/** The web app's entry point, which Vite builds from index.html. See mount.tsx. */
 import "./index.css";
 
-import { getRouter } from "./router";
+import { mountApp } from "./mount";
 
-const router = getRouter(createBrowserHistory());
-
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <RouterProvider router={router} />
-  </React.StrictMode>,
-);
+mountApp(window, import.meta.env);

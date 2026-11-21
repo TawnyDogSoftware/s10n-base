@@ -2,28 +2,35 @@
   "name": "@s10n-base/server",
   "version": "0.0.0",
   "private": true,
-  "bin": {
-    "s10n-base-server": "./dist/bin.mjs"
-  },
   "type": "module",
   "scripts": {
-    "dev": "bun run src/bin.ts",
+    "dev": "bun --watch src/bin.ts",
     "build": "tsdown",
     "start": "node dist/bin.mjs",
+    "migrate": "node dist/migrate.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:generate": "kysely-codegen --dialect postgres --default-schema public --out-file src/infra/postgres/generated/db.ts",
+    "db:generate:check": "kysely-codegen --dialect postgres --default-schema public --out-file src/infra/postgres/generated/db.ts --verify",
+    "set-role": "node dist/set-role.mjs"
   },
   "dependencies": {
+    "@better-auth/expo": "catalog:",
+    "@better-auth/passkey": "catalog:",
     "@s10n-base/contracts": "workspace:*",
+    "@s10n-base/i18n": "workspace:*",
     "@s10n-base/shared": "workspace:*",
-    "better-sqlite3": "catalog:",
+    "better-auth": "catalog:",
+    "better-call": "catalog:",
     "effect": "catalog:",
-    "ws": "catalog:"
+    "i18next": "catalog:",
+    "kysely": "catalog:",
+    "pg": "catalog:"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "catalog:",
     "@types/node": "catalog:",
-    "@types/ws": "catalog:",
+    "@types/pg": "catalog:",
+    "kysely-codegen": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

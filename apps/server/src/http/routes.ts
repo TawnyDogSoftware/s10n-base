@@ -1,252 +1,284 @@
-import fs from "node:fs";
-import path from "node:path";
-
-import { Effect, Schema } from "effect";
+/**
+ * The request handler: a thin router over the modules in this directory. Every response carries
+ * an `X-Request-Id` and the security headers, every request gets one access-log line (at `info`,
+ * so a `LOG_LEVEL` of `warn` or `error` leaves it out), and an unexpected error is logged with its
+ * stack and answered with a fixed 500 body.
+ */
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import {
-  AppError,
-  BootstrapConfig,
-  NoteCreateRpc,
-  NoteDeleteRpc,
-  NoteUpdateRpc,
-  ProjectCreateRpc,
-  ProjectDeleteRpc,
-  ProjectGetRpc,
-  ProjectsListRpc,
-  ProjectUpdateRpc,
-  SettingsGetRpc,
-  SettingsUpdateRpc,
-  type RpcContract,
-} from "@s10n-base/contracts";
-import { decodeUnknown } from "@s10n-base/shared/json";
+import { Schema } from "effect";
 
+import { BootstrapConfig, ERROR_CODES, RpcRequest } from "@s10n-base/contracts";
+
+import type { AppAuth } from "../auth/instance";
+import { TOKEN_PAGES } from "../auth/options";
 import type { ServerConfig } from "../config";
 import type { Logger } from "../observability/logger";
-import type { ProjectService } from "../services/projectService";
-import type { SettingsService } from "../services/settingsService";
+import type { RpcDispatcher } from "../rpc/dispatcher";
+import {
+  handleAuthRequest,
+  isAllowedOrigin,
+  isAuthPath,
+  isCrossSiteGuarded,
+  readAppSession,
+} from "./auth-routes";
+import { readJsonBody } from "./body";
+import { resolveClientIp } from "./client-ip";
+import { applyCors } from "./cors";
+import { requestLine } from "./request-line";
+import { HTML_CONTENT_SECURITY_POLICY, applySecurityHeaders } from "./security-headers";
+import { isApiPath, resolveStaticFile, sendStaticFile, wantsHtmlFallback } from "./static-files";
 
-interface RequestEnvelope {
-  readonly method: string;
-  readonly payload: unknown;
-}
-
-interface RouteContext {
+export interface HttpContext {
   readonly config: ServerConfig;
   readonly logger: Logger;
-  readonly projectService: ProjectService;
-  readonly settingsService: SettingsService;
+  readonly dispatcher: RpcDispatcher;
+  readonly auth: AppAuth;
+  /** Whether the database answers; backs `/ready`. */
+  readonly checkReadiness: () => Promise<boolean>;
+  /** True once shutdown has started: `/ready` answers 503 and connections are not kept alive. */
+  readonly isShuttingDown: () => boolean;
 }
 
-function setCors(response: ServerResponse) {
-  response.setHeader("Access-Control-Allow-Origin", "*");
-  response.setHeader("Access-Control-Allow-Headers", "content-type");
-  response.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+interface RequestState {
+  readonly request: IncomingMessage;
+  readonly response: ServerResponse;
+  readonly url: URL;
+  readonly requestId: string;
+  readonly logger: Logger;
+  readonly clientIp: string | undefined;
 }
 
-function sendJson(response: ServerResponse, statusCode: number, body: unknown) {
-  setCors(response);
-  response.statusCode = statusCode;
+type RouteHandler = (state: RequestState, context: HttpContext) => Promise<void>;
+
+/** The fixed body of every 500: nothing about the error reaches the client. */
+export const UNEXPECTED_ERROR_BODY = {
+  ok: false,
+  error: { code: ERROR_CODES.unexpected, message: "Unexpected server error." },
+} as const;
+
+function sendJson(response: ServerResponse, status: number, body: unknown) {
+  response.statusCode = status;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
+  response.setHeader("Cache-Control", "no-store");
   response.end(JSON.stringify(body));
 }
 
-function sendText(
-  response: ServerResponse,
-  statusCode: number,
-  body: string,
-  contentType = "text/plain",
-) {
-  setCors(response);
-  response.statusCode = statusCode;
-  response.setHeader("Content-Type", `${contentType}; charset=utf-8`);
-  response.end(body);
+function sendError(response: ServerResponse, status: number, code: string, message: string) {
+  sendJson(response, status, { ok: false, error: { code, message } });
 }
 
-async function readJsonBody(request: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+const decodeRpcRequest = Schema.decodeUnknownOption(RpcRequest);
+
+const routes: Readonly<Record<string, Readonly<Record<string, RouteHandler>>>> = {
+  "/health": {
+    // Liveness: answers whenever the process is serving, and touches nothing else.
+    GET: ({ response }) => {
+      sendJson(response, 200, { ok: true, status: "ok" });
+      return Promise.resolve();
+    },
+  },
+  "/ready": {
+    GET: async ({ response }, context) => {
+      if (context.isShuttingDown()) {
+        sendJson(response, 503, { ok: false, status: "shutting_down" });
+        return;
+      }
+      const ready = await context.checkReadiness();
+      // Shutdown may have started while the check ran.
+      if (context.isShuttingDown()) {
+        sendJson(response, 503, { ok: false, status: "shutting_down" });
+      } else if (ready) {
+        sendJson(response, 200, { ok: true, status: "ready" });
+      } else {
+        sendJson(response, 503, { ok: false, status: "database_unavailable" });
+      }
+    },
+  },
+  "/config": {
+    GET: ({ response }, { config }) => {
+      sendJson(
+        response,
+        200,
+        Schema.encodeSync(BootstrapConfig)({
+          appName: config.appName,
+          appVersion: config.version,
+          apiBaseUrl: config.appOrigin,
+        }),
+      );
+      return Promise.resolve();
+    },
+  },
+  "/api/app-auth/session": {
+    GET: async ({ request, response }, context) => {
+      const { body, setCookies } = await readAppSession(request, context.auth);
+      if (setCookies.length > 0) response.setHeader("Set-Cookie", [...setCookies]);
+      sendJson(response, 200, { ok: true, data: body });
+    },
+  },
+  "/rpc": {
+    POST: async ({ request, response, requestId, logger }, context) => {
+      const body = await readJsonBody(request, context.config.requestBodyLimitBytes);
+      if (!body.ok) {
+        if (body.status === "aborted") return;
+        // The rest of the body is unread; closing is cheaper than reading it to reuse the socket.
+        if (body.status === 413) response.setHeader("Connection", "close");
+        sendError(response, body.status, ERROR_CODES.invalidRequest, body.message);
+        return;
+      }
+      const envelope = decodeRpcRequest(body.value);
+      if (envelope._tag === "None") {
+        sendError(
+          response,
+          400,
+          ERROR_CODES.invalidRequest,
+          "The request body is not a valid RPC request.",
+        );
+        return;
+      }
+      const result = await context.dispatcher(envelope.value, { requestId, logger, request });
+      sendJson(response, result.status, result.body);
+    },
+  },
+};
+
+async function serveWebApp(state: RequestState, context: HttpContext): Promise<boolean> {
+  const { request, response, url } = state;
+  if (request.method !== "GET" && request.method !== "HEAD") return false;
+  const root = context.config.webDistDir;
+  const file =
+    (await resolveStaticFile(root, url.pathname)) ??
+    (wantsHtmlFallback(request.method, url.pathname, request.headers.accept)
+      ? await resolveStaticFile(root, "/index.html")
+      : null);
+  if (file === null) return false;
+  if (file.isHtml) response.setHeader("Content-Security-Policy", HTML_CONTENT_SECURITY_POLICY);
+  // The page's URL carries an email link's token: no request it makes names it in a Referer.
+  if (TOKEN_PAGES.has(url.pathname)) response.setHeader("Referrer-Policy", "no-referrer");
+  await sendStaticFile(request.method, response, file);
+  return true;
+}
+
+/** Answers a CORS preflight; returns false for any other request. */
+function answeredPreflight(state: RequestState, context: HttpContext): boolean {
+  const cors = applyCors(state.request, state.response, context.config.appOrigin);
+  if (cors === "preflight-denied") {
+    sendError(state.response, 403, ERROR_CODES.forbidden, "This origin is not allowed.");
+    return true;
   }
-  if (chunks.length === 0) {
-    return {};
+  if (cors === "preflight-allowed") {
+    state.response.statusCode = 204;
+    state.response.end();
+    return true;
   }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+  return false;
 }
 
-async function runRpc<Payload, Success>(
-  requestPayload: unknown,
-  contract: RpcContract<Payload, Success>,
-  handler: (payload: Payload) => Promise<Success> | Success,
-) {
-  const payload = decodeUnknown(contract.payload, requestPayload);
-  const result = await handler(payload);
-  return Schema.encodeSync(contract.success as never)(result as never) as Success;
-}
-
-function buildBootstrapConfig(config: ServerConfig, request: IncomingMessage) {
-  const hostHeader = request.headers.host ?? `${config.host}:${config.port}`;
-  const protocol = request.headers["x-forwarded-proto"] === "https" ? "https" : "http";
-  const wsProtocol = protocol === "https" ? "wss" : "ws";
-
-  return Schema.encodeSync(BootstrapConfig)({
-    appName: config.appName,
-    appVersion: config.version,
-    apiBaseUrl: `${protocol}://${hostHeader}`,
-    websocketUrl: `${wsProtocol}://${hostHeader}/ws`,
-    desktopHost: Boolean(process.env.VITE_DEV_SERVER_URL),
-  });
-}
-
-function resolveStaticFile(config: ServerConfig, pathname: string): string | null {
-  const requestedPath = pathname === "/" ? "/index.html" : pathname;
-  const safeRelativePath = path
-    .normalize(requestedPath)
-    .replace(/^[/\\]+/, "")
-    .replace(/^([.][.][\\/])+/, "");
-  const absolutePath = path.join(config.paths.webDistDir, safeRelativePath);
-
-  if (!absolutePath.startsWith(config.paths.webDistDir)) {
-    return null;
+/** Runs the handler for one of `routes`; returns false when the path is not one of them. */
+async function handledRoute(state: RequestState, context: HttpContext): Promise<boolean> {
+  const { request, response, url } = state;
+  const methods = routes[url.pathname];
+  if (methods === undefined) return false;
+  const handler = methods[requestLine(request).method];
+  if (handler === undefined) {
+    response.setHeader("Allow", Object.keys(methods).join(", "));
+    sendError(
+      response,
+      405,
+      ERROR_CODES.methodNotAllowed,
+      `${String(request.method)} is not allowed here.`,
+    );
+    return true;
   }
-  if (!fs.existsSync(absolutePath) || fs.statSync(absolutePath).isDirectory()) {
-    return null;
+  await handler(state, context);
+  return true;
+}
+
+async function route(state: RequestState, context: HttpContext): Promise<void> {
+  const { request, response, url } = state;
+  if (answeredPreflight(state, context)) return;
+
+  if (isCrossSiteGuarded(url.pathname) && !(await isAllowedOrigin(request, context.auth))) {
+    request.resume();
+    sendError(response, 403, ERROR_CODES.forbidden, "This origin is not allowed.");
+    return;
   }
-  return absolutePath;
-}
-
-function resolveContentType(filePath: string): string {
-  if (filePath.endsWith(".html")) return "text/html; charset=utf-8";
-  if (filePath.endsWith(".js")) return "text/javascript; charset=utf-8";
-  if (filePath.endsWith(".css")) return "text/css; charset=utf-8";
-  if (filePath.endsWith(".json")) return "application/json; charset=utf-8";
-  if (filePath.endsWith(".svg")) return "image/svg+xml";
-  if (filePath.endsWith(".png")) return "image/png";
-  return "application/octet-stream";
-}
-
-export async function handleHttpRequest(
-  request: IncomingMessage,
-  response: ServerResponse,
-  context: RouteContext,
-): Promise<void> {
-  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
-
-  if (request.method === "OPTIONS") {
-    setCors(response);
-    response.statusCode = 204;
-    response.end();
+  if (isAuthPath(url.pathname)) {
+    await handleAuthRequest(state, {
+      auth: context.auth,
+      appOrigin: context.config.appOrigin,
+      bodyLimitBytes: context.config.requestBodyLimitBytes,
+      sendError,
+    });
     return;
   }
 
-  try {
-    if (request.method === "GET" && url.pathname === "/health") {
-      sendJson(response, 200, { ok: true, status: "ok" });
-      return;
-    }
-
-    if (request.method === "GET" && url.pathname === "/config") {
-      sendJson(response, 200, buildBootstrapConfig(context.config, request));
-      return;
-    }
-
-    if (request.method === "POST" && url.pathname === "/rpc") {
-      const envelope = (await readJsonBody(request)) as RequestEnvelope;
-      let result: unknown;
-
-      switch (envelope.method) {
-        case ProjectsListRpc.method:
-          result = await runRpc(envelope.payload, ProjectsListRpc, async () =>
-            context.projectService.listProjects().pipe(Effect.runPromise),
-          );
-          break;
-        case ProjectGetRpc.method:
-          result = await runRpc(envelope.payload, ProjectGetRpc, async (payload) =>
-            context.projectService.getProject(payload.id).pipe(Effect.runPromise),
-          );
-          break;
-        case ProjectCreateRpc.method:
-          result = await runRpc(envelope.payload, ProjectCreateRpc, async (payload) =>
-            context.projectService.createProject(payload).pipe(Effect.runPromise),
-          );
-          break;
-        case ProjectUpdateRpc.method:
-          result = await runRpc(envelope.payload, ProjectUpdateRpc, async (payload) =>
-            context.projectService.updateProject(payload).pipe(Effect.runPromise),
-          );
-          break;
-        case ProjectDeleteRpc.method:
-          result = await runRpc(envelope.payload, ProjectDeleteRpc, async (payload) =>
-            context.projectService.deleteProject(payload.id).pipe(Effect.runPromise),
-          );
-          break;
-        case NoteCreateRpc.method:
-          result = await runRpc(envelope.payload, NoteCreateRpc, async (payload) =>
-            context.projectService.createNote(payload).pipe(Effect.runPromise),
-          );
-          break;
-        case NoteUpdateRpc.method:
-          result = await runRpc(envelope.payload, NoteUpdateRpc, async (payload) =>
-            context.projectService.updateNote(payload).pipe(Effect.runPromise),
-          );
-          break;
-        case NoteDeleteRpc.method:
-          result = await runRpc(envelope.payload, NoteDeleteRpc, async (payload) =>
-            context.projectService.deleteNote(payload.id).pipe(Effect.runPromise),
-          );
-          break;
-        case SettingsGetRpc.method:
-          result = await runRpc(envelope.payload, SettingsGetRpc, () =>
-            context.settingsService.get(),
-          );
-          break;
-        case SettingsUpdateRpc.method:
-          result = await runRpc(envelope.payload, SettingsUpdateRpc, (payload) =>
-            context.settingsService.update(payload),
-          );
-          break;
-        default:
-          sendJson(response, 404, {
-            ok: false,
-            error: Schema.encodeSync(AppError)({
-              code: "rpc.method_not_found",
-              message: `Unknown RPC method ${envelope.method}`,
-            }),
-          });
-          return;
-      }
-
-      sendJson(response, 200, { ok: true, data: result });
-      return;
-    }
-
-    const staticFile = resolveStaticFile(context.config, url.pathname);
-    if (staticFile) {
-      response.statusCode = 200;
-      response.setHeader("Content-Type", resolveContentType(staticFile));
-      response.end(fs.readFileSync(staticFile));
-      return;
-    }
-
-    const indexFile = path.join(context.config.paths.webDistDir, "index.html");
-    if (fs.existsSync(indexFile)) {
-      sendText(response, 200, fs.readFileSync(indexFile, "utf8"), "text/html");
-      return;
-    }
-
-    sendText(response, 404, "Not Found");
-  } catch (error) {
-    context.logger.error("request_failed", {
-      path: url.pathname,
-      error: error instanceof Error ? error.message : String(error),
-    });
-
-    sendJson(response, 500, {
-      ok: false,
-      error: Schema.encodeSync(AppError)({
-        code: "server.unexpected_error",
-        message: error instanceof Error ? error.message : "Unexpected server error",
-      }),
-    });
+  if (await handledRoute(state, context)) return;
+  if (isApiPath(url.pathname)) {
+    sendError(response, 404, ERROR_CODES.notFound, "Not found.");
+    return;
   }
+  if (await serveWebApp(state, context)) return;
+  response.statusCode = 404;
+  response.setHeader("Content-Type", "text/plain; charset=utf-8");
+  response.end("Not Found");
+}
+
+function parseUrl(request: IncomingMessage): URL | undefined {
+  try {
+    return new URL(requestLine(request).target, "http://localhost");
+  } catch {
+    return undefined;
+  }
+}
+
+/** Builds the `node:http` request listener. */
+export function createRequestHandler(context: HttpContext) {
+  const https = context.config.appOrigin.startsWith("https://");
+
+  return (request: IncomingMessage, response: ServerResponse): void => {
+    const startedAt = performance.now();
+    // Always our own id: an incoming X-Request-Id is not trusted.
+    const requestId = randomUUID();
+    const clientIp = resolveClientIp(request, context.config.trustedProxyHops);
+    const logger = context.logger.child({ requestId });
+    const url = parseUrl(request);
+
+    response.setHeader("X-Request-Id", requestId);
+    applySecurityHeaders(response, { https });
+    if (context.isShuttingDown()) response.setHeader("Connection", "close");
+
+    let logged = false;
+    const logAccess = () => {
+      if (logged) return;
+      logged = true;
+      logger.info("request", {
+        method: request.method,
+        path: url?.pathname ?? "(invalid)",
+        status: response.statusCode,
+        durationMs: Math.round((performance.now() - startedAt) * 10) / 10,
+        clientIp,
+        ...(response.writableFinished ? {} : { aborted: true }),
+      });
+    };
+    response.once("finish", logAccess);
+    response.once("close", logAccess);
+
+    if (url === undefined) {
+      sendError(response, 400, ERROR_CODES.invalidRequest, "The request URL is not valid.");
+      return;
+    }
+
+    route({ request, response, url, requestId, logger, clientIp }, context).catch(
+      (error: unknown) => {
+        logger.error("request_failed", { method: request.method, path: url.pathname, error });
+        if (response.headersSent) {
+          response.destroy();
+          return;
+        }
+        sendJson(response, 500, UNEXPECTED_ERROR_BODY);
+      },
+    );
+  };
 }

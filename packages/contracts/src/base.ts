@@ -11,8 +11,3 @@ export const AppError = Schema.Struct({
   message: Schema.String,
 });
 export type AppError = typeof AppError.Type;
-
-export const DeleteResult = Schema.Struct({
-  id: Identifier,
-});
-export type DeleteResult = typeof DeleteResult.Type;
