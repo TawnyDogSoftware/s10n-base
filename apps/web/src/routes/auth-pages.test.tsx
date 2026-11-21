@@ -38,6 +38,24 @@ describe("/sign-up", () => {
     expect(app.backend.calls("/api/auth/sign-up/email")).toEqual([]);
   });
 
+  it("names a character a name cannot hold, on the name field", async () => {
+    const app = renderApp("/sign-up", backendWith());
+    await screen.findByRole("heading", { level: 1, name: "Create an account" });
+
+    type("Name", "Sam\u0000");
+    type("Email address", "sam@example.com");
+    type(/^Password/, "long enough");
+    click("Create account");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Check the highlighted fields.");
+    const name = screen.getByLabelText("Name");
+    expect(name).toHaveFocus();
+    expect(name).toHaveAccessibleDescription(
+      "The name contains a character that cannot be used: U+0000. Please try another name.",
+    );
+    expect(app.backend.calls("/api/auth/sign-up/email")).toEqual([]);
+  });
+
   it("uses the autocomplete values password managers expect", async () => {
     renderApp("/sign-up", backendWith());
     await screen.findByRole("heading", { name: "Create an account" });

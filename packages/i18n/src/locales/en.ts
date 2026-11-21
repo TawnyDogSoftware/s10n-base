@@ -62,6 +62,8 @@ export const en = {
     validation: {
       nameRequired: "Enter your name.",
       nameTooLong: "Use at most {{max}} characters.",
+      nameInvalid:
+        "The name contains a character that cannot be used: {{character}}. Please try another name.",
       emailRequired: "Enter your email address.",
       emailInvalid: "Enter an email address like name@example.com.",
       passwordRequired: "Enter your password.",
@@ -240,6 +242,7 @@ export const en = {
       USER_NOT_FOUND: "We could not find that account.",
       SESSION_EXPIRED: "Your session has expired. Sign in again.",
       FAILED_TO_CREATE_USER: "We could not create the account. Try again.",
+      INVALID_NAME: "That name cannot be used. Please try another name.",
       INVALID_ORIGIN: "This request came from a page the server does not trust.",
       AUTHENTICATION_FAILED: "That passkey could not sign you in.",
       AUTH_CANCELLED: "Passkey sign-in was cancelled.",

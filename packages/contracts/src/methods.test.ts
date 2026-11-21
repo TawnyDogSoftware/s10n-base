@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   ADMIN_USERS_PAGE_MAX,
   AdminUserList,
+  PROFILE_NAME_FORBIDDEN,
   PROFILE_NAME_MAX,
   Profile,
   ProfileName,
@@ -68,6 +69,10 @@ describe("profile.update and ProfileName", () => {
 
   it("refuses a NUL character, which Postgres cannot store in text", () => {
     expect(decodeName("Sam\u0000")._tag).toBe("Failure");
+    expect(decodeName("\u0000Sam")._tag).toBe("Failure");
+    expect(PROFILE_NAME_FORBIDDEN.exec("Sam\u0000")?.[0]).toBe("\u0000");
+    expect(PROFILE_NAME_FORBIDDEN.test("Sam Smith-O'Neil 山田")).toBe(false);
+    expect(decodeName("Sam Smith-O'Neil 山田")._tag).toBe("Success");
   });
 
   it("returns the updated profile", () => {

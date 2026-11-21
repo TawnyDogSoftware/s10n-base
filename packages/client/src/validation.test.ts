@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { createTranslator } from "@s10n-base/i18n";
+
 import {
+  fieldErrorText,
   PASSWORD_MAX,
   PASSWORD_MIN,
   validateEmail,
@@ -17,6 +20,36 @@ describe("validateName", () => {
       ok: false,
       error: { key: "validation.nameTooLong", values: { max: 100 } },
     });
+  });
+
+  it("names a character that cannot be used, by its code point", () => {
+    const checked = validateName("Sam\u0000");
+    expect(checked).toEqual({
+      ok: false,
+      error: { key: "validation.nameInvalid", values: { character: "U+0000" } },
+    });
+    // A name that is too long as well is reported as too long first.
+    expect(validateName(`${"x".repeat(101)}\u0000`)).toEqual({
+      ok: false,
+      error: { key: "validation.nameTooLong", values: { max: 100 } },
+    });
+  });
+});
+
+describe("fieldErrorText", () => {
+  const t = createTranslator("auth");
+
+  it("gives the text of each kind of error, with its values", () => {
+    expect(fieldErrorText(t, { key: "validation.nameRequired" })).toBe("Enter your name.");
+    expect(fieldErrorText(t, { key: "validation.nameTooLong", values: { max: 100 } })).toBe(
+      "Use at most 100 characters.",
+    );
+    expect(fieldErrorText(t, { key: "validation.passwordTooShort", values: { min: 8 } })).toBe(
+      "Use at least 8 characters.",
+    );
+    expect(
+      fieldErrorText(t, { key: "validation.nameInvalid", values: { character: "U+0000" } }),
+    ).toBe("The name contains a character that cannot be used: U+0000. Please try another name.");
   });
 });
 
