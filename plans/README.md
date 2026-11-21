@@ -31,3 +31,4 @@ Decisions that outlive a plan are also written up as decision records in [docs/a
 | 009 | [Conventions and docs](009-conventions-and-docs.md) | Implemented |
 | 010 | [Recheck the session inside the profile update](010-recheck-session-in-profile-update.md) | Implemented |
 | 011 | [Address the findings of the full-branch review](011-review-findings.md) | Implemented; four findings partly done |
+| 012 | [Finish what the review left open](012-review-leftovers.md) | Planned |
