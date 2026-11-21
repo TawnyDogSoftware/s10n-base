@@ -188,3 +188,7 @@ Finished afterwards (plan 012), each with what it means for a project made from 
 - **Email confirmation and password reset links work for 15 minutes**, down from one hour (`AUTH_EMAIL_LINK_SECONDS`). A link that old is refused; signing in before confirming sends a fresh one. A project that wants another lifetime changes the constant, the four strings that state it and the three docs that mention it.
 - **Auth requests have the RPC transport's deadline.** A sign-in, sign-out, password reset or passkey request whose answer does not complete within 30 seconds, headers and body, ends as a `NetworkError`, so the screen re-reads the state as it does for any lost answer; before, a body that stalled left the action pending for good. `lostAnswerFetch` takes the deadline as an optional third argument.
 - **The lifetime stays written by hand** in the emails, the screens and the docs (plan 011, F63, settled this way). A test fails when any of them, the docs included, states another lifetime than the constant.
+
+### Changed: CI runs on Blacksmith runners
+
+All six workflow jobs (CI's five and the daily dependency update) use `runs-on: blacksmith-4vcpu-ubuntu-2404` instead of GitHub's `ubuntu-24.04`. A project made from the base must have the Blacksmith GitHub App installed for its organisation, or change each `runs-on` to a runner it has; until then its jobs stay queued ([docs/new-project.md](docs/new-project.md)).

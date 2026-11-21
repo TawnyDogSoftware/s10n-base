@@ -12,6 +12,8 @@ Write down the base commit you started from (the template's `main` at the time).
 
 A template copies files, including the workflows, but not secrets, settings, branch protection or labels. Steps 4 and 9 cover what that leaves out.
 
+**The workflows run on Blacksmith runners** (`runs-on: blacksmith-4vcpu-ubuntu-2404` in `.github/workflows/ci.yml` and `dependency-updates.yml`). Until the Blacksmith GitHub App is installed for the new repository's organisation, every job waits for a runner that never comes. Install it, or change each `runs-on` to a runner you have, such as GitHub's `ubuntu-24.04`; nothing else in the workflows depends on the runner.
+
 ## 2. Install and check the copy
 
 You need Node (the version in `.nvmrc`), bun (the version in `packageManager` in `package.json`) and Docker with Compose v2 ([setup.md](setup.md#prerequisites)).
