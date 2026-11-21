@@ -17,6 +17,35 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+const UPDATE = "/api/auth/passkey/update-passkey";
+
+/** The profile page of a user with a named and an unnamed passkey. */
+async function withPasskeys() {
+  const backend = signedIn();
+  const sam = backend.users.get("sam@example.com");
+  if (sam === undefined) throw new Error("no user");
+  sam.passkeys = [
+    { id: "pk1", name: "Laptop", createdAt: "2026-11-01T10:00:00.000Z" },
+    { id: "pk2", name: null, createdAt: "2026-11-02T10:00:00.000Z" },
+  ];
+  renderApp("/profile", backend);
+  await screen.findByText("Laptop");
+  return { backend, sam };
+}
+
+/** Opens the form of the passkey named Laptop and returns its field. */
+function openLaptop() {
+  click(/^Rename passkey Laptop, added /);
+  return screen.getByLabelText("Passkey name");
+}
+
+/** Presses a button of the open form, which shares its "Save" with the name form. */
+function pressInForm(name: string) {
+  const form = screen.getByLabelText("Passkey name").closest("form");
+  if (form === null) throw new Error("no form");
+  fireEvent.click(within(form).getByRole("button", { name }));
+}
+
 describe("/ (home)", () => {
   it("greets the user and links to the profile, with no users link for a non-admin", async () => {
     renderApp("/", signedIn());
@@ -199,6 +228,194 @@ describe("/profile", () => {
     expect(await screen.findByText("Passkey removed.")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText("Laptop")).not.toBeInTheDocument());
     expect(backend.calls("/api/auth/passkey/list-user-passkeys").length).toBeGreaterThanOrEqual(2);
+  });
+
+  describe("renaming a passkey", () => {
+    it("saves the new name, reads the list again and returns focus to the row", async () => {
+      const { backend } = await withPasskeys();
+
+      const field = openLaptop();
+      expect(field).toHaveValue("Laptop");
+      expect(field).toHaveFocus();
+      type("Passkey name", "  Work laptop ");
+      pressInForm("Save");
+
+      expect(await screen.findByText("Passkey renamed.")).toBeInTheDocument();
+      expect(screen.getByText("Work laptop")).toBeInTheDocument();
+      expect(screen.queryByText("Laptop")).not.toBeInTheDocument();
+      expect(backend.calls(UPDATE).map((call) => call.body)).toEqual([
+        { id: "pk1", name: "Work laptop" },
+      ]);
+      expect(backend.calls("/api/auth/passkey/list-user-passkeys").length).toBeGreaterThanOrEqual(
+        2,
+      );
+      expect(screen.queryByLabelText("Passkey name")).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /^Rename passkey Work laptop, added / }),
+        ).toHaveFocus();
+      });
+    });
+
+    it("shows a name's error on the field, focuses it, and sends nothing", async () => {
+      const { backend } = await withPasskeys();
+      const field = openLaptop();
+
+      type("Passkey name", "   ");
+      screen.getByLabelText("Name").focus();
+      pressInForm("Save");
+      await waitFor(() => {
+        expect(field).toHaveAccessibleDescription("Enter a name for the passkey.");
+      });
+      expect(field).toHaveAttribute("aria-invalid", "true");
+      expect(field).toHaveFocus();
+
+      type("Passkey name", "x".repeat(101));
+      pressInForm("Save");
+      await waitFor(() => {
+        expect(field).toHaveAccessibleDescription("Use at most 100 characters.");
+      });
+
+      type("Passkey name", "Lap\u0000top");
+      pressInForm("Save");
+      await waitFor(() => {
+        expect(field).toHaveAccessibleDescription(
+          "The name contains a character that cannot be used: U+0000. Please try another name.",
+        );
+      });
+      expect(backend.calls(UPDATE)).toEqual([]);
+    });
+
+    it("sends nothing on Cancel or for an unchanged name, and returns focus", async () => {
+      const { backend } = await withPasskeys();
+
+      // An unnamed passkey's field starts empty.
+      click(/^Rename passkey Passkey, added /);
+      expect(screen.getByLabelText("Passkey name")).toHaveValue("");
+      type("Passkey name", "Phone");
+      pressInForm("Cancel");
+      expect(screen.queryByLabelText("Passkey name")).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /^Rename passkey Passkey, added / }),
+        ).toHaveFocus();
+      });
+
+      openLaptop();
+      type("Passkey name", " Laptop ");
+      pressInForm("Save");
+      expect(screen.queryByLabelText("Passkey name")).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /^Rename passkey Laptop, added / }),
+        ).toHaveFocus();
+      });
+      expect(backend.calls(UPDATE)).toEqual([]);
+      expect(screen.queryByText("Passkey renamed.")).not.toBeInTheDocument();
+    });
+
+    it("edits one passkey at a time", async () => {
+      await withPasskeys();
+
+      openLaptop();
+      click(/^Rename passkey Passkey, added /);
+
+      expect(screen.getAllByLabelText("Passkey name")).toHaveLength(1);
+      expect(screen.getByLabelText("Passkey name")).toHaveValue("");
+      expect(screen.getByText("Laptop")).toBeInTheDocument();
+    });
+
+    it("shows the refusal and the list as it is when the passkey was removed elsewhere", async () => {
+      const { backend, sam } = await withPasskeys();
+      openLaptop();
+      type("Passkey name", "Work laptop");
+      sam.passkeys = sam.passkeys.filter((passkey) => passkey.id !== "pk1");
+
+      pressInForm("Save");
+
+      expect(await screen.findByText("That passkey no longer exists.")).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByLabelText("Passkey name")).not.toBeInTheDocument());
+      expect(screen.queryByText("Laptop")).not.toBeInTheDocument();
+      expect(backend.calls(UPDATE)).toHaveLength(1);
+    });
+
+    it("keeps the form open when the server refuses the name", async () => {
+      const { backend } = await withPasskeys();
+      openLaptop();
+      type("Passkey name", "Work laptop");
+      backend.failNext(UPDATE, {
+        kind: "response",
+        status: 400,
+        body: { code: "INVALID_NAME", message: "The name is not valid." },
+      });
+
+      pressInForm("Save");
+
+      expect(
+        await screen.findByText("That name cannot be used. Please try another name."),
+      ).toBeInTheDocument();
+      expect(screen.getByLabelText("Passkey name")).toHaveValue("Work laptop");
+    });
+
+    it("says the outcome is unknown when the answer is lost, and shows the list as the server has it", async () => {
+      const { backend } = await withPasskeys();
+      openLaptop();
+      type("Passkey name", "Work laptop");
+      backend.failNext(UPDATE, { kind: "network", afterHandling: true });
+
+      pressInForm("Save");
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent("We could not confirm whether that worked");
+      expect(alert).toHaveTextContent("You are still signed in.");
+      // The list read afterwards is the truth: the passkey was renamed.
+      expect(await screen.findByText("Work laptop")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Passkey name")).not.toBeInTheDocument();
+    });
+
+    it("gives two passkeys with the same name and date different rename buttons", async () => {
+      const backend = signedIn();
+      const sam = backend.users.get("sam@example.com");
+      if (sam === undefined) throw new Error("no user");
+      sam.passkeys = [
+        { id: "pk1", name: "Key", createdAt: "2026-11-20T14:40:00.000Z" },
+        { id: "pk2", name: "Key", createdAt: "2026-11-20T14:40:00.000Z" },
+      ];
+      renderApp("/profile", backend);
+
+      const buttons = await screen.findAllByRole("button", { name: /^Rename passkey Key, added / });
+      expect(buttons).toHaveLength(2);
+      expect(new Set(buttons.map((button) => button.getAttribute("aria-label"))).size).toBe(2);
+    });
+
+    it("disables the other buttons while it saves, and ignores a second submit", async () => {
+      vi.stubGlobal("PublicKeyCredential", function PublicKeyCredential() {});
+      const { backend } = await withPasskeys();
+      const field = openLaptop();
+      type("Passkey name", "Work laptop");
+      const release = backend.hold(UPDATE);
+
+      pressInForm("Save");
+
+      expect(await screen.findByRole("button", { name: "Saving…" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Add a passkey" })).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: /^Rename passkey Passkey, added / }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: /^Remove passkey Passkey, added / }),
+      ).toBeDisabled();
+      const form = field.closest("form");
+      if (form === null) throw new Error("no form");
+      fireEvent.submit(form);
+      // The second submit neither sends anything nor ends the first one's pending state.
+      expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled();
+      release();
+
+      expect(await screen.findByText("Passkey renamed.")).toBeInTheDocument();
+      expect(backend.calls(UPDATE)).toHaveLength(1);
+    });
   });
 
   it("tells apart two passkeys added the same day, on screen and to a screen reader", async () => {

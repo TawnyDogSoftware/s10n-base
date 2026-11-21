@@ -73,7 +73,7 @@ test.describe("signing up, confirming the address, signing in and out", () => {
 test.describe("passkeys", () => {
   test.use({ extraHTTPHeaders: { "x-forwarded-for": "198.51.100.11" } });
 
-  test("add one from the profile, sign in with it, and remove it", async ({ page }) => {
+  test("add one from the profile, rename it, sign in with it, and remove it", async ({ page }) => {
     const errors = watchConsole(page);
     const cdp = await page.context().newCDPSession(page);
     await cdp.send("WebAuthn.enable");
@@ -97,6 +97,23 @@ test.describe("passkeys", () => {
     await page.getByRole("button", { name: "Add a passkey" }).click();
     await expect(page.getByText("Passkey added.")).toBeVisible();
     await expect(page.getByRole("button", { name: /^Remove passkey / })).toBeVisible();
+    await expectAccessible(page);
+
+    await page.getByRole("button", { name: /^Rename passkey / }).click();
+    const passkeyName = page.getByLabel("Passkey name");
+    await expect(passkeyName).toBeFocused();
+    await expect(passkeyName).toHaveValue(/^Passkey added /);
+    await expectAccessible(page);
+    await passkeyName.fill("Work laptop");
+    await passkeyName.press("Enter");
+    await expect(page.getByText("Passkey renamed.")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /^Remove passkey Work laptop, added / }),
+    ).toBeVisible();
+    // The form is gone, and focus is back on the button that opened it.
+    await expect(
+      page.getByRole("button", { name: /^Rename passkey Work laptop, added / }),
+    ).toBeFocused();
     await expectAccessible(page);
 
     await page.getByRole("button", { name: "Sign out" }).click();

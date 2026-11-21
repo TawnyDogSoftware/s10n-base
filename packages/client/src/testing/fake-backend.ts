@@ -257,6 +257,15 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     return json({ status: true });
   }
 
+  function updatePasskey({ field }: AuthCall): Response {
+    const user = current();
+    if (user === undefined) return authError(401, "UNAUTHORIZED");
+    const passkey = user.passkeys.find((candidate) => candidate.id === field("id"));
+    if (passkey === undefined) return authError(404, "PASSKEY_NOT_FOUND");
+    passkey.name = field("name");
+    return json({ passkey });
+  }
+
   const authRoutes: Readonly<Record<string, (call: AuthCall) => Response>> = {
     "POST /sign-up/email": signUp,
     "POST /sign-in/email": signInWithPassword,
@@ -273,6 +282,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     "POST /reset-password": resetPassword,
     "GET /passkey/list-user-passkeys": listPasskeys,
     "POST /passkey/delete-passkey": deletePasskey,
+    "POST /passkey/update-passkey": updatePasskey,
     // No authenticator in jsdom: the browser step fails and the client reports a cancellation.
     "GET /passkey/generate-authenticate-options": () =>
       json({ challenge: "c", allowCredentials: [], rpId: "localhost" }),

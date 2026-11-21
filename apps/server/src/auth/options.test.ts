@@ -8,6 +8,7 @@ import type { AuthEmailSender } from "./email/sender";
 import {
   authEmailLink,
   AUTH_COOKIE_PREFIX,
+  checkPasskeyName,
   checkUserName,
   CLIENT_IP_HEADER,
   buildAuthOptions,
@@ -254,5 +255,43 @@ describe("checkUserName", () => {
       }
     })();
     expect(failure).toMatchObject({ statusCode: 400, message: "The name is not valid." });
+  });
+});
+
+/** What the passkey name check throws for a route's body, or undefined when it passes. */
+function failureOf(path: string | undefined, body: unknown): unknown {
+  try {
+    checkPasskeyName(path, body);
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+}
+
+describe("checkPasskeyName", () => {
+  it.each(["/passkey/update-passkey", "/passkey/verify-registration"])(
+    "refuses a name that breaks the display-name rule on %s",
+    (path) => {
+      for (const name of ["a".repeat(101), "Sam\u0000", "   ", 42]) {
+        expect(failureOf(path, { id: "p1", name })).toMatchObject({
+          statusCode: 400,
+          body: { code: "INVALID_NAME" },
+        });
+      }
+    },
+  );
+
+  it("passes a name within the rule, a body without a name, and no body", () => {
+    expect(
+      failureOf("/passkey/update-passkey", { id: "p1", name: "  Work laptop  " }),
+    ).toBeUndefined();
+    expect(failureOf("/passkey/verify-registration", { response: {} })).toBeUndefined();
+    expect(failureOf("/passkey/update-passkey", undefined)).toBeUndefined();
+    expect(failureOf("/passkey/update-passkey", null)).toBeUndefined();
+  });
+
+  it("leaves every other route's body alone, and a call without a path", () => {
+    expect(failureOf("/sign-up/email", { name: "a".repeat(101) })).toBeUndefined();
+    expect(failureOf(undefined, { name: "a".repeat(101) })).toBeUndefined();
   });
 });

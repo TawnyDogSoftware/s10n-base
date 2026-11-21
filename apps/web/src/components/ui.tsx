@@ -46,23 +46,26 @@ export function Button(props: {
   readonly keepFocusWhilePending?: boolean;
   readonly onClick?: () => void;
   readonly "aria-label"?: string;
+  /** For moving focus to the button, such as back to the one that opened a form. */
+  readonly buttonRef?: Ref<HTMLButtonElement>;
 }) {
-  const { pending = false, variant = "primary" } = props;
-  const { inactive, focusable } = buttonState(pending, props);
+  const { pending = false, variant = "primary", buttonRef, ...button } = props;
+  const { inactive, focusable } = buttonState(pending, button);
   const colours =
     variant === "primary"
       ? "bg-primary text-primary-foreground border-primary"
       : "bg-background text-foreground border-border";
   return (
     <button
-      type={props.type ?? "button"}
+      ref={buttonRef}
+      type={button.type ?? "button"}
       disabled={inactive && !focusable}
       aria-disabled={inactive}
-      aria-label={pending ? undefined : props["aria-label"]}
-      onClick={inactive ? undefined : props.onClick}
+      aria-label={pending ? undefined : button["aria-label"]}
+      onClick={inactive ? undefined : button.onClick}
       className={`${colours} ${focusRing} rounded-md border px-4 py-2 font-medium disabled:cursor-not-allowed disabled:opacity-70 aria-disabled:cursor-not-allowed aria-disabled:opacity-70`}
     >
-      {pending ? (props.pendingLabel ?? props.children) : props.children}
+      {pending ? (button.pendingLabel ?? button.children) : button.children}
     </button>
   );
 }

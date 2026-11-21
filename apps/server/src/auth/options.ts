@@ -6,7 +6,7 @@
 import { expo } from "@better-auth/expo";
 import { passkey } from "@better-auth/passkey";
 import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth";
-import { APIError } from "better-auth/api";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { admin } from "better-auth/plugins";
 import { Option, Schema } from "effect";
 import type { Kysely } from "kysely";
@@ -181,6 +181,25 @@ export function checkUserName<T extends Record<string, unknown>>(data: T): { dat
   return { data: { ...data, name: name.value } };
 }
 
+/** The passkey plugin's routes whose body carries a passkey's name: renaming one, adding one. */
+const PASSKEY_NAME_PATHS: ReadonlySet<string> = new Set([
+  "/passkey/update-passkey",
+  "/passkey/verify-registration",
+]);
+
+/**
+ * Holds the name in the body of a passkey route to the rule a user's name follows. The plugin
+ * itself only trims it: it sets no maximum length, and a NUL would fail in the database. The
+ * database hooks cannot do this, since they cover Better Auth's own tables, not a plugin's. A
+ * body without a name passes; adding a passkey needs none.
+ *
+ * @throws {APIError} 400 `INVALID_NAME` when the name breaks the rule, before the route runs.
+ */
+export function checkPasskeyName(path: string | undefined, body: unknown): void {
+  if (path === undefined || !PASSKEY_NAME_PATHS.has(path)) return;
+  if (typeof body === "object" && body !== null) checkUserName(body as Record<string, unknown>);
+}
+
 type Options = BetterAuthOptions;
 type EmailAndPassword = NonNullable<Options["emailAndPassword"]>;
 type EmailVerification = NonNullable<Options["emailVerification"]>;
@@ -238,6 +257,7 @@ export type AuthOptions = Options & {
     readonly disableCSRFCheck: false;
   };
   readonly databaseHooks: NonNullable<Options["databaseHooks"]>;
+  readonly hooks: NonNullable<Options["hooks"]>;
   readonly plugins: BetterAuthPlugin[];
 };
 
@@ -317,6 +337,12 @@ export function buildAuthOptions(
         create: { before: (user) => Promise.resolve(checkUserName(user)) },
         update: { before: (user) => Promise.resolve(checkUserName(user)) },
       },
+    },
+    hooks: {
+      before: createAuthMiddleware((context) => {
+        checkPasskeyName(context.path, context.body);
+        return Promise.resolve();
+      }),
     },
     plugins: [
       expo(),

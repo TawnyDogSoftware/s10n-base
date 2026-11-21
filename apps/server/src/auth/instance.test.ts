@@ -182,4 +182,21 @@ describe("createAppAuth", () => {
     // The rate limiter keeps its counts in the database, in every environment.
     expect(queries.some((query) => query.sql.includes('"ba_rate_limit"'))).toBe(true);
   });
+
+  it("refuses a passkey name that breaks the name rule before the route looks anything up", async () => {
+    const { db, queries } = scriptedDb<DB>(() => []);
+    const auth = createAppAuth(testAuthOptions({}, db));
+
+    const response = await auth.handler(
+      new Request("http://localhost:5173/api/auth/passkey/update-passkey", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "http://localhost:5173" },
+        body: JSON.stringify({ id: "p1", name: "a".repeat(101) }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: "INVALID_NAME" });
+    expect(queries.every((query) => query.sql.includes('"ba_rate_limit"'))).toBe(true);
+  });
 });

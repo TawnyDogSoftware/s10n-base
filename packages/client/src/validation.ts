@@ -16,6 +16,7 @@ export type FieldError =
   | {
       readonly key:
         | "validation.nameRequired"
+        | "validation.passkeyNameRequired"
         | "validation.emailRequired"
         | "validation.emailInvalid"
         | "validation.passwordRequired";
@@ -66,18 +67,31 @@ function forbiddenCharacter(name: string): string {
 }
 
 /**
- * The contract decides whether a name is valid. The length test and the search for a forbidden
- * character only choose the message for one it refuses.
+ * A name held to the display-name rule. The contract decides whether it is valid; the length
+ * test and the search for a forbidden character only choose the message for one it refuses.
  */
-export function validateName(input: string): Validated {
+function validateNamed(
+  input: string,
+  required: "validation.nameRequired" | "validation.passkeyNameRequired",
+): Validated {
   const trimmed = input.trim();
-  if (trimmed === "") return fail({ key: "validation.nameRequired" });
+  if (trimmed === "") return fail({ key: required });
   if (trimmed.length > PROFILE_NAME_MAX)
     return fail({ key: "validation.nameTooLong", values: { max: PROFILE_NAME_MAX } });
   const decoded = decodeName(input);
   return decoded._tag === "Success"
     ? { ok: true, value: decoded.value }
     : fail({ key: "validation.nameInvalid", values: { character: forbiddenCharacter(trimmed) } });
+}
+
+/** A user's display name. */
+export function validateName(input: string): Validated {
+  return validateNamed(input, "validation.nameRequired");
+}
+
+/** A passkey's name: the display-name rule, which the server applies to it as well. */
+export function validatePasskeyName(input: string): Validated {
+  return validateNamed(input, "validation.passkeyNameRequired");
 }
 
 /** Something, `@`, a domain with a dot, and no spaces. The server has the final say. */

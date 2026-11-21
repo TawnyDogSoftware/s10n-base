@@ -61,6 +61,7 @@ export const en = {
     },
     validation: {
       nameRequired: "Enter your name.",
+      passkeyNameRequired: "Enter a name for the passkey.",
       nameTooLong: "Use at most {{max}} characters.",
       nameInvalid:
         "The name contains a character that cannot be used: {{character}}. Please try another name.",
@@ -163,6 +164,14 @@ export const en = {
       remove: "Remove",
       removeLabel: "Remove passkey {{name}}, added {{date}}",
       removeLabelNumbered: "Remove passkey {{name}}, added {{date}} ({{number}})",
+      rename: "Rename",
+      renameLabel: "Rename passkey {{name}}, added {{date}}",
+      renameLabelNumbered: "Rename passkey {{name}}, added {{date}} ({{number}})",
+      nameLabel: "Passkey name",
+      saveName: "Save",
+      savingName: "Saving…",
+      cancelRename: "Cancel",
+      renamed: "Passkey renamed.",
       defaultName: "Passkey added {{date}}",
       removing: "Removing…",
       removed: "Passkey removed.",

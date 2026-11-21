@@ -9,6 +9,7 @@ import {
   validateEmail,
   validateName,
   validateNewPassword,
+  validatePasskeyName,
   validatePassword,
 } from "./validation";
 
@@ -36,11 +37,32 @@ describe("validateName", () => {
   });
 });
 
+describe("validatePasskeyName", () => {
+  it("follows the display-name rule, with its own message for an empty name", () => {
+    expect(validatePasskeyName("  Work laptop ")).toEqual({ ok: true, value: "Work laptop" });
+    expect(validatePasskeyName("   ")).toEqual({
+      ok: false,
+      error: { key: "validation.passkeyNameRequired" },
+    });
+    expect(validatePasskeyName("x".repeat(101))).toEqual({
+      ok: false,
+      error: { key: "validation.nameTooLong", values: { max: 100 } },
+    });
+    expect(validatePasskeyName("Lap\u0000top")).toEqual({
+      ok: false,
+      error: { key: "validation.nameInvalid", values: { character: "U+0000" } },
+    });
+  });
+});
+
 describe("fieldErrorText", () => {
   const t = createTranslator("auth");
 
   it("gives the text of each kind of error, with its values", () => {
     expect(fieldErrorText(t, { key: "validation.nameRequired" })).toBe("Enter your name.");
+    expect(fieldErrorText(t, { key: "validation.passkeyNameRequired" })).toBe(
+      "Enter a name for the passkey.",
+    );
     expect(fieldErrorText(t, { key: "validation.nameTooLong", values: { max: 100 } })).toBe(
       "Use at most 100 characters.",
     );

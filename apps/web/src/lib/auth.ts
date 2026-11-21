@@ -34,6 +34,7 @@ export interface WebAuth extends PasswordAuth {
   /** Adds a passkey under `name`, so the user can tell it from their others. */
   readonly addPasskey: (name: string) => Promise<AuthResult>;
   readonly deletePasskey: (id: string) => Promise<AuthResult>;
+  readonly renamePasskey: (id: string, name: string) => Promise<AuthResult>;
 }
 /** A creation time as Better Auth sends it (a string, or a Date), or null when it is not one. */
 function toTime(value: unknown): string | null {
@@ -99,5 +100,7 @@ export function createWebAuth(options: {
     addPasskey: (name) => run((fetchOptions) => client.passkey.addPasskey({ name, fetchOptions })),
     deletePasskey: (id) =>
       run((fetchOptions) => client.passkey.deletePasskey({ id, fetchOptions })),
+    renamePasskey: (id, name) =>
+      run((fetchOptions) => client.passkey.updatePasskey({ id, name, fetchOptions })),
   };
 }

@@ -440,6 +440,11 @@ describe("RPC with the session", () => {
   });
 });
 
+/** The status and Better Auth error code of an answer. */
+async function codeOf(response: Response) {
+  return [response.status, ((await response.json()) as { code?: string }).code] as const;
+}
+
 describe("passkeys", () => {
   it("returns registration options to a signed-in user and refuses them when signed out", async () => {
     const browser = await signedInUser(email("passkey"));
@@ -454,5 +459,32 @@ describe("passkeys", () => {
     expect(body.rp).toEqual({ id: "127.0.0.1", name: "S10N Base" });
 
     expect((await client().get("/api/auth/passkey/generate-register-options")).status).toBe(401);
+  });
+
+  it("holds a passkey's name to the display-name rule when it is renamed or added", async () => {
+    const browser = await signedInUser(email("passkey-name"));
+    const id = "6f1c2b9e-0000-4000-8000-00000000abcd";
+
+    // Refused before any lookup of the passkey, which would answer PASSKEY_NOT_FOUND.
+    for (const name of ["a".repeat(200), "Sam\u0000"]) {
+      expect(
+        await codeOf(await browser.post("/api/auth/passkey/update-passkey", { id, name })),
+      ).toEqual([400, "INVALID_NAME"]);
+      expect(
+        await codeOf(
+          await browser.post("/api/auth/passkey/verify-registration", { response: {}, name }),
+        ),
+      ).toEqual([400, "INVALID_NAME"]);
+    }
+
+    // A name within the rule reaches the endpoint, and so does a registration without one.
+    expect(
+      await codeOf(await browser.post("/api/auth/passkey/update-passkey", { id, name: "Laptop" })),
+    ).toEqual([404, "PASSKEY_NOT_FOUND"]);
+    const [status, code] = await codeOf(
+      await browser.post("/api/auth/passkey/verify-registration", { response: {} }),
+    );
+    expect(status).toBe(400);
+    expect(code).not.toBe("INVALID_NAME");
   });
 });

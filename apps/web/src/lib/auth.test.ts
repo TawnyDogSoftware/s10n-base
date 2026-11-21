@@ -57,6 +57,7 @@ describe("createWebAuth", () => {
     await auth.requestPasswordReset("sam@example.com");
     await auth.resetPassword("tok", "new password");
     await auth.deletePasskey("pk1");
+    await auth.renamePasskey("pk1", "Work laptop");
 
     expect(requests.map(({ method, url, body }) => [method, url, body])).toEqual([
       [
@@ -75,6 +76,7 @@ describe("createWebAuth", () => {
       ["POST", `${BASE}/api/auth/request-password-reset`, { email: "sam@example.com" }],
       ["POST", `${BASE}/api/auth/reset-password`, { token: "tok", newPassword: "new password" }],
       ["POST", `${BASE}/api/auth/passkey/delete-passkey`, { id: "pk1" }],
+      ["POST", `${BASE}/api/auth/passkey/update-passkey`, { id: "pk1", name: "Work laptop" }],
     ]);
     expect(new Set(requests.map((request) => request.credentials))).toEqual(new Set(["include"]));
   });
@@ -85,6 +87,20 @@ describe("createWebAuth", () => {
     await expect(
       createWebAuth({ baseUrl: BASE, fetch }).signIn({ email: "a@example.com", password: "x" }),
     ).resolves.toEqual({ ok: false, code: "INVALID_EMAIL_OR_PASSWORD", status: 401 });
+  });
+
+  it("returns a refused rename as a failure, and throws when no answer arrives", async () => {
+    const { fetch } = fake(() => refused(404, "PASSKEY_NOT_FOUND"));
+
+    await expect(
+      createWebAuth({ baseUrl: BASE, fetch }).renamePasskey("pk1", "Work laptop"),
+    ).resolves.toEqual({ ok: false, code: "PASSKEY_NOT_FOUND", status: 404 });
+    await expect(
+      createWebAuth({
+        baseUrl: BASE,
+        fetch: () => Promise.reject(new TypeError("Failed to fetch")),
+      }).renamePasskey("pk1", "Work laptop"),
+    ).rejects.toBeInstanceOf(NetworkError);
   });
 
   it("names a rate-limited answer RATE_LIMITED", async () => {
