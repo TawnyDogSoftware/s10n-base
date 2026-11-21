@@ -32,3 +32,4 @@ Decisions that outlive a plan are also written up as decision records in [docs/a
 | 010 | [Recheck the session inside the profile update](010-recheck-session-in-profile-update.md) | Implemented |
 | 011 | [Address the findings of the full-branch review](011-review-findings.md) | Implemented; F63 partly done, the rest of what was left finished in 012 |
 | 012 | [Finish what the review left open](012-review-leftovers.md) | Implemented |
+| 013 | [Holds that follow another package](013-follower-holds.md) | In progress |
