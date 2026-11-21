@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { lostAnswerFetch, runAuthAction } from "./auth";
 import { NetworkError } from "./transport";
@@ -17,6 +17,16 @@ function bodyLostFetch() {
     ),
   );
 }
+
+/** A fetch whose headers arrive and whose body then never ends. */
+const stalled = () => Promise.resolve(new Response(new ReadableStream({ start: () => undefined })));
+
+/** Settles to how the request ended, so a rejection is never left unhandled. */
+const outcome = (request: Promise<Response>) =>
+  request.then(
+    () => "answered",
+    (error: unknown) => error,
+  );
 
 const URL_X = "https://api.example.com/x";
 const answered = () => Promise.resolve(new Response());
@@ -149,5 +159,68 @@ describe("lostAnswerFetch", () => {
 
   it("throws a NetworkError for a lost answer, even with nobody told", async () => {
     await expect(lostAnswerFetch(unreachable)(URL_X)).rejects.toBeInstanceOf(NetworkError);
+  });
+  describe("with an answer that never completes", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("gives up on headers that never arrive, as a lost answer", async () => {
+      let lost = 0;
+      const signals: (AbortSignal | null | undefined)[] = [];
+      const fetch = lostAnswerFetch(
+        (_input, init) => {
+          signals.push(init?.signal);
+          return new Promise<Response>(() => undefined);
+        },
+        () => {
+          lost += 1;
+        },
+      );
+
+      const ended = outcome(fetch(URL_X));
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(lost).toBe(0);
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(await ended).toBeInstanceOf(NetworkError);
+      expect(lost).toBe(1);
+      // The request itself is told to stop.
+      expect(signals[0]?.aborted).toBe(true);
+    });
+
+    it("gives up on a body that stalls after the headers, as a lost answer", async () => {
+      const ended = outcome(lostAnswerFetch(stalled, undefined, 500)(URL_X));
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(await ended).toBeInstanceOf(NetworkError);
+    });
+
+    it("makes runAuthAction report an unknown outcome, not stay pending", async () => {
+      const ended = runAuthAction(stalled, readsBody).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(await ended).toBeInstanceOf(NetworkError);
+    });
+
+    it("passes the caller's own abort through, and does not count it as lost", async () => {
+      let lost = 0;
+      const caller = new AbortController();
+      const fetch = lostAnswerFetch(
+        () => new Promise<Response>(() => undefined),
+        () => {
+          lost += 1;
+        },
+      );
+
+      const ended = outcome(fetch(URL_X, { signal: caller.signal }));
+      caller.abort();
+
+      expect(await ended).toBe(caller.signal.reason);
+      expect(lost).toBe(0);
+    });
   });
 });

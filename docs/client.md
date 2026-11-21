@@ -76,7 +76,7 @@ const { session, query } = useProtectedQuery(["orders", status], (signal) =>
 
 ### Auth calls
 
-Each app wraps its Better Auth client's methods in `runAuthAction(fetch, (fetchOptions) => client.method({ ...input, fetchOptions }))`. The call gets a `fetch` of its own, which reads every answer whole and notes a request that got none, so whether its answer was lost is decided by its own requests alone, never by another call running at the same time. Pass `fetchOptions` to every Better Auth method you wrap; the client's default `customFetchImpl` (`lostAnswerFetch(fetch)`) covers requests a plugin sends without the call's options, such as the first request of a passkey ceremony.
+Each app wraps its Better Auth client's methods in `runAuthAction(fetch, (fetchOptions) => client.method({ ...input, fetchOptions }))`. Each of its requests has the same 30-second deadline as an RPC call, headers and body, and ends as a `NetworkError` when it passes. The call gets a `fetch` of its own, which reads every answer whole and notes a request that got none, so whether its answer was lost is decided by its own requests alone, never by another call running at the same time. Pass `fetchOptions` to every Better Auth method you wrap; the client's default `customFetchImpl` (`lostAnswerFetch(fetch)`) covers requests a plugin sends without the call's options, such as the first request of a passkey ceremony.
 
 ## Testing
 

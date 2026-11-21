@@ -4,7 +4,7 @@
  * the outcome is unknown (see `./query-state`, rule 5). Each app wraps its own Better Auth client
  * (the browser client on the web, the Expo client on mobile) with {@link runAuthAction}.
  */
-import { NetworkError } from "./transport";
+import { DEFAULT_TIMEOUT_MS, DeadlineError, NetworkError, withDeadline } from "./transport";
 
 export type AuthFailure = { readonly ok: false; readonly code: string; readonly status: number };
 export type AuthResult<T = unknown> = { readonly ok: true; readonly data: T } | AuthFailure;
@@ -39,29 +39,40 @@ const NULL_BODY = new Set([101, 204, 205, 304]);
 
 /**
  * A `fetch` that reads each answer whole and throws a `NetworkError` for a request that got no
- * complete answer: the connection failed before the headers, or dropped while the body was read.
- * `onLost` is told of each one. An abort is passed through as it is.
+ * complete answer: the connection failed before the headers, dropped while the body was read, or
+ * neither finished within `timeoutMs` (the deadline the RPC transport gives its requests).
+ * `onLost` is told of each one. The caller's own abort is passed through as it is.
  */
-export function lostAnswerFetch(base: typeof fetch, onLost: () => void = () => undefined) {
-  const counted = async <T>(step: () => Promise<T>): Promise<T> => {
-    try {
-      return await step();
-    } catch (error) {
-      if (isAbort(error)) throw error;
-      onLost();
-      throw new NetworkError("No answer from the server.", { cause: error });
-    }
-  };
+export function lostAnswerFetch(
+  base: typeof fetch,
+  onLost: () => void = () => undefined,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+) {
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const response = await counted(() => base(input, init));
-    // The body is read here: a connection that drops after the headers is as much a lost answer
-    // as one that drops before them. Auth answers are small JSON.
-    const body = await counted(() => response.arrayBuffer());
-    return new Response(NULL_BODY.has(response.status) ? null : body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
-    });
+    const caller = init?.signal ?? undefined;
+    try {
+      // One deadline for the headers and the body: an answer that stalls after its headers
+      // would otherwise leave the action pending for good, and its outcome never re-read.
+      return await withDeadline(timeoutMs, caller, async (signal) => {
+        const response = await base(input, { ...init, signal });
+        // The body is read here: a connection that drops after the headers is as much a lost
+        // answer as one that drops before them. Auth answers are small JSON.
+        const body = await response.arrayBuffer();
+        return new Response(NULL_BODY.has(response.status) ? null : body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+        });
+      });
+    } catch (error) {
+      const timedOut = error instanceof DeadlineError;
+      if (!timedOut && (caller?.aborted === true || isAbort(error))) throw error;
+      onLost();
+      throw new NetworkError(
+        timedOut ? "No answer from the server in time." : "No answer from the server.",
+        { cause: error },
+      );
+    }
   };
 }
 

@@ -55,7 +55,7 @@ export interface TransportOptions {
 }
 
 /** The default deadline of one request: long enough for a slow network, short of forever. */
-const DEFAULT_TIMEOUT_MS = 30_000;
+export const DEFAULT_TIMEOUT_MS = 30_000;
 
 /** Status codes a proxy answers with when the server's answer, if any, was lost. */
 const LOST_ANSWER = new Set([502, 503, 504]);
@@ -82,7 +82,7 @@ function isAbort(error: unknown, signal: AbortSignal | undefined): boolean {
  * soon as either happens, even if `work` ignores the signal (a body that never ends). Rejects
  * with the abort reason: the caller's, or a {@link DeadlineError}.
  */
-async function withDeadline<T>(
+export async function withDeadline<T>(
   ms: number,
   callerSignal: AbortSignal | undefined,
   work: (signal: AbortSignal) => Promise<T>,
@@ -112,7 +112,7 @@ async function withDeadline<T>(
 }
 
 /** The reason a request's own deadline aborts it with. */
-class DeadlineError extends Error {
+export class DeadlineError extends Error {
   override readonly name = "DeadlineError";
 }
 
