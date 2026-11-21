@@ -86,7 +86,7 @@ describe("/sign-up", () => {
 
     click("Send the link again");
     expect(
-      await screen.findByText("We sent a new link. It works for one hour."),
+      await screen.findByText("We sent a new link. It works for 15 minutes."),
     ).toBeInTheDocument();
     expect(app.backend.calls("/api/auth/send-verification-email")).toHaveLength(1);
   });

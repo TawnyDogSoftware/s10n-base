@@ -293,6 +293,7 @@ export function buildAuthOptions(
       enabled: true,
       requireEmailVerification: true,
       revokeSessionsOnPasswordReset: true,
+      // The emails, the screens and the docs state this lifetime in words; see the constant.
       resetPasswordTokenExpiresIn: AUTH_EMAIL_LINK_SECONDS,
       // Better Auth's own `url` is replaced by a link to the web app's page.
       sendResetPassword: async ({ user, token }) => {
@@ -306,6 +307,7 @@ export function buildAuthOptions(
       sendOnSignUp: true,
       // Signing in before verifying sends a fresh link, since the first may have expired.
       sendOnSignIn: true,
+      // Stated in words in the emails, the screens and the docs, as the reset link's is.
       expiresIn: AUTH_EMAIL_LINK_SECONDS,
       sendVerificationEmail: async ({ user, token }) => {
         await emailSender.sendVerificationEmail({

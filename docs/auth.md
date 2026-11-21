@@ -44,7 +44,7 @@ Better Auth's limits are on in every environment and kept in the `ba_rate_limit`
 
 ## Email
 
-Better Auth calls `AuthEmailSender` (`apps/server/src/auth/email/sender.ts`) for the verification and password reset emails; nothing else knows how email is delivered. The text is the `email` namespace of `packages/i18n` ([i18n.md](i18n.md#the-email-namespace)). Both links work for one hour.
+Better Auth calls `AuthEmailSender` (`apps/server/src/auth/email/sender.ts`) for the verification and password reset emails; nothing else knows how email is delivered. The text is the `email` namespace of `packages/i18n` ([i18n.md](i18n.md#the-email-namespace)). Both links work for 15 minutes.
 
 **The links open web pages, not Better Auth's routes:** `<APP_URL>/verify-email?token=…` and `<APP_URL>/reset-password?token=…` (`authEmailLink` in `apps/server/src/auth/options.ts` builds them from the token Better Auth passes; its own `url` is not used). The page reads the token and calls Better Auth: `GET /api/auth/verify-email?token=` and `POST /api/auth/reset-password` with `{token, newPassword}`. So the client does not pass `callbackURL` or `redirectTo`, and the links work the same when the API is on another origin. The web app keeps search values as strings, so a token that looks like a number or `null` reaches Better Auth unchanged.
 

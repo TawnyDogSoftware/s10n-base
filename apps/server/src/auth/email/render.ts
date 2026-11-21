@@ -4,10 +4,14 @@ const t = createTranslator("email");
 
 /**
  * How long a verification or password reset link works, in seconds. Better Auth is given this
- * expiry. The emails and the screens state it in words ("one hour"); `render.test.ts` fails when
- * any catalog string states another lifetime than this one.
+ * expiry.
+ *
+ * The lifetime is also written out by hand, in words ("15 minutes"). When this changes, change:
+ * the four strings in `packages/i18n/src/locales/en.ts` that say how long a link works (two
+ * emails, two screens), `docs/auth.md`, `docs/deployment.md` and `docs/i18n.md`, and the phrase
+ * for the new value in `render.test.ts`, which fails until all of them agree with this constant.
  */
-export const AUTH_EMAIL_LINK_SECONDS = 60 * 60;
+export const AUTH_EMAIL_LINK_SECONDS = 15 * 60;
 
 export type AuthEmailKind = "verifyEmail" | "resetPassword";
 

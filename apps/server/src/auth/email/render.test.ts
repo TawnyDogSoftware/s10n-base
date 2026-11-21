@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { resources } from "@s10n-base/i18n";
@@ -23,12 +26,12 @@ describe("renderAuthEmail", () => {
   );
 
   it("says how long the link works, matching the expiry Better Auth is given", () => {
-    expect(AUTH_EMAIL_LINK_SECONDS).toBe(60 * 60);
+    expect(AUTH_EMAIL_LINK_SECONDS).toBe(15 * 60);
     expect(renderAuthEmail("verifyEmail", "https://x.example/", { supportEmail }).text).toContain(
-      "one hour",
+      "15 minutes",
     );
     expect(renderAuthEmail("resetPassword", "https://x.example/", { supportEmail }).text).toContain(
-      "one hour",
+      "15 minutes",
     );
   });
 
@@ -61,17 +64,31 @@ function strings(value: unknown): string[] {
   return Object.values(value).flatMap(strings);
 }
 
-describe("the link lifetime the copy states", () => {
-  // The words for each lifetime the copy may state. Change AUTH_EMAIL_LINK_SECONDS and this test
-  // fails until the emails and the screens that mention the lifetime say the new one.
-  const PHRASES: Readonly<Record<number, string>> = { 3600: "one hour" };
+/** The lifetimes a text states, by the wording the copy and the docs share: "work(s) for …". */
+function statedLifetimes(text: string): string[] {
+  return [...text.matchAll(/works? for ([^.,;(]+)/g)].map((match) => (match[1] ?? "").trim());
+}
+
+describe("the link lifetime the copy and the docs state", () => {
+  // The words for each lifetime the copy may state. Change AUTH_EMAIL_LINK_SECONDS and these
+  // tests fail until the emails, the screens and the docs that mention the lifetime say the new
+  // one.
+  const PHRASES: Readonly<Record<number, string>> = { 900: "15 minutes" };
+  /** The docs that say how long a link works. */
+  const DOCS = ["docs/auth.md", "docs/deployment.md", "docs/i18n.md"];
+  const root = path.resolve(import.meta.dirname, "../../../../..");
 
   it("is the lifetime Better Auth is given, in every string that states one", () => {
-    const stated = Object.values(resources)
-      .flatMap(strings)
-      .flatMap((text) => [...text.matchAll(/works for ([^.]+)\./g)].map((match) => match[1]));
+    const stated = Object.values(resources).flatMap(strings).flatMap(statedLifetimes);
 
     expect(stated.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(stated)).toEqual(new Set([PHRASES[AUTH_EMAIL_LINK_SECONDS]]));
+  });
+
+  it.each(DOCS)("is the lifetime %s states", (file) => {
+    const stated = statedLifetimes(readFileSync(path.join(root, file), "utf8"));
+
+    expect(stated.length).toBeGreaterThanOrEqual(1);
     expect(new Set(stated)).toEqual(new Set([PHRASES[AUTH_EMAIL_LINK_SECONDS]]));
   });
 });

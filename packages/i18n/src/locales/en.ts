@@ -84,7 +84,7 @@ export const en = {
       body: "We sent a link to {{email}}. Open it to confirm your address, then sign in.",
       resend: "Send the link again",
       resending: "Sending…",
-      resent: "We sent a new link. It works for one hour.",
+      resent: "We sent a new link. It works for 15 minutes.",
       inBrowser:
         "The link opens in your browser. When it says your address is confirmed, come back here and sign in.",
       toSignIn: "Go to sign in",
@@ -122,7 +122,7 @@ export const en = {
       submitting: "Sending…",
       sentTitle: "Check your email",
       sentBody:
-        "If an account uses {{email}}, we sent it a link to reset the password. The link works for one hour.",
+        "If an account uses {{email}}, we sent it a link to reset the password. The link works for 15 minutes.",
       backToSignIn: "Back to sign in",
       inBrowser:
         "The link opens in your browser, where you choose the new password. Then come back here and sign in with it.",
@@ -270,13 +270,13 @@ export const en = {
     verifyEmail: {
       subject: "Confirm your email address",
       heading: "Confirm your email address",
-      body: "Confirm this address to finish creating your account. The link works for one hour.",
+      body: "Confirm this address to finish creating your account. The link works for 15 minutes.",
       action: "Confirm email address",
     },
     resetPassword: {
       subject: "Reset your password",
       heading: "Reset your password",
-      body: "We received a request to reset the password for this account. Use the link to choose a new one. The link works for one hour.",
+      body: "We received a request to reset the password for this account. Use the link to choose a new one. The link works for 15 minutes.",
       action: "Choose a new password",
     },
   },
