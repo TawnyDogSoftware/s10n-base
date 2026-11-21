@@ -51,7 +51,7 @@ Enforced by `bun run boundaries` (`.dependency-cruiser.cjs`), type-only imports 
 - **The 3-day rule:** every package is on the newest release at least three days old; `bunfig.toml` enforces it at install. Held packages and their reasons are in `dependency-holds.json`. How to take a bug-fix release early, and how the daily update PR works: [docs/dependencies.md](docs/dependencies.md).
 - **Expo-managed packages** (React, React Native, every native module) are added and moved only with `EXPO_OFFLINE=1 bunx expo install <package>` in `apps/mobile`. CI checks with `expo install --check`.
 - **A run-time dependency of the server must be declared in `apps/server/package.json`.** The bundle leaves third-party imports external, and the image build fails when its imports and the declared dependencies differ.
-- `better-auth`, `@better-auth/expo`, `@better-auth/passkey` and `better-call` move together, in one change (`scripts/dependency-updates/holds.test.ts`).
+- `better-auth`, `@better-auth/expo`, `@better-auth/passkey` and `better-call` move together, in one change (`scripts/dependency-updates/holds.test.ts`). The daily update does it: `better-call` follows `better-auth` in `dependency-holds.json`, so it is set to the version the new `better-auth` depends on. Moving them by hand, set it the same way.
 - **No git-hook manager.** Optional hooks live in `.githooks/`, turned on with `bun run hooks:install` (`core.hooksPath`).
 - **Scripts are TypeScript run with bun.** A script's entry is a one-line `*.main.ts` over a tested module; the coverage exclusion check fails if an entry holds more than wiring.
 

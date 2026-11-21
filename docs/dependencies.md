@@ -73,15 +73,32 @@ The online `bunx expo install --check`, which the daily update runs, compares wi
 
 `dependency-holds.json` lists the packages the daily update must not move freely. Each entry has `packages` (names, or patterns with `*`), a `reason`, and optionally:
 
-- no `range` or `group`: never updated by the workflow. Change these by hand.
+- no `range`, `group` or `follows`: never updated by the workflow. Change these by hand.
 - `range`: moves only inside it, for example `<6.1.0` or `0.29.x`.
 - `group`: the members move only when they all land on the same version; otherwise all of them stay.
+- `follows`: the name of another package. The held package (the follower) never moves on its own; after each update it is set to exactly the version that the followed package, as now installed, depends on. See [Packages that follow another](#packages-that-follow-another).
 
 Each place a held package is declared (the catalog, or a workspace's own dependency list) is checked and put back on its own, and a group's members are compared wherever they are declared. A file without a `holds` list fails the update rather than lifting every hold.
 
 A package that must stay keeps its locked version too, not just its spec: `bun update --latest` may lock a newer version that the old spec still allows (a `~` spec and a patch release), and bun keeps a locked version that satisfies the spec. So the update pins such a package to its earlier version, installs, then puts its spec back. A package held to a `range` may move inside it: when the update takes it past the range, only its spec is put back, and bun resolves it again to the newest release that spec and the 3-day rule allow (checked with bun 1.4.4, plan 011).
 
-Entries can name packages that are not installed yet; they apply from the day the package arrives. `scripts/dependency-updates/holds.test.ts` fails if an entry has no reason, if a held package in the catalog or lockfile is outside its range, or if members of a group are on different versions.
+Entries can name packages that are not installed yet; they apply from the day the package arrives. `scripts/dependency-updates/holds.test.ts` fails if an entry has no reason, if a held package in the catalog or lockfile is outside its range, if members of a group are on different versions, or if a follower is not on exactly the version the package it follows depends on.
+
+### Packages that follow another
+
+Use `follows` when the repository must use the very copy of a package that another package uses, and that package pins it at a version of its own numbering, so the two cannot be a `group`:
+
+```json
+{ "packages": ["better-call"], "follows": "better-auth", "reason": "…" }
+```
+
+After `bun update` and after the other holds are enforced (so the followed package is where the update really left it, not where a refused move would have put it), the update does this for each follower:
+
+1. **Finds the version.** It reads the followed package's entry in `bun.lock`, which records the `dependencies` of that release's own manifest. A dependency pinned exactly (`"better-call": "1.4.5"`, as `better-auth` does) is that version. For a range, it is the version bun resolved for the followed package: its own copy, which bun records under `<followed>/<follower>` when the copy the repository uses is outside the range, and otherwise the repository's copy, in which case the two already agree.
+2. **Sets it.** If any declaration of the follower is not exactly that version, each is written as that exact version and `bun install` runs, so `bun.lock` has one copy. The PR body lists the move like any other package's.
+3. **Never leaves half a move.** If that install fails (the 3-day rule refuses the version, for example), the follower, the followed package and every member of the followed package's group go back to where they were before the update, and the PR body lists each under "Reported, not applied" with the reason and bun's own message. The gate is not bypassed; the next day's run tries again. If the two still disagree after that, because they already did before the update, the run fails without opening or changing a PR.
+
+A follower takes no `range` or `group`, and cannot follow another follower. A follower whose followed package is not installed, or no longer depends on it, is left where it is; `holds.test.ts` fails in the second case, so the hold is noticed and removed. Because the follower is set on every run, a follower that was edited by hand to the wrong version is corrected by the next update.
 
 The current entries:
 
@@ -89,7 +106,7 @@ The current entries:
 - `@types/react`, `@types/react-dom`: inside `~19.3.0`, with React.
 - `typescript`: below 6.1, because typescript-eslint supports nothing newer.
 - `better-auth`, `@better-auth/expo`, `@better-auth/passkey`: one group, always on one version.
-- `better-call`: must equal the exact version `better-auth` depends on, which is a different number from better-auth's own version, so it cannot be in the group. Change it by hand whenever the group moves; `holds.test.ts` fails when it differs from the version in `better-auth`'s own manifest (as recorded in `bun.lock`), and when the group is not pinned exactly. The route guard uses it directly (see `docs/auth.md`).
+- `better-call`: follows `better-auth`. It must equal the exact version `better-auth` depends on, which is a different number from better-auth's own version, so it cannot be in the group. The update sets it whenever the group moves; `holds.test.ts` fails when it differs from the version in `better-auth`'s own manifest (as recorded in `bun.lock`), and when the group is not pinned exactly. The route guard uses it directly (see `docs/auth.md`).
 - `kysely`: `0.29.x`, the range Better Auth supports.
 
 To change a hold, edit the file and run `bun run test`.
@@ -100,12 +117,12 @@ To change a hold, edit the file and run `bun run test`.
 
 1. Finds the open PRs labelled `dependency-update` whose branch is a `deps/update-YYYY-MM-DD` branch of this repository and whose base is `main`. A labelled PR that is not like that is logged and left alone. It builds on the newest; an older one, which an interrupted run can leave open, is closed in favour of the newest.
 2. Starts from that PR's branch with `main` merged in, so fixes already pushed there carry forward. If the merge conflicts, or there is no open PR, it starts from `main`, and the PR body says when a conflict forced that.
-3. Runs `bun update -r --latest`, which moves every package to its newest release at least 3 days old, across major versions, keeping exact pins exact. bun's named and negated filters (`bun update typescript`, `bun update '!typescript'`) do not rewrite catalog entries, so the script updates everything, puts held packages back to their earlier spec, and reinstalls.
+3. Runs `bun update -r --latest`, which moves every package to its newest release at least 3 days old, across major versions, keeping exact pins exact. bun's named and negated filters (`bun update typescript`, `bun update '!typescript'`) do not rewrite catalog entries, so the script updates everything, puts held packages back to their earlier spec, and reinstalls. It then sets each package that follows another to the version that package depends on ([Packages that follow another](#packages-that-follow-another)).
 4. Moves bun and Node to their newest releases at least 3 days old (Node on its current LTS major), and keeps `@types/node` on that major. A newer Node LTS major is reported, not applied.
 5. Runs `bunx expo install --check` in `apps/mobile` (online, against Expo's newest SDK patches) and reports drift in the PR body, or that the check could not run (no network, a crash) when it fails without naming a package. It does not apply drift: move Expo packages with `bunx expo install`.
 6. If no file changed, stops and leaves the open PR alone, with two repairs for a run that was interrupted: it closes older update PRs, and when the PR's body names a commit other than the PR's head (the push landed but the body edit failed), it rewrites the body. Each body ends with a hidden line naming the commit it describes; a body without that line is never rewritten. Otherwise it commits, pushes `deps/update-YYYY-MM-DD` (UTC date) and opens a PR with the label. If the open PR is already on today's branch, it pushes there (with a lease, since after a conflict the new commit does not descend from the old one) and updates the body instead; otherwise it comments on the old PR with a link to the new one, closes it and deletes its branch.
 
-The PR body describes everything the PR changes against `main`, including updates carried over from the PR it supersedes: direct dependency changes as major, minor and patch, direct dependencies added or removed, indirect dependencies that moved in, came into or left `bun.lock`, bun and Node changes, what was reported but not applied (held packages, a new Node LTS line, Expo drift), and the releases `bun outdated` shows as held back by the 3-day rule.
+The PR body describes everything the PR changes against `main`, including updates carried over from the PR it supersedes: direct dependency changes as major, minor and patch, direct dependencies added or removed, indirect dependencies that moved in, came into or left `bun.lock`, bun and Node changes, what was reported but not applied (held packages, a package put back because its follower could not be installed, a new Node LTS line, Expo drift), and the releases `bun outdated` shows as held back by the 3-day rule.
 
 **When a major update breaks CI,** fix it on the PR's branch, by hand or with an agent, and merge the PR with the fix. The next day's run starts from that branch, so the fix is kept.
 

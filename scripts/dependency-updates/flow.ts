@@ -9,7 +9,15 @@ import {
   type Runtime,
   tagsFor,
 } from "../dockerfile-versions";
-import { enforceHolds, parseHolds, type Hold, type Restoration } from "./holds";
+import {
+  enforceHolds,
+  followerMoves,
+  parseHolds,
+  restoreFollowed,
+  type FollowerMove,
+  type Hold,
+  type Restoration,
+} from "./holds";
 import { resolveImageDigest, type RegistryIo } from "./image-digests";
 import { parseLockedVersions } from "./lockfile";
 import {
@@ -294,7 +302,79 @@ async function updatePackages(
     collectDeclarations(updated),
   );
   if (restorations.length > 0) await restore(io, restorations, lockedBefore);
-  return restorations;
+  return moveFollowers(io, holds, { before, lockedBefore, restorations });
+}
+
+/** The followers that are not on the version the package they follow depends on, as things are. */
+async function pendingFollowers(io: Io, holds: readonly Hold[]): Promise<FollowerMove[]> {
+  return followerMoves(
+    holds,
+    collectDeclarations(await readManifests(io)),
+    await io.readFile("bun.lock"),
+  );
+}
+
+/** The first line a failed command printed, which for bun names the version it refused. */
+function failureLine(result: CommandResult): string {
+  return `${result.stderr}\n${result.stdout}`.trim().split("\n", 1).join("").slice(0, 300);
+}
+
+/**
+ * Sets each follower (a hold with `follows`) to exactly the version the package it follows, as
+ * now installed, depends on, and installs. This runs after the holds are enforced, so it reads
+ * the followed package where the update really left it. When that version cannot be installed
+ * (the 3-day rule refuses it, for one), the follower, the followed package and its whole group
+ * go back to where they were before the update, as restorations the PR body reports. Returns
+ * the restorations to report: a follower that moved is no longer one that "stays".
+ */
+async function moveFollowers(
+  io: Io,
+  holds: readonly Hold[],
+  update: {
+    readonly before: readonly Declaration[];
+    readonly lockedBefore: ReadonlyMap<string, string>;
+    readonly restorations: readonly Restoration[];
+  },
+): Promise<Restoration[]> {
+  const moves = await pendingFollowers(io, holds);
+  if (moves.length === 0) return [...update.restorations];
+  const wanted = new Map(moves.map((move) => [move.follower, move.wanted]));
+  const after = collectDeclarations(await readManifests(io)).map(
+    ({ path, section, name, spec }): Declaration => ({
+      path,
+      section,
+      name,
+      spec: wanted.get(name) ?? spec,
+    }),
+  );
+  const lockedAfter = parseLockedVersions(await io.readFile("bun.lock"));
+  await writeSpecs(io, after);
+  const install = await io.run("bun", ["install", "--ignore-scripts"]);
+
+  let failed: Restoration[] = [];
+  if (install.code === 0) {
+    for (const move of moves) {
+      io.log(
+        `${move.follower} follows ${move.followed} ${move.followedVersion}: set to ${move.wanted}.`,
+      );
+    }
+  } else {
+    const state = { before: update.before, after, lockedBefore: update.lockedBefore, lockedAfter };
+    failed = restoreFollowed(holds, moves, state, failureLine(install));
+    io.log(
+      `A follower's version could not be installed; putting back ${listed(failed.map(({ name }) => name))}.`,
+    );
+    await restore(io, failed, update.lockedBefore);
+  }
+
+  const [left] = await pendingFollowers(io, holds);
+  if (left !== undefined) {
+    throw new Error(
+      `${left.follower} is not on ${left.wanted}, the version ${left.followed} ${left.followedVersion} depends on, and could not be put there. Fix dependency-holds.json or the versions by hand.`,
+    );
+  }
+  const replaced = new Set([...wanted.keys(), ...failed.map(({ name }) => name)]);
+  return [...update.restorations.filter(({ name }) => !replaced.has(name)), ...failed];
 }
 
 /** Writes each declaration's spec at its own place. */

@@ -1,5 +1,5 @@
 {
-  "$comment": "Packages the daily dependency-update workflow must not move freely. No range or group: never updated by the workflow. range: moves only inside it. group: members move only when they all land on the same version. See docs/dependencies.md.",
+  "$comment": "Packages the daily dependency-update workflow must not move freely. No range, group or follows: never updated by the workflow. range: moves only inside it. group: members move only when they all land on the same version. follows: never moves on its own; after each update it is set to exactly the version the named package, as installed, depends on. See docs/dependencies.md.",
   "holds": [
     {
       "packages": [
@@ -30,7 +30,8 @@
     },
     {
       "packages": ["better-call"],
-      "reason": "Must equal the exact version better-auth depends on, which is not better-auth's own version. Change it by hand when the better-auth group moves."
+      "follows": "better-auth",
+      "reason": "The route guard imports better-call itself and must use the very copy better-auth uses, so it is always the exact version the installed better-auth depends on. The update sets it when the better-auth group moves."
     },
     {
       "packages": ["kysely"],
