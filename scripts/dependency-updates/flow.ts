@@ -623,7 +623,7 @@ async function describe(io: Io, options: FlowOptions, found: Findings): Promise<
     notApplied: [
       ...found.restorations.map(
         (restoration) =>
-          `${restoration.name} stays at ${restoration.restoredTo} (newest allowed: ${specBaseVersion(restoration.attempted) ?? restoration.attempted}): ${restoration.reason}`,
+          `${restoration.name} stays at ${restoration.restoredTo}, not ${specBaseVersion(restoration.attempted) ?? restoration.attempted}: ${restoration.reason}`,
       ),
       ...found.notApplied,
     ],

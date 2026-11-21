@@ -448,9 +448,7 @@ describe("runDependencyUpdate", () => {
     );
     expect(body).toContain("| effect | 4.1.4 | 4.1.5 |");
     expect(body).not.toContain("| react |");
-    expect(body).toContain(
-      "- react stays at 19.3.0 (newest allowed: 19.3.1): Owned by the Expo SDK.",
-    );
+    expect(body).toContain("- react stays at 19.3.0, not 19.3.1: Owned by the Expo SDK.");
     expect(body).toContain("| oxlint | 1.93.0 | 1.94.0 | 2026-11-17 |");
     expect(io.inputs.get(io.commands.find((line) => line.startsWith("gh pr create")) ?? "")).toBe(
       body,
@@ -972,9 +970,7 @@ describe("runDependencyUpdate", () => {
     });
 
     const body = outcome.kind === "unchanged" ? "" : outcome.body;
-    expect(body).toContain(
-      "- react stays at 19.3.0 (newest allowed: canary): Owned by the Expo SDK.",
-    );
+    expect(body).toContain("- react stays at 19.3.0, not canary: Owned by the Expo SDK.");
   });
 
   it("keeps @types/node on Node's major", async () => {
