@@ -26,6 +26,7 @@ function user(id: string, role: AppSession["role"] = "user"): AppSession {
     image: null,
     role,
     emailVerified: true,
+    expiresAt: "2099-01-01T00:00:00.000Z",
   };
 }
 
@@ -64,6 +65,7 @@ function accept(gate: SessionGate, session: AppSession | null) {
 afterEach(() => {
   cleanup();
   onlineManager.setOnline(true);
+  vi.useRealTimers();
 });
 
 const fetcher = () => Promise.resolve("x");
@@ -596,5 +598,128 @@ describe("dispose", () => {
     accept(gate, bob);
 
     expect(queryClient.getQueryData(["plain"])).toBe("kept");
+  });
+});
+
+describe("the session's expiry", () => {
+  const START = Date.parse("2026-11-21T12:00:00.000Z");
+  const SECOND = 1000;
+  const DAY = 24 * 60 * 60 * SECOND;
+  /** Alice's session, ending `ms` after the start of the test. */
+  const endingIn = (ms: number): AppSession => ({
+    ...alice,
+    expiresAt: new Date(START + ms).toISOString(),
+  });
+
+  /** A gate that has read a session ending `ms` from now, on a clock the test moves. */
+  async function watching(ms: number) {
+    vi.useFakeTimers({ now: START });
+    const made = setup(endingIn(ms));
+    await made.gate.refresh();
+    expect(made.server.fetchSession).toHaveBeenCalledTimes(1);
+    return made;
+  }
+
+  it("reads the session again when it expires", async () => {
+    const { gate, queryClient, server } = await watching(60 * SECOND);
+    queryClient.setQueryData(["user", "alice", "profile"], "alice's profile");
+    server.set(null);
+
+    await vi.advanceTimersByTimeAsync(59 * SECOND);
+    expect(server.fetchSession).toHaveBeenCalledTimes(1);
+    expect(gate.current()).toEqual(endingIn(60 * SECOND));
+
+    // One second after the expiry, so the server's clock has passed it too.
+    await vi.advanceTimersByTimeAsync(2 * SECOND + 1);
+    expect(server.fetchSession).toHaveBeenCalledTimes(2);
+    expect(gate.current()).toBeNull();
+    expect(queryClient.getQueryData(["user", "alice", "profile"])).toBeUndefined();
+  });
+
+  it("follows a renewed expiry", async () => {
+    const { gate, server } = await watching(60 * SECOND);
+    server.set(endingIn(120 * SECOND));
+    await vi.advanceTimersByTimeAsync(10 * SECOND);
+    await gate.refresh();
+    expect(server.fetchSession).toHaveBeenCalledTimes(2);
+
+    // Nothing at the first expiry, which the renewal replaced.
+    await vi.advanceTimersByTimeAsync(100 * SECOND);
+    expect(server.fetchSession).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(11 * SECOND + 1);
+    expect(server.fetchSession).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not read again when the server still reports the same expiry", async () => {
+    // The device's clock is ahead of the server's: the session is still good there.
+    const { gate, server } = await watching(60 * SECOND);
+
+    await vi.advanceTimersByTimeAsync(61 * SECOND + 1);
+    expect(server.fetchSession).toHaveBeenCalledTimes(2);
+    expect(gate.current()).toEqual(endingIn(60 * SECOND));
+
+    await vi.advanceTimersByTimeAsync(DAY);
+    expect(server.fetchSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("waits out an expiry beyond the timer's limit without reading early", async () => {
+    // A timer takes at most 2^31 - 1 ms, under 25 days; a longer delay would fire at once.
+    const { server } = await watching(30 * DAY);
+
+    await vi.advanceTimersByTimeAsync(30 * DAY);
+    expect(server.fetchSession).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(SECOND + 1);
+    expect(server.fetchSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("sets no timer once signed out, and none after dispose", async () => {
+    const signedOut = await watching(60 * SECOND);
+    signedOut.gate.confirmSignedOut();
+    await vi.advanceTimersByTimeAsync(DAY);
+    expect(signedOut.server.fetchSession).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+
+    const disposed = await watching(60 * SECOND);
+    disposed.gate.dispose();
+    await vi.advanceTimersByTimeAsync(DAY);
+    expect(disposed.server.fetchSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("sets no timer after a read at the expiry that fails", async () => {
+    const { gate, server } = await watching(60 * SECOND);
+    server.fetchSession.mockRejectedValueOnce(new NetworkError("offline"));
+
+    await vi.advanceTimersByTimeAsync(61 * SECOND + 1);
+    expect(server.fetchSession).toHaveBeenCalledTimes(2);
+    // The page is where it was: the next focus, reconnect or refused call settles it.
+    expect(gate.current()).toEqual(endingIn(60 * SECOND));
+
+    await vi.advanceTimersByTimeAsync(DAY);
+    expect(server.fetchSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("watches a session the cache already held when the gate was made", async () => {
+    vi.useFakeTimers({ now: START });
+    const queryClient = newQueryClient();
+    queryClient.setQueryData(SESSION_QUERY_KEY, endingIn(60 * SECOND));
+    const server = controllableSession(null);
+    const gate = createSessionGate({ queryClient, sessionClient: server.client });
+
+    await vi.advanceTimersByTimeAsync(61 * SECOND + 1);
+
+    expect(server.fetchSession).toHaveBeenCalledTimes(1);
+    expect(gate.current()).toBeNull();
+  });
+
+  it("reads at once when the session it is given has already expired", async () => {
+    const { gate, server } = await watching(-60 * SECOND);
+    server.set(null);
+
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(server.fetchSession).toHaveBeenCalledTimes(2);
+    expect(gate.current()).toBeNull();
   });
 });

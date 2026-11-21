@@ -13,6 +13,7 @@ const session = {
   image: null,
   role: "admin" as const,
   emailVerified: true,
+  expiresAt: "2026-11-26T12:00:00.000Z",
 };
 
 function requestWith(headers: IncomingMessage["headers"]): IncomingMessage {

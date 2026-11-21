@@ -20,6 +20,9 @@ export const ORIGIN = "http://localhost:5173";
 /** The session cookie's name, as Better Auth names it with our prefix. */
 export const SESSION_COOKIE = `${AUTH_COOKIE_PREFIX}.session_token`;
 
+/** A session expiry no test reaches unless it sets its own. */
+const FAR_EXPIRY = "2099-01-01T00:00:00.000Z";
+
 export interface FakeBackendOptions {
   /** The origin requests must go to. Defaults to {@link ORIGIN}. */
   readonly origin?: string;
@@ -35,6 +38,8 @@ export interface FakeUser {
   verified: boolean;
   role: "user" | "admin";
   readonly createdAt: string;
+  /** When the user's session ends, as the session route reports it. Tests move it. */
+  sessionExpiresAt: string;
   passkeys: Array<{ id: string; name: string | null; createdAt: string }>;
 }
 
@@ -83,17 +88,17 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
   /** Requests whose answers are held until the test releases them, by path. */
   const holds = new Map<string, Promise<void>>();
 
+  /** What the session and the profile both say of a user. */
+  const accountOf = (user: FakeUser) => ({
+    userId: user.id,
+    email: user.email,
+    name: user.name,
+    image: null,
+    role: user.role,
+    emailVerified: user.verified,
+  });
   const sessionOf = (user: FakeUser | undefined): AppSession | null =>
-    user === undefined
-      ? null
-      : {
-          userId: user.id,
-          email: user.email,
-          name: user.name,
-          image: null,
-          role: user.role,
-          emailVerified: user.verified,
-        };
+    user === undefined ? null : { ...accountOf(user), expiresAt: user.sessionExpiresAt };
   /** The user the request is from: by its cookie in cookie mode, otherwise the shared one. */
   let requestCookie: string | null = null;
   const current = () => {
@@ -107,7 +112,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
     return response;
   };
   const profileOf = (user: FakeUser): Profile => ({
-    ...(sessionOf(user) as AppSession),
+    ...accountOf(user),
     createdAt: user.createdAt,
   });
 
@@ -119,6 +124,7 @@ export function createFakeBackend(options: FakeBackendOptions = {}) {
       verified: true,
       role: "user",
       createdAt: new Date(Date.UTC(2026, 0, nextId)).toISOString(),
+      sessionExpiresAt: FAR_EXPIRY,
       passkeys: [],
       ...input,
     };

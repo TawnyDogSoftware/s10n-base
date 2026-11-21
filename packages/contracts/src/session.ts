@@ -13,6 +13,11 @@ export const AppSession = Schema.Struct({
   image: Schema.NullOr(Schema.String),
   role: Role,
   emailVerified: Schema.Boolean,
+  /**
+   * When the session ends, as an ISO 8601 instant in UTC. The session route moves it when it
+   * renews the session; clients read the session again at this time.
+   */
+  expiresAt: Schema.String,
 });
 export type AppSession = typeof AppSession.Type;
 

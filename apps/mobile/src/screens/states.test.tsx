@@ -375,6 +375,7 @@ describe("the building blocks", () => {
             image: null,
             role: "user",
             emailVerified: true,
+            expiresAt: "2099-01-01T00:00:00.000Z",
           }}
           signedInText="You are still signed in."
         />

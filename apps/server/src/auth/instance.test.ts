@@ -42,24 +42,31 @@ describe("isBanned", () => {
 });
 
 describe("toAppSession", () => {
-  it("maps Better Auth's user to AppSession", () => {
-    expect(
-      toAppSession({
-        id: "u1",
-        email: "user@example.com",
-        name: "User",
-        image: undefined,
-        emailVerified: true,
-        role: "admin",
-      }),
-    ).toEqual({
+  const authUser = {
+    id: "u1",
+    email: "user@example.com",
+    name: "User",
+    image: undefined,
+    emailVerified: true,
+    role: "admin",
+  };
+
+  it("maps Better Auth's user and the session's expiry to AppSession", () => {
+    expect(toAppSession(authUser, new Date("2026-11-26T12:00:00Z"))).toEqual({
       userId: "u1",
       email: "user@example.com",
       name: "User",
       image: null,
       role: "admin",
       emailVerified: true,
+      expiresAt: "2026-11-26T12:00:00.000Z",
     });
+  });
+
+  it("gives the expiry as an ISO instant in UTC when it arrives as a string", () => {
+    expect(toAppSession(authUser, "2026-11-26T14:00:00+02:00").expiresAt).toBe(
+      "2026-11-26T12:00:00.000Z",
+    );
   });
 });
 
@@ -72,21 +79,26 @@ const user = {
   role: "user",
   banned: false,
 };
+const expiresAt = new Date("2026-11-26T12:00:00Z");
 
 describe("sessionOf", () => {
   it("is the user's session, or none for no lookup result or a banned user", () => {
-    expect(sessionOf({ user }, now)).toMatchObject({ userId: "u1", role: "user" });
+    expect(sessionOf({ user, session: { expiresAt } }, now)).toMatchObject({
+      userId: "u1",
+      role: "user",
+      expiresAt: "2026-11-26T12:00:00.000Z",
+    });
     expect(sessionOf(null, now)).toBeNull();
-    expect(sessionOf({ user: { ...user, banned: true } }, now)).toBeNull();
+    expect(sessionOf({ user: { ...user, banned: true }, session: { expiresAt } }, now)).toBeNull();
   });
 });
 
 describe("signedInOf", () => {
   it("is the user's session with its row id, or none for no lookup result or a banned user", () => {
-    const session = { id: "s1" };
+    const session = { id: "s1", expiresAt };
 
     expect(signedInOf({ user, session }, now)).toEqual({
-      session: toAppSession(user),
+      session: toAppSession(user, expiresAt),
       sessionId: "s1",
     });
     expect(signedInOf(null, now)).toBeNull();
@@ -98,8 +110,13 @@ describe("readSessionOf", () => {
   const renewal = ["s10n-base.session_token=renewed; Max-Age=604800"];
 
   it("passes on the cookies Better Auth set with the session", () => {
-    expect(readSessionOf({ user }, renewal, now)).toEqual({
-      session: expect.objectContaining({ userId: "u1" }) as unknown,
+    const session = { expiresAt: "2026-11-26T12:00:00.000Z" };
+
+    expect(readSessionOf({ user, session }, renewal, now)).toEqual({
+      session: expect.objectContaining({
+        userId: "u1",
+        expiresAt: "2026-11-26T12:00:00.000Z",
+      }) as unknown,
       setCookies: renewal,
     });
   });
@@ -109,7 +126,9 @@ describe("readSessionOf", () => {
   });
 
   it("drops a banned user's renewal", () => {
-    expect(readSessionOf({ user: { ...user, banned: true } }, renewal, now)).toEqual({
+    expect(
+      readSessionOf({ user: { ...user, banned: true }, session: { expiresAt } }, renewal, now),
+    ).toEqual({
       session: null,
       setCookies: [],
     });

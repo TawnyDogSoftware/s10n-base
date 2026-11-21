@@ -18,6 +18,8 @@
  *    even when the browser reports offline.
  * 6. With a {@link SessionChannel}, a change of user seen in one tab makes every other tab of the
  *    app re-read the session at once, rather than when its cached session goes stale.
+ * 7. The session is read again when it expires, so a page left open past the end of its session
+ *    does not go on looking signed in until the next action is refused.
  */
 import {
   hashKey,
@@ -165,6 +167,48 @@ function isPublic(meta: Record<string, unknown> | undefined): boolean {
   return meta?.public === true;
 }
 
+/** The longest delay a timer takes; a longer one fires at once. */
+const MAX_TIMER_MS = 2_147_483_647;
+/** How long after the expiry to read, so the server's clock has passed it too. */
+const EXPIRY_MARGIN_MS = 1000;
+
+/**
+ * One timer, for the newest expiry the gate was given (rule 7). `read` runs once, just after
+ * that moment. A read that brings the same expiry sets no new timer (the device's clock is
+ * ahead of the server's), so nothing loops; a later expiry replaces the timer, and no session
+ * clears it.
+ */
+function createExpiryWatch(read: () => void) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  /** The expiry the timer is set for, or last fired for. */
+  let watched: string | null = null;
+
+  const arm = (at: number) => {
+    const wait = at + EXPIRY_MARGIN_MS - Date.now();
+    timer = setTimeout(
+      () => {
+        // A delay beyond the limit is waited for in steps, without reading early.
+        if (wait > MAX_TIMER_MS) arm(at);
+        else read();
+      },
+      Math.min(Math.max(wait, 0), MAX_TIMER_MS),
+    );
+  };
+
+  return {
+    watch: (session: AppSession | null) => {
+      const expiresAt = session?.expiresAt ?? null;
+      if (expiresAt === watched) return;
+      watched = expiresAt;
+      clearTimeout(timer);
+      if (expiresAt !== null) arm(Date.parse(expiresAt));
+    },
+    stop: () => {
+      clearTimeout(timer);
+    },
+  };
+}
+
 export function createSessionGate(options: {
   readonly queryClient: QueryClient;
   readonly sessionClient: SessionClient;
@@ -195,15 +239,22 @@ export function createSessionGate(options: {
     }
   };
 
+  // The timer only fires later, by when `refresh` below exists.
+  const expiry = createExpiryWatch(() => void refresh());
+
   const accept = (session: AppSession | null) => {
     const changed = accepted !== NOT_SEEN && identityOf(accepted) !== identityOf(session);
     if (changed) purge();
     accepted = session;
+    expiry.watch(session);
     if (changed) channel?.post();
   };
 
   const existing = queryClient.getQueryData<AppSession | null>(SESSION_QUERY_KEY);
-  if (existing !== undefined) accepted = existing;
+  if (existing !== undefined) {
+    accepted = existing;
+    expiry.watch(existing);
+  }
 
   // The cache calls this synchronously when the session query gets new data, before it
   // schedules any observer (React) notification, so the purge always happens first.
@@ -283,6 +334,7 @@ export function createSessionGate(options: {
     dispose: () => {
       unsubscribe();
       stopListening?.();
+      expiry.stop();
     },
   };
 }

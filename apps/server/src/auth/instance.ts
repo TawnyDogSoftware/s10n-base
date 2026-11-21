@@ -85,8 +85,22 @@ export function isBanned(user: Pick<AuthUser, "banned" | "banExpires">, now: Dat
   return new Date(user.banExpires).getTime() > now.getTime();
 }
 
-/** Maps Better Auth's user to the stable {@link AppSession} shape. */
-export function toAppSession(user: AuthUser): AppSession {
+/** What the mapping reads of Better Auth's session row: when it ends. */
+interface AuthSessionExpiry {
+  readonly expiresAt: Date | string;
+}
+
+/** Better Auth's lookup result, as far as the mapping reads it. */
+interface LookupResult {
+  readonly user: unknown;
+  readonly session: AuthSessionExpiry;
+}
+
+/**
+ * Maps Better Auth's user, and the moment its session ends, to the stable {@link AppSession}
+ * shape.
+ */
+export function toAppSession(user: AuthUser, expiresAt: Date | string): AppSession {
   return {
     userId: user.id,
     email: user.email,
@@ -94,19 +108,23 @@ export function toAppSession(user: AuthUser): AppSession {
     image: user.image ?? null,
     role: appRoleOf(user.role),
     emailVerified: user.emailVerified,
+    expiresAt: new Date(expiresAt).toISOString(),
   };
 }
 
 /** The session of Better Auth's lookup result: none when there is none, or the user is banned. */
-export function sessionOf(result: { readonly user: unknown } | null, now: Date): AppSession | null {
+export function sessionOf(result: LookupResult | null, now: Date): AppSession | null {
   if (result === null) return null;
   const user = result.user as AuthUser;
-  return isBanned(user, now) ? null : toAppSession(user);
+  return isBanned(user, now) ? null : toAppSession(user, result.session.expiresAt);
 }
 
 /** The signed-in caller of Better Auth's lookup result: none when there is none, or banned. */
 export function signedInOf(
-  result: { readonly user: unknown; readonly session: { readonly id: string } } | null,
+  result: {
+    readonly user: unknown;
+    readonly session: AuthSessionExpiry & { readonly id: string };
+  } | null,
   now: Date,
 ): SignedInSession | null {
   const session = sessionOf(result, now);
@@ -118,7 +136,7 @@ export function signedInOf(
  * user's session is not renewed for them, so their cookies are dropped.
  */
 export function readSessionOf(
-  result: { readonly user: unknown } | null,
+  result: LookupResult | null,
   setCookies: string[],
   now: Date,
 ): { readonly session: AppSession | null; readonly setCookies: string[] } {

@@ -34,12 +34,21 @@ describe("AppSession", () => {
     image: null,
     role: "user",
     emailVerified: true,
+    expiresAt: "2026-11-28T12:00:00.000Z",
   };
 
   it("has exactly the fields clients rely on", () => {
     expect(
       Object.keys(AppSession.fields).toSorted((left, right) => left.localeCompare(right)),
-    ).toEqual(["email", "emailVerified", "image", "name", "role", "userId"]);
+    ).toEqual(["email", "emailVerified", "expiresAt", "image", "name", "role", "userId"]);
+  });
+
+  it("does not decode a session without its expiry", () => {
+    const without = Object.fromEntries(
+      Object.entries(session).filter(([field]) => field !== "expiresAt"),
+    );
+
+    expect(Schema.decodeUnknownExit(AppSession)(without)._tag).toBe("Failure");
   });
 
   it("decodes a session and a signed-out response", () => {

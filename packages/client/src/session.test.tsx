@@ -20,6 +20,7 @@ const session = {
   image: null,
   role: "user",
   emailVerified: true,
+  expiresAt: "2026-11-28T12:00:00.000Z",
 } as const;
 
 describe("createSessionClient", () => {

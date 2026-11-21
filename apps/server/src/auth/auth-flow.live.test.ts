@@ -112,8 +112,13 @@ describe("sign-up, verification, sign-in and sign-out", () => {
       password: PASSWORD,
     });
     expect(signedIn.status).toBe(200);
-    const { userId, ...session } = (await browser.session()) as Record<string, unknown>;
+    const { userId, expiresAt, ...session } = (await browser.session()) as Record<string, unknown>;
     expect(userId).toMatch(UUID);
+    // An ISO instant in UTC, the default seven days ahead.
+    expect(expiresAt).toBe(new Date(expiresAt as string).toISOString());
+    const days = (Date.parse(expiresAt as string) - Date.now()) / (24 * 60 * 60 * 1000);
+    expect(days).toBeGreaterThan(6.9);
+    expect(days).toBeLessThanOrEqual(7);
     expect(session).toEqual({
       email: address,
       name: "Test User",
@@ -191,9 +196,18 @@ describe("the display-name rule", () => {
 });
 
 describe("session renewal", () => {
-  it("renews an active session's cookie through the app's session route", async () => {
+  it("renews an active session's cookie through the app's session route, and reports its expiry", async () => {
     const browser = await signedInUser(email("renewal"));
-    const session = (await browser.session()) as { userId: string };
+    const session = (await browser.session()) as { userId: string; expiresAt: string };
+    const expiryInDatabase = async () => {
+      const row = await app.schema.db
+        .selectFrom("ba_session")
+        .select("expires_at")
+        .where("user_id", "=", session.userId)
+        .executeTakeFirstOrThrow();
+      return new Date(row.expires_at);
+    };
+    expect(session.expiresAt).toBe((await expiryInDatabase()).toISOString());
     // Better Auth renews a session once it is a day old (updateAge): age this one by two days.
     const aged = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
     await app.schema.db
@@ -204,17 +218,16 @@ describe("session renewal", () => {
 
     const response = await browser.get("/api/app-auth/session");
 
-    expect(((await response.json()) as { data: { session: unknown } }).data.session).not.toBeNull();
+    const answered = ((await response.json()) as { data: { session: { expiresAt: string } } }).data
+      .session;
     const renewed = response.headers
       .getSetCookie()
       .find((cookie) => cookie.startsWith("s10n-base.session_token="));
     expect(renewed).toMatch(/Max-Age=604800/i);
-    const row = await app.schema.db
-      .selectFrom("ba_session")
-      .select("expires_at")
-      .where("user_id", "=", session.userId)
-      .executeTakeFirstOrThrow();
-    expect(new Date(row.expires_at).getTime()).toBeGreaterThan(aged.getTime());
+    const stored = await expiryInDatabase();
+    expect(stored.getTime()).toBeGreaterThan(aged.getTime());
+    // The answer carries the renewed expiry, not the one the read found.
+    expect(answered.expiresAt).toBe(stored.toISOString());
   });
 
   it("leaves a session due for renewal unchanged when an RPC reads it, since the RPC sends no cookie", async () => {

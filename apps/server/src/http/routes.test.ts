@@ -712,6 +712,7 @@ describe("GET /api/app-auth/session", () => {
     image: null,
     role: "user" as const,
     emailVerified: true,
+    expiresAt: "2026-11-26T12:00:00.000Z",
   };
 
   it("answers the session as an AppSession, uncached, reading the request's cookie", async () => {
