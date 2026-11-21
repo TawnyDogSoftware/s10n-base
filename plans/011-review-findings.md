@@ -1,6 +1,6 @@
 # 011: Address the findings of the full-branch review
 
-> Status: implemented on 2026-11-20, with four findings partly done (section 12).
+> Status: implemented on 2026-11-20, with four findings partly done (section 12). [Plan 012](012-review-leftovers.md) finished three of them (F14, F47, L2) and the two notes; F63 stays partly done.
 
 A follow-up to the rework ([000](000-hosted-starter-rework.md)), on the same pull request.
 
@@ -465,7 +465,7 @@ Implemented on 2026-11-20 by three implementors working in parallel, each in its
 | Fixed, with a test that failed first | 67 of the 88, plus the pre-existing defect P1 |
 | Fixed in docs or wording only (no test could fail first) | F69, F86, F71, F45, F44 (docs half), F73, F87, F88, L1 |
 | Found not to hold | F49, F35 |
-| Partly done | F14, F47, F63, L2 |
+| Partly done | F63. F14, F47 and L2 were partly done here and finished in [plan 012](012-review-leftovers.md) |
 | No code change, as section 10 says | F5, F21, F28, F37, F38, F67, F68, F74 |
 
 ### Found not to hold
@@ -475,12 +475,12 @@ Implemented on 2026-11-20 by three implementors working in parallel, each in its
 
 ### Partly done, and what is left
 
-- **F14:** visitor-only pages now leave when a session appears. Not done: re-reading the session at its expiry. `AppSession` carries no expiry, and adding one changes the server's session route, which belonged to another slice.
-- **F47:** new passkeys get a name with the date and time, and each remove button has a unique name. Not done: a rename control. The route is exposed; the UI is not built.
+- **F14:** visitor-only pages now leave when a session appears. Not done: re-reading the session at its expiry. `AppSession` carries no expiry, and adding one changes the server's session route, which belonged to another slice. **Done in [plan 012](012-review-leftovers.md), item 1.**
+- **F47:** new passkeys get a name with the date and time, and each remove button has a unique name. Not done: a rename control. The route is exposed; the UI is not built. **Done in [plan 012](012-review-leftovers.md), item 2.**
 - **F63:** the emails were already tied to the expiry constant by a test. A new test checks every catalog string that states a lifetime against the constant. The duration is not interpolated into the screen strings.
-- **L2:** a new browser journey shows that going Back keeps both pages of the user list. The scroll position resets to the top; the router's own scroll restoration did not restore it in this flow and was reverted.
-- **From F24:** the client's `validateName` reports a name containing a NUL as "too long". It needs its own message.
-- **Noticed, not changed:** the update PR's body says "newest allowed" of the version it refused.
+- **L2:** a new browser journey shows that going Back keeps both pages of the user list. The scroll position resets to the top; the router's own scroll restoration did not restore it in this flow and was reverted. **Done in [plan 012](012-review-leftovers.md), item 3,** which also found why: the journey left the list by the header's link, at the top of the page, so the top was what there was to restore.
+- **From F24:** the client's `validateName` reports a name containing a NUL as "too long". It needs its own message. **Done in [plan 012](012-review-leftovers.md), item 4.**
+- **Noticed, not changed:** the update PR's body says "newest allowed" of the version it refused. **Changed in [plan 012](012-review-leftovers.md), item 5.**
 
 ### Departures from the suggested fixes
 

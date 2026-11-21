@@ -2,19 +2,19 @@
 
 `packages/client` (`@s10n-base/client`) is how the web and mobile apps talk to the server: an RPC client, a session client, session-gated query state on TanStack Query, and the helpers both apps' screens share. It imports `contracts`, `shared` (the auth cookie prefix, for the test server) and `i18n` (message keys), and `effect`; `react` and `@tanstack/react-query` are peer dependencies. Import from its subpaths; there is no barrel:
 
-| Import                                   | What it has                                                                                                                                      |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `@s10n-base/client/rpc`                  | `createRpcClient`, the three failure classes, `parseBaseUrl`                                                                                     |
-| `@s10n-base/client/session`              | `createSessionClient`, `sessionQueryOptions`, `useSession`, `SESSION_QUERY_KEY`                                                                  |
-| `@s10n-base/client/query-state`          | `createSessionGate`, `SessionGateProvider`, `useProtectedQuery`, `protectedQueryKey`, `StaleSessionError`, `browserSessionChannel`, `useRecheck` |
-| `@s10n-base/client/auth`                 | `AuthResult`, `PasswordAuth`, `runAuthAction` and `lostAnswerFetch`: a Better Auth client's results as data, a lost answer as `NetworkError`     |
-| `@s10n-base/client/user-list`            | `useUserList`: the admin user list's query, a page at a time, and what to do when the last page arrives                                          |
-| `@s10n-base/client/validation`           | The form fields' checks (name from the contract, email, password within Better Auth's limits) and `fieldErrorText`                               |
-| `@s10n-base/client/messages`             | `errorMessageKey`: the `errors` message for any failure a screen shows                                                                           |
-| `@s10n-base/client/form`                 | `checkFields`: checks a form's fields together; `useFocusAfterRender`: focuses the first invalid one once its error is shown                     |
-| `@s10n-base/client/profile-name`         | `useProfileNameForm`: the profile name form's draft, save and notices, shared by both apps                                                       |
-| `@s10n-base/client/use-pending`          | `usePending`: pending state for one action, ignoring a second press while it runs, and whether it threw                                          |
-| `@s10n-base/client/testing/fake-backend` | Test code only: an in-memory server for both apps' screen tests                                                                                  |
+| Import                                   | What it has                                                                                                                                                        |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@s10n-base/client/rpc`                  | `createRpcClient`, the three failure classes, `parseBaseUrl`                                                                                                       |
+| `@s10n-base/client/session`              | `createSessionClient`, `sessionQueryOptions`, `useSession`, `SESSION_QUERY_KEY`                                                                                    |
+| `@s10n-base/client/query-state`          | `createSessionGate`, `SessionGateProvider`, `useProtectedQuery`, `protectedQueryKey`, `StaleSessionError`, `browserSessionChannel`, `useRecheck`                   |
+| `@s10n-base/client/auth`                 | `AuthResult`, `PasswordAuth`, `runAuthAction` and `lostAnswerFetch`: a Better Auth client's results as data, a lost answer as `NetworkError`                       |
+| `@s10n-base/client/user-list`            | `useUserList`: the admin user list's query, a page at a time, and what to do when the last page arrives                                                            |
+| `@s10n-base/client/validation`           | The form fields' checks (`validateName` and `validatePasskeyName` from the contract's name rule, email, password within Better Auth's limits) and `fieldErrorText` |
+| `@s10n-base/client/messages`             | `errorMessageKey`: the `errors` message for any failure a screen shows                                                                                             |
+| `@s10n-base/client/form`                 | `checkFields`: checks a form's fields together; `useFocusAfterRender`: focuses the first invalid one once its error is shown                                       |
+| `@s10n-base/client/profile-name`         | `useProfileNameForm`: the profile name form's draft, save and notices, shared by both apps                                                                         |
+| `@s10n-base/client/use-pending`          | `usePending`: pending state for one action, ignoring a second press while it runs, and whether it threw                                                            |
+| `@s10n-base/client/testing/fake-backend` | Test code only: an in-memory server for both apps' screen tests                                                                                                    |
 
 ## The base URL
 
@@ -41,7 +41,7 @@ An aborted call (its `signal` fired) rejects with the abort error itself, not a 
 
 ## Session-gated query state
 
-Cached server data belongs to the user who was signed in when it was fetched. `createSessionGate({queryClient, sessionClient, channel})` watches the session query and enforces six rules:
+Cached server data belongs to the user who was signed in when it was fetched. `createSessionGate({queryClient, sessionClient, channel})` watches the session query and enforces seven rules:
 
 1. **Protected queries carry the user's id.** `useProtectedQuery(parts, fetcher)` (or `gate.protectedQueryOptions(session, parts, fetcher)`) uses the key `["user", userId, ...parts]` and is disabled while signed out. A component rendering for one user cannot read another user's data, even if a purge were late.
 2. **A change of user purges.** When the session's user or role changes, including to signed out, the gate cancels in-flight queries, then removes every query and mutation not marked public (`meta: PUBLIC_META`). The session query itself is always kept. This happens synchronously, inside the cache update that installed the new session, before React hears of it.
@@ -50,6 +50,8 @@ Cached server data belongs to the user who was signed in when it was fetched. `c
 5. **Security actions settle by re-reading.** Run sign-in, sign-out, sign-up, password reset and passkey changes through `gate.settle(action)`. It re-reads the session afterwards and returns `{kind: "done", value, session}`, or `{kind: "unknown", session}` when the action ended in a `NetworkError`. Trust `session`, not the action's own result: a sign-in whose answer was lost may have signed the user in. The session query uses `networkMode: "always"`, so this read runs even when the browser reports it is offline (TanStack Query would otherwise pause it). One case allows the client to decide for itself: a sign-out the server answered with success, whose answer cleared the cookie, followed by a read that failed. Then call `gate.confirmSignedOut()`, which installs "signed out" and purges as rule 2 says. A successful sign-in followed by a failed read is not signed in until a read says so; the web app reports that the server could not be reached.
 
 6. **Other tabs hear of a change of user.** Given a `channel`, a gate that sees the user change tells the app's other tabs, and each re-reads the session at once instead of when its cached session goes stale (30 seconds). The web app passes `browserSessionChannel(name)`, a `BroadcastChannel`; the mobile app has one screen at a time and passes none.
+
+7. **The session is read again when it expires.** `AppSession.expiresAt` says when the session ends. The gate keeps one timer for the newest value it has been given and reads the session one second after that moment, so a page left open and focused past the end of its session leaves its signed-in screens (rule 2) instead of waiting for a refused call. A renewal brings a later `expiresAt` and replaces the timer; signing out clears it. A read that answers with the same `expiresAt` (the device's clock is ahead of the server's) sets no new timer, so nothing loops, and the next focus, reconnect or refused call settles it as before. An expiry further off than a timer can wait (about 24.8 days) is waited for in steps. Timers do not run while a phone app is in the background or a laptop sleeps; returning to the foreground re-reads the session anyway.
 
 Rule 3 compares users only on this tab. Within one tab's stale window, another tab can sign out and in as someone else, and a request this tab sends then carries the new user's cookie. So a write that acts for "the user this screen was rendered for" sends that user's id, and the server refuses it with `auth.unauthenticated` when the session's user differs, which the gate treats as a session change (rule 4). `profile.update` takes `{userId, name}` this way.
 

@@ -1,6 +1,6 @@
 # 012: Finish what the review left open
 
-> Status: not started
+> Status: implemented on 2026-11-21 (section 11).
 
 A follow-up to [011](011-review-findings.md), on the same pull request as the rework ([000](000-hosted-starter-rework.md)). Plan 011's section 12 lists what was left "partly done"; this plan finishes five of those items.
 
@@ -330,4 +330,79 @@ Run the four once on the final commit rather than per item. `rename:proof` is no
 
 ## 11. How it was built
 
-_To be filled in by whoever implements this plan: what the code settled that the plan left open, the result of the experiment in section 8, each departure with its reason, the failing test for each item, and what was verified and how._
+All five items are built, one commit each in the order of section 3, then one commit for the docs and this record. No dependency, migration, suppression, coverage exclusion or raised limit was added.
+
+### The failing test for each item
+
+| Item | Test that failed first | How it failed |
+|---|---|---|
+| 5 | `scripts/dependency-updates/flow.test.ts`, the two expectations that pin the line | Both got the old text: `react stays at 19.3.0 (newest allowed: 19.3.1)` and `(newest allowed: canary)`. |
+| 4 | `packages/client/src/validation.test.ts`: `validateName("Sam\u0000")` | It returned `validation.nameTooLong`. |
+| 4 | `packages/client/src/messages.test.ts`: the code `INVALID_NAME` | It mapped to `generic`, not `betterAuth.INVALID_NAME`. |
+| 4 | `apps/web/src/routes/auth-pages.test.tsx`: sign-up with a NUL in the name | The name field's description was "Use at most 100 characters." |
+| 1 | `packages/contracts/src/contracts.test.ts`: the field list, and a session without `expiresAt` | The list had six fields, and the session decoded. |
+| 1 | `apps/server/src/auth/instance.test.ts`: `toAppSession`, `sessionOf`, `readSessionOf` | The mapped session had no `expiresAt`. |
+| 1 | `apps/server/src/auth/auth-flow.live.test.ts`, "session renewal" (run with the server change set aside) | `expected undefined to be '2026-11-28T20:38:02.926Z'`; the end-to-end test, which now checks the expiry is seven days ahead, failed with `Invalid time value`. |
+| 1 | `packages/client/src/query-state.test.tsx`, "the session's expiry": seven of the eight tests | Each expected one more session read than was made (`called 2 times, but got 1`). The eighth, "sets no timer once signed out, and none after dispose", cannot fail first: it asserts that nothing is read. |
+| 2 | `apps/server/src/auth/auth-flow.live.test.ts`: "holds a passkey's name to the display-name rule" | `expected [ 404, 'PASSKEY_NOT_FOUND' ] to deeply equal [ 400, 'INVALID_NAME' ]`: the long name reached the route. |
+| 2 | `packages/client/src/validation.test.ts`, `apps/web/src/lib/auth.test.ts` | `validatePasskeyName is not a function`; `auth.renamePasskey is not a function`. |
+| 2 | `apps/web/src/routes/signed-in.test.tsx`, "renaming a passkey": all nine tests | No button named "Rename passkey …". |
+| 3 | `e2e/journeys.spec.ts`, the user list journey, with the option off | `Expected: "400" Received: "0"` for where the app asked the window to scroll. See the experiment below: the assertion the plan proposed did not fail. |
+
+### What the code settled, and the departures
+
+**Item 5.** As planned.
+
+**Item 4.**
+
+- The contract's check is `Schema.makeFilter((name) => !PROFILE_NAME_FORBIDDEN.test(name))`, so the pattern is written once. The existing contract test for `ProfileName` is in `packages/contracts/src/methods.test.ts`, not `contracts.test.ts`; the new assertions went there.
+- **Departure: the character's code is read with `charCodeAt`, not `codePointAt`.** `codePointAt` returns `number | undefined`, and handling `undefined` needs a branch nothing can reach, which the coverage gate refuses. The pattern has no `u` flag, so it matches one UTF-16 unit, which `charCodeAt` reads whole; the result for a NUL is the same `U+0000`. A project whose rule forbids characters outside the Basic Multilingual Plane changes this with its rule.
+- `fieldErrorText` had no test of its own; one now covers a message of each shape.
+
+**Item 1.**
+
+- The timer is a small function of its own, `createExpiryWatch(read)`, beside `createSessionGate`, which calls `watch(session)` from `accept` and for a session the cache already held, and `stop()` from `dispose`. This keeps the gate's function within the size limits; the behaviour is the one section 6 lists.
+- Three tests beyond the five planned: a read at the expiry that fails sets no timer; a gate made over a cache that already holds a session watches it; a session that has already expired when it arrives is read at once (and, by "no loop", only once).
+- The fake backend's `FakeUser` has a settable `sessionExpiresAt`, far in the future by default, so no web or mobile test reaches it.
+- The live test compares the route's `expiresAt` with the row's `expires_at` before the row is aged and after the renewing read, as planned.
+
+**Item 2.**
+
+- **The request hook works (decision D2); the fallback was not needed.** In Better Auth 1.7.25 a `hooks.before` middleware runs before the route's own handler and middleware, and sees a plugin route's `path` (`/passkey/update-passkey`) and its parsed `body`. The live test shows a 200-character name and one with a NUL answered 400 `INVALID_NAME` on both routes, a name within the rule reaching the route (404 `PASSKEY_NOT_FOUND` for an unknown id), and a registration without a name reaching it too. A unit test drives the same refusal through `auth.handler` with no session and no table, which shows it happens before any lookup.
+- `checkPasskeyName(path, body)` reuses `checkUserName`; it refuses and does not rewrite the body, since the plugin trims the name itself.
+- While a passkey is renamed, the form replaces the whole row, its Rename and Remove buttons included, rather than only the name and date: the row then holds one pair of buttons, not two. When the form closes the Rename button is back and takes focus.
+- **A defect found on the way:** `change` cleared the busy state in a `finally` outside `usePending`'s `run`, so a second call while one was running (now possible: Enter in the rename field) ended the first one's pending label. The busy state is now cleared inside the action. The test "disables the other buttons while it saves, and ignores a second submit" covers it.
+- `change` returns how it ended (`done`, `error`, `unknown`, or nothing when it did not run or threw), and the row closes on `done` and `unknown`.
+- The web `Button` takes a `buttonRef`, so focus can return to the button that opened the form.
+- Two tests beyond the seven planned: only one passkey is edited at a time, and the form stays open when the server refuses the name.
+
+**Item 3: the experiment, and what it showed.**
+
+Run in Chromium against the built app, then repeated in Firefox with a probe that recorded each `window.scrollTo` call (the probe and the Firefox configuration were not kept):
+
+| | Option off | Option on |
+|---|---|---|
+| `history.scrollRestoration` | `auto` | `manual` |
+| Leave by the header's link, then Back | at the top | at the top |
+| Scroll to 400, Forward, Back: `scrollY` | 400 | 400 |
+| What the router asked on that Back | `scrollTo({top: 0})`, with the document at its full height | `scrollTo({top: 400})` |
+
+- **The plan's failing test did not fail.** With the option off the page was back at 400 in both browsers, so the last line of the proposed steps passed. Section 8's claim that the router's `scrollTo(0)` overrides the browser's own restoration is wrong in what the user sees: the router does make that call on every arrival, as the plan read in the source, but both browsers applied their own restoration after it.
+- **The cause of what plan 011 saw is the flow,** as section 8 guessed: leaving by the header's link saves the top, and the top is what comes back, with the option on or off.
+- **What the option changes** is who restores the position. Off, the router scrolls to the top and the position returns only because the browser's restoration runs later, which the app does not control. On, the router asks for the saved position itself. Decision D4 stands, and the option is on.
+- **Departure: the journey has one assertion more than planned,** and it is the one that fails first. Before leaving, the journey wraps `window.scrollTo` to note the last position the app asked for, and after Back expects it to be the scrolled position. With the option off it is `0`.
+- With the option on the list was on screen at its full height when the router scrolled, so the fallback (a layout effect in `UserList`) was not needed. The web unit tests pass unchanged with the option on.
+- The journey passes on the local test database, which other runs had filled (277 users), and on a database created for the run (29 users at the end), where the list is still taller than the viewport.
+
+### What was verified
+
+On the final commit:
+
+- `bun run agent:check`: passed, all eleven gates; 1981 tests in 124 files; 100% of statements, branches, functions and lines.
+- `bun run test:live`: 78 tests in 13 files passed.
+- `bun run build`, then `bun run smoke`: passed.
+- `bun run test:e2e`: the three journeys passed in Chromium, on the used database and on a fresh one.
+- `bun run mobile:export`: both bundles exported and the bundle check passed.
+- The scrub check from plan 000 printed nothing.
+
+Not verified: CI on the head commit, which runs when the branch is pushed; the rename and the expiry timer on a phone (the mobile app shows no passkeys, and section 6 says what a background app does to timers); `rename:proof`, which section 10 says is not needed.

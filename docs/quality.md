@@ -151,10 +151,10 @@ The acceptance ends at the start of `expires` (UTC), so the decision is looked a
 `e2e/` holds three journeys, run by Playwright in Chromium against the **built** server serving the **built** web app, so the real security headers apply:
 
 1. Sign up with a fresh address, read the confirmation email from the capture server, confirm, sign in, sign out. A result that replaces its form (check your email, address confirmed) must take focus.
-2. With a virtual authenticator, add a passkey on the profile page, sign out, sign in with the passkey, remove it.
-3. As an admin (made with the set-role command), page through the user list, leave it and come Back: both pages are still there. The table's scroll region must be focusable.
+2. With a virtual authenticator, add a passkey on the profile page, rename it, sign out, sign in with the passkey, remove it. The rename form's field must take focus when it opens, and the row's Rename button when it closes.
+3. As an admin (made with the set-role command), page through the user list, leave it and come Back: both pages are still there. Then scroll the list, go Forward and Back again: the page is where it was scrolled to, and that is where the app asked the window to scroll. The table's scroll region must be focusable.
 
-Every distinct page state a journey reaches gets an axe check that fails on serious or critical violations: each page of the first journey, including sign-in after signing out; in the second, the profile with no passkeys and with one, sign-in after signing out, home after a passkey sign-in, and the profile after removal; in the third, the user list. The second journey's sign-up, confirmation and sign-in pages on its way to the profile are the states the first journey checks, so they are not checked again. Any console error fails the journey; Chromium reports a Content-Security-Policy violation as a console error.
+Every distinct page state a journey reaches gets an axe check that fails on serious or critical violations: each page of the first journey, including sign-in after signing out; in the second, the profile with no passkeys, with one, with the rename form open and after the rename, sign-in after signing out, home after a passkey sign-in, and the profile after removal; in the third, the user list. The second journey's sign-up, confirmation and sign-in pages on its way to the profile are the states the first journey checks, so they are not checked again. Any console error fails the journey; Chromium reports a Content-Security-Policy violation as a console error.
 
 ```bash
 bunx playwright install chromium   # once, and after Playwright updates
