@@ -35,11 +35,42 @@ function webManifest(devDependencies?: Record<string, string>): string {
   return `${JSON.stringify(json, null, 2)}\n`;
 }
 
-function lockfile(versions: Record<string, string>): string {
-  const entries = Object.entries(versions)
-    .map(([name, version]) => `    "${name}": ["${name}@${version}", "", {}, "sha512-x"],`)
-    .join("\n\n");
-  return `{\n  "lockfileVersion": 1,\n  "packages": {\n${entries}\n  }\n}\n`;
+/** What the registry holds beyond the versions a scenario locks. */
+interface Registry {
+  /** The `dependencies` a release's manifest declares, by `<name>@<version>`. */
+  readonly needs?: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  /** The release a range resolves to, by package name; the range's own version otherwise. */
+  readonly newest?: Readonly<Record<string, string>>;
+  /** Releases `bun install` refuses as too young, as `<name>@<version>`. */
+  readonly tooYoung?: readonly string[];
+}
+
+/**
+ * A bun.lock as bun 1.4.4 writes it: a package's manifest dependencies in its entry, and a
+ * dependency the top-level copy cannot serve in an entry of its own under `<parent>/<name>`.
+ */
+function lockfile(versions: Record<string, string>, registry: Registry = {}): string {
+  const lines = Object.entries(versions).flatMap(([name, version]) => {
+    const needs = registry.needs?.[`${name}@${version}`];
+    const meta = needs === undefined ? "{}" : JSON.stringify({ dependencies: needs });
+    const entry = `    "${name}": ["${name}@${version}", "", ${meta}, "sha512-x"],`;
+    return [entry].concat(ownCopies(name, needs ?? {}, { versions, registry }));
+  });
+  return `{\n  "lockfileVersion": 1,\n  "packages": {\n${lines.join("\n\n")}\n  }\n}\n`;
+}
+
+/** The entries for the dependencies of `parent` that the top-level copies cannot serve. */
+function ownCopies(
+  parent: string,
+  needs: Readonly<Record<string, string>>,
+  tree: { readonly versions: Record<string, string>; readonly registry: Registry },
+): string[] {
+  return Object.entries(needs)
+    .filter(([name, spec]) => !satisfies(tree.versions[name] ?? "", spec))
+    .map(([name, spec]) => {
+      const resolved = tree.registry.newest?.[name] ?? spec.replace(/^[\^~]/, "");
+      return `    "${parent}/${name}": ["${name}@${resolved}", "", {}, "sha512-x"],`;
+    });
 }
 
 const outdatedOutput = `bun outdated v1.4.4 (38afee6c8)
@@ -79,6 +110,9 @@ interface Scenario {
   readonly digests?: Record<string, string>;
   /** apps/web's own devDependencies at the start and after `bun update -r --latest`. */
   readonly webDev?: { start: Record<string, string>; latest: Record<string, string> };
+  /** dependency-holds.json, when a scenario needs other holds than the default. */
+  readonly holds?: readonly unknown[];
+  readonly registry?: Registry;
 }
 
 const startCatalog = {
@@ -109,9 +143,12 @@ class FakeIo implements Io {
   constructor(private readonly scenario: Scenario) {
     this.files.set("package.json", rootManifest(scenario.start?.catalog ?? startCatalog));
     this.files.set("apps/web/package.json", webManifest(scenario.webDev?.start));
-    this.files.set("bun.lock", lockfile(scenario.start?.lock ?? startLock));
+    this.files.set("bun.lock", lockfile(scenario.start?.lock ?? startLock, scenario.registry));
     this.files.set(".nvmrc", "26.13.1\n");
-    this.files.set("dependency-holds.json", holdsFile);
+    this.files.set(
+      "dependency-holds.json",
+      scenario.holds === undefined ? holdsFile : JSON.stringify({ holds: scenario.holds }),
+    );
     if (scenario.mobileApp === true) this.files.set("apps/mobile/package.json", "{}");
     if (scenario.dockerfile !== undefined) this.files.set("docker/Dockerfile", scenario.dockerfile);
   }
@@ -182,7 +219,7 @@ class FakeIo implements Io {
       const latest = this.scenario.latest;
       if (latest !== undefined) {
         this.files.set("package.json", rootManifest(latest.catalog));
-        this.files.set("bun.lock", lockfile(latest.lock));
+        this.files.set("bun.lock", lockfile(latest.lock, this.scenario.registry));
       }
       const webDev = this.scenario.webDev;
       if (webDev !== undefined) this.files.set("apps/web/package.json", webManifest(webDev.latest));
@@ -196,6 +233,15 @@ class FakeIo implements Io {
           workspaces: { catalog: Record<string, string> };
         }
       ).workspaces.catalog;
+      const refused = Object.entries(catalog).find(([name, spec]) =>
+        this.scenario.registry?.tooYoung?.includes(`${name}@${spec}`),
+      );
+      if (refused !== undefined) {
+        // As bun 1.4.4 words it; it leaves the manifests and the lockfile as they were.
+        const [name, spec] = refused;
+        const error = `error: No version matching "${spec}" found for specifier "${name}" (blocked by minimum-release-age: 259200 seconds)`;
+        return Promise.resolve({ code: 1, stdout: "", stderr: `\n${error}\n${error}\n` });
+      }
       const locked = parseLockedVersions(this.files.get("bun.lock") ?? "");
       const lock = Object.fromEntries(
         Object.entries(catalog).map(([name, spec]) => {
@@ -204,7 +250,7 @@ class FakeIo implements Io {
           return [name, keep ? current : spec.replace(/^[\^~]/, "")];
         }),
       );
-      this.files.set("bun.lock", lockfile(lock));
+      this.files.set("bun.lock", lockfile(lock, this.scenario.registry));
       return ok();
     }
     if (line === "bun outdated -r") return ok(outdatedOutput);
@@ -1058,5 +1104,191 @@ describe("runDependencyUpdate", () => {
     await expect(runDependencyUpdate(io, options)).rejects.toThrow(
       "bun update -r --latest --ignore-scripts failed (exit 1): error: resolution failed",
     );
+  });
+});
+
+/** The catalog of the root manifest as the flow left it. */
+function catalogOf(io: FakeIo): Record<string, string> {
+  return (
+    JSON.parse(io.files.get("package.json") ?? "") as {
+      workspaces: { catalog: Record<string, string> };
+    }
+  ).workspaces.catalog;
+}
+
+async function bodyOf(io: FakeIo): Promise<string> {
+  const outcome = await runDependencyUpdate(io, options);
+  return outcome.kind === "unchanged" ? "" : outcome.body;
+}
+
+function installs(io: FakeIo): number {
+  return io.commands.filter((line) => line === "bun install --ignore-scripts").length;
+}
+
+describe("runDependencyUpdate, with a package that follows another", () => {
+  // auth and @auth/expo are released together; auth pins the router it uses, and the repository
+  // must use that same copy. The router's own newest release is ahead of what auth uses.
+  const holds = [
+    { packages: ["auth", "@auth/expo"], group: "auth", reason: "Released together." },
+    { packages: ["auth-router"], follows: "auth", reason: "Must be the copy auth uses." },
+  ];
+  const catalog = {
+    ...startCatalog,
+    auth: "1.7.25",
+    "@auth/expo": "1.7.25",
+    "auth-router": "1.4.5",
+  };
+  const start = { catalog, lock: { ...startLock, ...catalog, typescript: "6.0.3", vite: "8.3.8" } };
+  const moved = { auth: "1.7.26", "@auth/expo": "1.7.26", "auth-router": "1.4.7", effect: "4.1.5" };
+  const latest = { catalog: { ...catalog, ...moved }, lock: { ...start.lock, ...moved } };
+  const needs = {
+    "auth@1.7.25": { "auth-router": "1.4.5" },
+    "auth@1.7.26": { "auth-router": "1.4.6" },
+  };
+
+  it("moves the follower to the version the followed package now depends on", async () => {
+    const io = new FakeIo({ holds, start, latest, registry: { needs } });
+
+    const body = await bodyOf(io);
+
+    expect(catalogOf(io)).toMatchObject({
+      auth: "1.7.26",
+      "@auth/expo": "1.7.26",
+      "auth-router": "1.4.6",
+    });
+    const lockText = io.files.get("bun.lock") ?? "";
+    expect(parseLockedVersions(lockText).get("auth-router")).toBe("1.4.6");
+    expect(lockText).not.toContain('"auth/auth-router"');
+    expect(body).toContain("| auth | 1.7.25 | 1.7.26 |");
+    expect(body).toContain("| auth-router | 1.4.5 | 1.4.6 |");
+    expect(body).not.toContain("auth-router stays at");
+    expect(body).not.toContain("## Reported, not applied");
+    expect(io.logs).toContain("auth-router follows auth 1.7.26: set to 1.4.6.");
+  });
+
+  it("leaves the follower where it is when the followed package did not move", async () => {
+    // The update still tried the router's own newest release; that is reported, as for any hold.
+    const still = { ...moved, auth: "1.7.25", "@auth/expo": "1.7.25" };
+    const io = new FakeIo({
+      holds,
+      start,
+      latest: { catalog: { ...catalog, ...still }, lock: { ...start.lock, ...still } },
+      registry: { needs },
+    });
+
+    const body = await bodyOf(io);
+
+    expect(catalogOf(io)).toMatchObject({ auth: "1.7.25", "auth-router": "1.4.5" });
+    expect(parseLockedVersions(io.files.get("bun.lock") ?? "").get("auth-router")).toBe("1.4.5");
+    expect(body).toContain("- auth-router stays at 1.4.5, not 1.4.7: Must be the copy auth uses.");
+    expect(body).not.toContain("| auth-router |");
+    // One install puts the router back; there is none for a follower that already agrees.
+    expect(installs(io)).toBe(1);
+  });
+
+  it("changes nothing at all when no package moved", async () => {
+    const io = new FakeIo({ holds, start, registry: { needs } });
+
+    expect(await runDependencyUpdate(io, options)).toEqual({ kind: "unchanged" });
+    expect(installs(io)).toBe(0);
+    expect(catalogOf(io)).toEqual(catalog);
+  });
+
+  it("follows what the lockfile resolved when the followed package declares a range", async () => {
+    const io = new FakeIo({
+      holds,
+      start,
+      latest,
+      registry: {
+        needs: { ...needs, "auth@1.7.26": { "auth-router": "^1.5.0" } },
+        newest: { "auth-router": "1.5.2" },
+      },
+    });
+
+    const body = await bodyOf(io);
+
+    expect(catalogOf(io)).toMatchObject({ auth: "1.7.26", "auth-router": "1.5.2" });
+    expect(parseLockedVersions(io.files.get("bun.lock") ?? "").get("auth-router")).toBe("1.5.2");
+    expect(body).toContain("| auth-router | 1.4.5 | 1.5.2 |");
+  });
+
+  it("keeps the follower when the followed package's range accepts the copy it is on", async () => {
+    const io = new FakeIo({
+      holds,
+      start,
+      latest,
+      registry: { needs: { ...needs, "auth@1.7.26": { "auth-router": "^1.4.0" } } },
+    });
+
+    const body = await bodyOf(io);
+
+    expect(catalogOf(io)).toMatchObject({ auth: "1.7.26", "auth-router": "1.4.5" });
+    expect(body).toContain("| auth | 1.7.25 | 1.7.26 |");
+    expect(body).toContain("- auth-router stays at 1.4.5, not 1.4.7:");
+  });
+
+  it("puts the followed package and its group back when the follower's version cannot be installed", async () => {
+    const io = new FakeIo({
+      holds,
+      start,
+      latest,
+      registry: { needs, tooYoung: ["auth-router@1.4.6"] },
+    });
+
+    const body = await bodyOf(io);
+
+    expect(catalogOf(io)).toMatchObject({
+      auth: "1.7.25",
+      "@auth/expo": "1.7.25",
+      "auth-router": "1.4.5",
+      effect: "4.1.5",
+    });
+    const lockText = io.files.get("bun.lock") ?? "";
+    expect(Object.fromEntries(parseLockedVersions(lockText))).toMatchObject({
+      auth: "1.7.25",
+      "@auth/expo": "1.7.25",
+      "auth-router": "1.4.5",
+      effect: "4.1.5",
+    });
+    expect(lockText).not.toContain('"auth/auth-router"');
+    const why =
+      'auth-router 1.4.6, which auth 1.7.26 depends on, could not be installed (error: No version matching "1.4.6" found for specifier "auth-router" (blocked by minimum-release-age: 259200 seconds)), so auth and the packages held with it stay where they were.';
+    expect(body).toContain(`- auth stays at 1.7.25, not 1.7.26: ${why}`);
+    expect(body).toContain(`- @auth/expo stays at 1.7.25, not 1.7.26: ${why}`);
+    expect(body).toContain(`- auth-router stays at 1.4.5, not 1.4.6: ${why}`);
+    expect(body).not.toContain("not 1.4.7");
+    expect(body).not.toMatch(/\| (auth|@auth\/expo|auth-router) \|/);
+    expect(body).toContain("| effect | 4.1.4 | 4.1.5 |");
+  });
+
+  it("brings a follower that had drifted back into line, without the followed package moving", async () => {
+    const drifted = { ...catalog, "auth-router": "1.4.4" };
+    const io = new FakeIo({
+      holds,
+      start: { catalog: drifted, lock: { ...start.lock, "auth-router": "1.4.4" } },
+      registry: { needs },
+    });
+
+    const body = await bodyOf(io);
+
+    expect(catalogOf(io)).toMatchObject({ auth: "1.7.25", "auth-router": "1.4.5" });
+    expect(body).toContain("| auth-router | 1.4.4 | 1.4.5 |");
+  });
+
+  it("fails the run when the two disagree and nothing can bring them into line", async () => {
+    // The follower was already wrong at the start and the right version cannot be installed:
+    // there is no earlier state to go back to, so no PR is better than one that disagrees.
+    const drifted = { ...catalog, "auth-router": "1.4.4" };
+    const io = new FakeIo({
+      holds,
+      start: { catalog: drifted, lock: { ...start.lock, "auth-router": "1.4.4" } },
+      registry: { needs, tooYoung: ["auth-router@1.4.5"] },
+    });
+
+    await expect(runDependencyUpdate(io, options)).rejects.toThrow(
+      "auth-router is not on 1.4.5, the version auth 1.7.25 depends on, and could not be put there. Fix dependency-holds.json or the versions by hand.",
+    );
+    expect(writes(io)).toEqual([]);
+    expect(io.commands).not.toContain("git add --all");
   });
 });

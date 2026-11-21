@@ -84,7 +84,7 @@ The tables are `ba_user`, `ba_session`, `ba_account`, `ba_verification`, `ba_rat
 
 ## Upgrading Better Auth
 
-`better-auth`, `@better-auth/expo` and `@better-auth/passkey` are released together and must stay on one exact version. `better-call` must equal the exact version `better-auth` depends on (a test checks), since the route guard uses it directly. Move all four in one change, then run `bun run test` (the allow-list test reports new routes) and `bun run test:live` (the schema test reports new columns). Read Better Auth's changelog for changes to defaults that depend on `NODE_ENV`.
+`better-auth`, `@better-auth/expo` and `@better-auth/passkey` are released together and must stay on one exact version. `better-call` must equal the exact version `better-auth` depends on (a test checks, and the daily update sets it: it follows `better-auth` in `dependency-holds.json`), since the route guard uses it directly. Move all four in one change, then run `bun run test` (the allow-list test reports new routes) and `bun run test:live` (the schema test reports new columns). Read Better Auth's changelog for changes to defaults that depend on `NODE_ENV`.
 
 ## Recipes
 

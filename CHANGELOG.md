@@ -192,3 +192,14 @@ Finished afterwards (plan 012), each with what it means for a project made from 
 ### Changed: CI runs on Blacksmith runners
 
 All six workflow jobs (CI's five and the daily dependency update) use `runs-on: blacksmith-4vcpu-ubuntu-2404` instead of GitHub's `ubuntu-24.04`. A project made from the base must have the Blacksmith GitHub App installed for its organisation, or change each `runs-on` to a runner it has; until then its jobs stay queued ([docs/new-project.md](docs/new-project.md)).
+
+### Changed: the daily update moves a package that follows another
+
+[plans/013-follower-holds.md](plans/013-follower-holds.md), [docs/dependencies.md](docs/dependencies.md#packages-that-follow-another)
+
+`better-call` must be the exact version `better-auth` depends on, and was a plain hold changed by hand. So the first daily update that moved the Better Auth group left `better-call` behind, and its pull request failed `holds.test.ts` until someone edited the catalog.
+
+- **A new kind of hold, `follows`,** in `dependency-holds.json`: the held package never moves on its own, and after each update it is set to exactly the version the named package, as installed, depends on (read from `bun.lock`: the pinned version, or for a range what bun resolved for that package). `better-call` now follows `better-auth`; the pull request body lists its move like any other.
+- **No half-moved state.** When the follower's version cannot be installed (the 3-day rule refuses it, for example), the follower, the followed package and its whole group go back to where they were, and the pull request body says so under "Reported, not applied". The 3-day rule is not bypassed. If the two disagreed before the update and cannot be brought into line, the run fails instead of opening a pull request.
+- **`holds.test.ts` checks every follower**, not only `better-call`, and `parseHolds` refuses a `follows` that is not a package name, one combined with `range` or `group`, and a follower of a follower.
+- _For a project:_ port `scripts/dependency-updates/` (`holds.ts`, `lockfile.ts`, `flow.ts` and their tests) and add `"follows": "better-auth"` to the `better-call` entry of `dependency-holds.json`. A project whose update pull request is already open with the Better Auth group moved and `better-call` behind needs no hand edit after that: the next run sets `better-call` on that branch. Any other package that must match what a second package pins can use the same key.
