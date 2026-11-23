@@ -226,7 +226,9 @@ describe("/profile", () => {
     click(/^Remove passkey Laptop, added /);
 
     expect(await screen.findByText("Passkey removed.")).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByText("Laptop")).not.toBeInTheDocument());
+    await waitFor(() => {
+      expect(screen.queryByText("Laptop")).not.toBeInTheDocument();
+    });
     expect(backend.calls("/api/auth/passkey/list-user-passkeys").length).toBeGreaterThanOrEqual(2);
   });
 
@@ -334,7 +336,9 @@ describe("/profile", () => {
       pressInForm("Save");
 
       expect(await screen.findByText("That passkey no longer exists.")).toBeInTheDocument();
-      await waitFor(() => expect(screen.queryByLabelText("Passkey name")).not.toBeInTheDocument());
+      await waitFor(() => {
+        expect(screen.queryByLabelText("Passkey name")).not.toBeInTheDocument();
+      });
       expect(screen.queryByText("Laptop")).not.toBeInTheDocument();
       expect(backend.calls(UPDATE)).toHaveLength(1);
     });
@@ -505,7 +509,9 @@ describe("/profile", () => {
     expect(alert).toHaveTextContent("We could not confirm whether that worked");
     expect(alert).toHaveTextContent("You are still signed in.");
     // The list read afterwards is the truth: the passkey was removed.
-    await waitFor(() => expect(screen.queryByText("Laptop")).not.toBeInTheDocument());
+    await waitFor(() => {
+      expect(screen.queryByText("Laptop")).not.toBeInTheDocument();
+    });
   });
 
   it("signs out and goes to sign-in", async () => {
@@ -575,7 +581,9 @@ describe("switching user", () => {
       app.services.gate.queryClient.getQueryCache().findAll({ queryKey: ["user", alice.id] }),
     ).toEqual([]);
     // Bob's profile is still held, and Alice's has already left the screen.
-    await waitFor(() => expect(screen.queryByDisplayValue("Alice")).not.toBeInTheDocument());
+    await waitFor(() => {
+      expect(screen.queryByDisplayValue("Alice")).not.toBeInTheDocument();
+    });
     expect(screen.queryByText("alice@example.com")).not.toBeInTheDocument();
     expect(backend.calls("/rpc").at(-1)?.body).toEqual({ method: "profile.get", payload: {} });
     release();
@@ -602,7 +610,9 @@ describe("switching user", () => {
     expect(backend.users.get("bob@example.com")?.name).toBe("Bob");
     expect(backend.users.get("alice@example.com")?.name).toBe("Sam");
     // The tab re-reads the session and shows Bob.
-    await waitFor(() => expect(screen.getByLabelText("Name")).toHaveValue("Bob"));
+    await waitFor(() => {
+      expect(screen.getByLabelText("Name")).toHaveValue("Bob");
+    });
   });
 });
 
